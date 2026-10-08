@@ -303,6 +303,15 @@ Public Enum VerticalAlign
     Bottom
 End Enum
 
+Public Enum CutOrder
+    ''' <summary>Top line first; each line's letters left to right.</summary>
+    LineByLine
+    ''' <summary>Top line first; alternate lines run right to left to shorten the hop between lines.</summary>
+    Serpentine
+    ''' <summary>All letters left to right regardless of line (shortest X travel, long Y hops).</summary>
+    LeftToRight
+End Enum
+
 ''' <summary>Lists the installed font families as a drop-down in the PropertyGrid.</summary>
 Public Class FontFamilyNameConverter
     Inherits StringConverter
@@ -527,6 +536,10 @@ Public Class CarveSettings
 
     <Category("4. Machine"), DisplayName("Spindle RPM")>
     Public Property SpindleRpm As Integer = 16000
+
+    <Category("4. Machine"), DisplayName("Cut order"),
+     Description("LineByLine: finish each line of text (top line first, left to right) before the next. Serpentine: same but alternate lines run right to left. LeftToRight: every letter by X position, which hops between lines.")>
+    Public Property Order As CutOrder = CutOrder.LineByLine
 
     <Category("4. Machine"), DisplayName("G-code units"),
      Description("Units written to the G-code file (G20 inches or G21 millimeters). The job is always designed in inches.")>

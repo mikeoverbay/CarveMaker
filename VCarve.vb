@@ -46,7 +46,8 @@ Public Module TextToToolpath
         tp.BlankMaxY = s.BlankOriginY + Math.Max(0.0, s.BlankHeightIn)
         If lines Is Nothing OrElse lines.All(Function(l) String.IsNullOrWhiteSpace(l.Text)) Then Return tp
 
-        Dim shape As PathsD = GlyphOutline.BuildShape(lines, s, tp.Warnings)
+        Dim lineCenters As List(Of Double) = Nothing
+        Dim shape As PathsD = GlyphOutline.BuildShape(lines, s, tp.Warnings, lineCenters)
         token.ThrowIfCancellationRequested()
         If shape.Count = 0 Then Return tp
 
@@ -63,7 +64,7 @@ Public Module TextToToolpath
                 "Flat depth {0:0.000}"" reaches through the {1:0.000}"" stock!", s.EffectiveFlatDepth, s.StockThickness))
         End If
 
-        Dim regions As List(Of PathsD) = VCarveEngine.SplitRegions(shape)
+        Dim regions As List(Of PathsD) = VCarveEngine.SplitRegions(shape, lineCenters, s.Order)
         tp.RegionCount = regions.Count
 
         For i = 0 To regions.Count - 1
@@ -185,19 +186,50 @@ Public Module VCarveEngine
     ''' nested inside holes become their own regions.
     ''' </summary>
     Public Function SplitRegions(shape As PathsD) As List(Of PathsD)
+        Return SplitRegions(shape, Nothing, CutOrder.LeftToRight)
+    End Function
+
+    ''' <summary>
+    ''' Splits and orders the regions for machining. With line centres available the
+    ''' letters are cut line by line (top line first); otherwise simply left to right.
+    ''' </summary>
+    Public Function SplitRegions(shape As PathsD, lineCenters As List(Of Double), order As CutOrder) As List(Of PathsD)
         Dim regions As New List(Of PathsD)
         Dim tree As New PolyTreeD()
         Clipper.BooleanOp(ClipType.Union, shape, Nothing, tree, FillRule.NonZero, Prec)
         CollectRegions(tree, regions)
-        ' Machine letters left to right, then bottom to top.
+
+        ' Sort keys per region: line index (0 = top line), then X; Y as a tiebreaker.
         ' (Clipper's RectD uses screen names: top = minimum Y, bottom = maximum Y.)
-        regions.Sort(Function(a, b)
-                         Dim ba = Clipper.GetBounds(a)
-                         Dim bb = Clipper.GetBounds(b)
-                         Dim c = ba.left.CompareTo(bb.left)
-                         If c = 0 Then c = ba.top.CompareTo(bb.top)
-                         Return c
-                     End Function)
+        Dim keyed As New List(Of Tuple(Of Integer, Double, Double, PathsD))
+        For Each r In regions
+            Dim b = Clipper.GetBounds(r)
+            Dim cy As Double = (b.top + b.bottom) / 2.0
+            Dim lineIdx As Integer = 0
+            If order <> CutOrder.LeftToRight AndAlso lineCenters IsNot Nothing AndAlso lineCenters.Count > 0 Then
+                Dim best As Double = Double.MaxValue
+                For i = 0 To lineCenters.Count - 1
+                    Dim d = Math.Abs(lineCenters(i) - cy)
+                    If d < best Then
+                        best = d
+                        lineIdx = i
+                    End If
+                Next
+            End If
+            Dim x As Double = (b.left + b.right) / 2.0
+            If order = CutOrder.Serpentine AndAlso (lineIdx And 1) = 1 Then x = -x
+            keyed.Add(Tuple.Create(lineIdx, x, cy, r))
+        Next
+        keyed.Sort(Function(a, b)
+                       Dim c = a.Item1.CompareTo(b.Item1)
+                       If c = 0 Then c = a.Item2.CompareTo(b.Item2)
+                       If c = 0 Then c = b.Item3.CompareTo(a.Item3)
+                       Return c
+                   End Function)
+        regions.Clear()
+        For Each k In keyed
+            regions.Add(k.Item4)
+        Next
         Return regions
     End Function
 

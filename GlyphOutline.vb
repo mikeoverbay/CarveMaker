@@ -35,8 +35,20 @@ Public Module GlyphOutline
     End Class
 
     Public Function BuildShape(lines As IList(Of TextLine), s As CarveSettings, warnings As List(Of String)) As PathsD
+        Dim unused As List(Of Double) = Nothing
+        Return BuildShape(lines, s, warnings, unused)
+    End Function
+
+    ''' <summary>
+    ''' As above, and also returns the machine-Y centre of every text line (top line
+    ''' first) so letters can be assigned back to their line for cut ordering.
+    ''' </summary>
+    Public Function BuildShape(lines As IList(Of TextLine), s As CarveSettings, warnings As List(Of String),
+                               ByRef lineCenters As List(Of Double)) As PathsD
         Dim result As New PathsD()
+        lineCenters = New List(Of Double)
         If lines Is Nothing OrElse lines.Count = 0 Then Return result
+        Dim centersDown As New List(Of Double)   ' GDI+ y-down line centres, inches
 
         ' Fonts are resolved once per distinct family/style and disposed at the end.
         Dim fonts As New Dictionary(Of String, FontInfo)(StringComparer.OrdinalIgnoreCase)
@@ -88,7 +100,9 @@ Public Module GlyphOutline
                 lineMinX.Add(If(contours.Count = 0, 0.0, minX))
                 lineMaxX.Add(If(contours.Count = 0, 0.0, maxX))
                 ' Next line starts one natural line height (of THIS line's size) lower.
-                lineTop += em * naturalLine * s.LineSpacing
+                Dim advance As Double = em * naturalLine * s.LineSpacing
+                centersDown.Add(lineTop + advance / 2.0)
+                lineTop += advance
             Next
 
             ' Horizontal justification of each line across the blank (between the margins).
@@ -145,6 +159,9 @@ Public Module GlyphOutline
             If Math.Abs(dy) > 0.0000001 Then
                 result = Clipper.TranslatePaths(result, 0, dy)
             End If
+            For Each c In centersDown
+                lineCenters.Add(-c + dy)
+            Next
 
             ' Tell the user when the text does not fit on the blank.
             b = Clipper.GetBounds(result)

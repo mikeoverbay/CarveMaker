@@ -82,6 +82,7 @@ uncut material and under 0.001" over-cut.
 | Floor stepover | Scallop height on flat floors is about half of this on straight runs. |
 | Tip flat | Measured flat at the bit's point. Features narrower than it cannot be cut to depth. |
 | Milling direction | Direction of the closed contours relative to the material still to be removed (inside the loop). |
+| Cut order | *LineByLine* (default): finish each line of text, top line first, letters left to right. *Serpentine*: alternate lines run right to left. *LeftToRight*: every letter by X, which hops between lines. |
 | Centerline finishing pass | Turn off only for quick previews; without it the ridge of every stroke is left up to two depth steps high. |
 
 ## Building

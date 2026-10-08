@@ -2,7 +2,7 @@
   Setup.vbproj - builds the Windows installer (Release configuration only).
   1. Publishes the app self-contained for win-x64 into Setup\publish\
   2. Compiles Setup.iss with the Inno Setup compiler from the Tools.InnoSetup
-     NuGet package into Setup\Output\TextToCNCPath-Setup-<version>.exe
+     NuGet package into Setup\Output\CarveMaker-Setup-<version>.exe
   No Visual Studio extension is required; "dotnet build -c Release" or a
   Release build in Visual Studio produces the installer.
 -->
@@ -11,14 +11,14 @@
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <IsPackable>false</IsPackable>
-    <AppProject>$(MSBuildThisFileDirectory)..\Text_to_CNC_path.vbproj</AppProject>
+    <AppProject>$(MSBuildThisFileDirectory)..\CarveMaker.vbproj</AppProject>
     <PublishDir>$(MSBuildThisFileDirectory)publish\</PublishDir>
     <InstallerDir>$(MSBuildThisFileDirectory)Output\</InstallerDir>
   </PropertyGroup>
 
   <ItemGroup>
     <!-- Build order only: the installer never references the app assembly. -->
-    <ProjectReference Include="..\Text_to_CNC_path.vbproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" />
+    <ProjectReference Include="..\CarveMaker.vbproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" />
     <PackageReference Include="Tools.InnoSetup" Version="6.7.3" GeneratePathProperty="true" />
     <None Include="Setup.iss" />
   </ItemGroup>
@@ -31,7 +31,7 @@
     <Error Condition="!Exists('$(PkgTools_InnoSetup)\tools\ISCC.exe')" Text="Inno Setup compiler not found at $(PkgTools_InnoSetup)\tools\ISCC.exe (restore the Tools.InnoSetup package)." />
     <MakeDir Directories="$(InstallerDir)" />
     <Exec Command="&quot;$(PkgTools_InnoSetup)\tools\ISCC.exe&quot; /Q /DAppVersion=$(Version) &quot;/DSourceDir=$(PublishDir.TrimEnd('\'))&quot; &quot;/DOutputDir=$(InstallerDir.TrimEnd('\'))&quot; &quot;$(MSBuildThisFileDirectory)Setup.iss&quot;" />
-    <Message Importance="high" Text="Installer written to $(InstallerDir)TextToCNCPath-Setup-$(Version).exe" />
+    <Message Importance="high" Text="Installer written to $(InstallerDir)CarveMaker-Setup-$(Version).exe" />
   </Target>
 
 </Project>

@@ -62,7 +62,7 @@ Public Class frmMain
     ' ------------------------------------------------------------------ setup
 
     Private Sub frmMain_Load(sender As Object, e As EventArgs) Handles MyBase.Load
-        ' Window icon (title bar and taskbar) from the embedded V.ico.
+        ' Window icon (title bar and taskbar) from the embedded CarveMaker.ico.
         Try
             Using st = GetType(frmMain).Assembly.GetManifestResourceStream("app.ico")
                 If st IsNot Nothing Then Icon = New Icon(st)
@@ -138,7 +138,7 @@ Public Class frmMain
 
     Private Sub UpdateTitle()
         Dim name As String = If(String.IsNullOrEmpty(_projectPath), "Untitled", Path.GetFileNameWithoutExtension(_projectPath))
-        Text = "Text to CNC Path - " & name & If(_dirty, "*", "")
+        Text = "CarveMaker - " & name & If(_dirty, "*", "")
     End Sub
 
     Private Sub MarkDirty()
@@ -150,7 +150,7 @@ Public Class frmMain
     ''' <summary>Asks to save unsaved changes. Returns False when the user cancels.</summary>
     Private Function ConfirmDiscardChanges() As Boolean
         If Not _dirty Then Return True
-        Dim r = MessageBox.Show(Me, "Save changes to the project?", "Text to CNC Path",
+        Dim r = MessageBox.Show(Me, "Save changes to the project?", "CarveMaker",
                                 MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question)
         If r = DialogResult.Cancel Then Return False
         If r = DialogResult.Yes Then Return SaveProject(saveAs:=False)

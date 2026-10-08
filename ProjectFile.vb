@@ -28,9 +28,9 @@ End Class
 Public Class ProjectFile
     Public Const CurrentVersion As Integer = 1
     Public Const Extension As String = ".prj"
-    Public Const Filter As String = "Text to CNC project (*.prj)|*.prj|All files (*.*)|*.*"
+    Public Const Filter As String = "CarveMaker project (*.prj)|*.prj|All files (*.*)|*.*"
 
-    Public Property App As String = "Text_to_CNC_path"
+    Public Property App As String = "CarveMaker"
     Public Property Version As Integer = CurrentVersion
     Public Property Settings As CarveSettings = New CarveSettings()
     Public Property Lines As New List(Of ProjectLine)
@@ -55,7 +55,7 @@ Public Class ProjectFile
     ''' <summary>Loads a project, tolerating missing members (older files get defaults).</summary>
     Public Shared Function Load(path As String) As ProjectFile
         Dim pf As ProjectFile = JsonSerializer.Deserialize(Of ProjectFile)(File.ReadAllText(path), Options)
-        If pf Is Nothing Then Throw New InvalidDataException("The file is not a Text to CNC project.")
+        If pf Is Nothing Then Throw New InvalidDataException("The file is not a CarveMaker project.")
         If pf.Version > CurrentVersion Then
             Throw New InvalidDataException("This project was saved by a newer version of the program (file version " & pf.Version & ").")
         End If

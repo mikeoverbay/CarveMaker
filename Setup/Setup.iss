@@ -1,5 +1,5 @@
 ﻿; ============================================================================
-;  Setup.iss - Inno Setup script for Text to CNC Path
+;  Setup.iss - Inno Setup script for CarveMaker
 ;  Compiled by Setup\Setup.vbproj in Release builds: the app is published
 ;  self-contained (no .NET install needed on the target PC) and packed into a
 ;  single Setup.exe with Start Menu / desktop shortcuts, an uninstaller,
@@ -16,17 +16,17 @@
 #ifndef OutputDir
   #define OutputDir "Output"
 #endif
-#define AppName "Text to CNC Path"
-#define AppExe "Text_to_CNC_path.exe"
+#define AppName "CarveMaker"
+#define AppExe "CarveMaker.exe"
 #define AppUrl "https://github.com/mikeoverbay/Text_to_CNC_path"
 
 [Setup]
 ; Keep this GUID fixed forever so newer versions upgrade in place.
-AppId={{7E3B2C94-5D0A-4C8F-9B61-2F0C4A7E6D11}
+AppId={{C4A9D2E7-8B13-4F6A-9E05-7D2B1C3A5F88}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
-AppPublisher=Text to CNC Path
+AppPublisher=CarveMaker
 AppPublisherURL={#AppUrl}
 AppSupportURL={#AppUrl}
 AppUpdatesURL={#AppUrl}
@@ -39,8 +39,8 @@ PrivilegesRequiredOverridesAllowed=dialog
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir={#OutputDir}
-OutputBaseFilename=TextToCNCPath-Setup-{#AppVersion}
-SetupIconFile=..\V.ico
+OutputBaseFilename=CarveMaker-Setup-{#AppVersion}
+SetupIconFile=..\CarveMaker.ico
 UninstallDisplayIcon={app}\{#AppExe}
 Compression=lzma2/max
 SolidCompression=yes
@@ -66,11 +66,11 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopico
 [Registry]
 ; .prj projects: register our ProgId and add it to "Open with"; only become the
 ; default handler when .prj has no owner yet (other software uses .prj too).
-Root: HKA; Subkey: "Software\Classes\TextToCNCPath.Project"; ValueType: string; ValueName: ""; ValueData: "Text to CNC Path Project"; Flags: uninsdeletekey
-Root: HKA; Subkey: "Software\Classes\TextToCNCPath.Project\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#AppExe},0"
-Root: HKA; Subkey: "Software\Classes\TextToCNCPath.Project\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExe}"" ""%1"""
-Root: HKA; Subkey: "Software\Classes\.prj\OpenWithProgids"; ValueType: string; ValueName: "TextToCNCPath.Project"; ValueData: ""; Flags: uninsdeletevalue
-Root: HKA; Subkey: "Software\Classes\.prj"; ValueType: string; ValueName: ""; ValueData: "TextToCNCPath.Project"; Flags: createvalueifdoesntexist uninsclearvalue
+Root: HKA; Subkey: "Software\Classes\CarveMaker.Project"; ValueType: string; ValueName: ""; ValueData: "CarveMaker Project"; Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\CarveMaker.Project\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#AppExe},0"
+Root: HKA; Subkey: "Software\Classes\CarveMaker.Project\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExe}"" ""%1"""
+Root: HKA; Subkey: "Software\Classes\.prj\OpenWithProgids"; ValueType: string; ValueName: "CarveMaker.Project"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.prj"; ValueType: string; ValueName: ""; ValueData: "CarveMaker.Project"; Flags: createvalueifdoesntexist uninsclearvalue
 
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent

@@ -1,4 +1,4 @@
-# Text to CNC Path
+# CarveMaker
 
 Windows desktop app (VB.NET, .NET 8, WinForms) that turns typed text in any
 installed font into a **V-carve toolpath** for a V-bit (default 1/4" diameter,
@@ -103,7 +103,7 @@ simulation on shows the finished part first; Reset and Play animate it.
 
 ## Building
 
-Open `Text_to_CNC_path.sln` in Visual Studio 2022/2026 or run
+Open `CarveMaker.sln` in Visual Studio 2022/2026 or run
 
 ```bash
 dotnet build -c Release
@@ -121,7 +121,7 @@ self-contained for x64 into `Setup\publish\` (no .NET install needed on the
 target PC) and compiles `Setup\Setup.iss` with the Inno Setup compiler that
 comes from the `Tools.InnoSetup` NuGet package, so no extension or separate
 download is required. The result is
-`Setup\Output\TextToCNCPath-Setup-<version>.exe` (about 48 MB).
+`Setup\Output\CarveMaker-Setup-<version>.exe` (about 48 MB).
 
 The installer offers per-user or all-users install, Start Menu and optional
 desktop shortcuts, an uninstaller, in-place upgrades (same AppId) and adds the

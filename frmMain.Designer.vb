@@ -552,13 +552,13 @@ Partial Class frmMain
         ' dlgOpenProject
         ' 
         dlgOpenProject.DefaultExt = "prj"
-        dlgOpenProject.Filter = "Text to CNC project (*.prj)|*.prj|All files (*.*)|*.*"
+        dlgOpenProject.Filter = "CarveMaker project (*.prj)|*.prj|All files (*.*)|*.*"
         dlgOpenProject.Title = "Open Project"
         ' 
         ' dlgSaveProject
         ' 
         dlgSaveProject.DefaultExt = "prj"
-        dlgSaveProject.Filter = "Text to CNC project (*.prj)|*.prj|All files (*.*)|*.*"
+        dlgSaveProject.Filter = "CarveMaker project (*.prj)|*.prj|All files (*.*)|*.*"
         dlgSaveProject.Title = "Save Project"
         '
         ' frmMain
@@ -573,7 +573,7 @@ Partial Class frmMain
         MinimumSize = New Size(800, 500)
         Name = "frmMain"
         StartPosition = FormStartPosition.CenterScreen
-        Text = "Text to CNC Path"
+        Text = "CarveMaker"
         mnuMain.ResumeLayout(False)
         mnuMain.PerformLayout()
         stsMain.ResumeLayout(False)

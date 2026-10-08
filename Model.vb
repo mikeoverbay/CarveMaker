@@ -1,6 +1,6 @@
 ' ============================================================================
 '  Model.vb
-'  Shared data types for Text_to_CNC_path: geometry primitives, toolpath
+'  Shared data types for CarveMaker: geometry primitives, toolpath
 '  containers and the user-editable job settings shown in the PropertyGrid.
 '  All linear units are INCHES unless a member name says otherwise.
 '  Z = 0 is the top of the stock; cutting depths are negative Z values.

@@ -21,7 +21,7 @@ Public Class GCodeWriter
 
         ' ---- header -------------------------------------------------------
         sb.AppendLine("%")
-        sb.AppendLine("(Text_to_CNC_path V-carve)")
+        sb.AppendLine("(CarveMaker V-carve)")
         sb.AppendLine("(Text: " & Comment(sourceText) & ")")
         sb.AppendLine("(Fonts: L=" & Comment(s.FontLarge.ToString()) & " " & F(s.SizeLargeIn * scale) &
                       ", M=" & Comment(s.FontMedium.ToString()) & " " & F(s.SizeMediumIn * scale) &

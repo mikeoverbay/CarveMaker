@@ -14,7 +14,7 @@
   #define SourceDir "publish"
 #endif
 #ifndef OutputDir
-  #define OutputDir "Output"
+  #define OutputDir ".."
 #endif
 #define AppName "CarveMaker"
 #define AppExe "CarveMaker.exe"

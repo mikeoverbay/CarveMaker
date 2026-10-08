@@ -1,4 +1,4 @@
-# CarveMaker
+﻿# CarveMaker
 
 Windows desktop app (VB.NET, .NET 8, WinForms) that turns typed text in any
 installed font into a **V-carve toolpath** for a V-bit (default 1/4" diameter,
@@ -47,22 +47,22 @@ For a V-bit with half angle *a* and tip flat *f*, a tip at depth *z* cuts a cone
 of surface radius `f/2 + z*tan(a)`. The ideal carved surface is therefore the
 distance field of the letter outline, clamped at the flat depth *F*.
 
-1. **Outlines** – GDI+ glyph outlines (`GraphicsPath.AddString`, typographic
+1. **Outlines** â€“ GDI+ glyph outlines (`GraphicsPath.AddString`, typographic
    layout, kerning) flattened to the curve tolerance, then a Clipper2 non-zero
    union. This normalises orientation for TrueType and CFF fonts and merges
    overlapping glyphs (script fonts).
-2. **Roughing** – inward offset contours (Clipper2 `InflatePaths`) every
+2. **Roughing** â€“ inward offset contours (Clipper2 `InflatePaths`) every
    *Roughing depth step*, commanded slightly shallow (*Roughing allowance*) so
    they never touch the finished bevel.
-3. **Bevel finish at the flat depth** – the exact contour at the inset where the
+3. **Bevel finish at the flat depth** â€“ the exact contour at the inset where the
    V reaches *Flat depth*, cut at `Z = -F`.
-4. **Floor clearing** – further insets at the *Floor stepover*, all at `Z = -F`,
+4. **Floor clearing** â€“ further insets at the *Floor stepover*, all at `Z = -F`,
    for strokes wider than the V can reach (scallop height about half the stepover).
-5. **Centerline finishing** – the medial axis of each letter traced with maximal
+5. **Centerline finishing** â€“ the medial axis of each letter traced with maximal
    inscribed circles (the F-Engrave / Vectric method): the tip follows the
    middle of every stroke with `Z = -(r - f/2)/tan(a)`, cutting the ridge, both
    flanks and lifting into sharp corners as the stroke narrows.
-6. **Linking** – letters are machined one at a time; inside a letter each lobe
+6. **Linking** â€“ letters are machined one at a time; inside a letter each lobe
    is finished before the next, links are straight 3D feed moves when a gouge
    check against the distance field allows it, otherwise a short lift to
    *Clearance Z*. Letters are separated by moves at *Safe Z*.
@@ -121,7 +121,7 @@ self-contained for x64 into `Setup\publish\` (no .NET install needed on the
 target PC) and compiles `Setup\Setup.iss` with the Inno Setup compiler that
 comes from the `Tools.InnoSetup` NuGet package, so no extension or separate
 download is required. The result is
-`Setup\Output\CarveMaker-Setup-<version>.exe` (about 48 MB).
+`CarveMaker-Setup-<version>.exe` in the solution root (about 48 MB).
 
 The installer offers per-user or all-users install, Start Menu and optional
 desktop shortcuts, an uninstaller, in-place upgrades (same AppId) and adds the

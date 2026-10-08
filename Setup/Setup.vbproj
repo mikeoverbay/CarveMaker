@@ -1,8 +1,8 @@
-<!--
+﻿<!--
   Setup.vbproj - builds the Windows installer (Release configuration only).
   1. Publishes the app self-contained for win-x64 into Setup\publish\
   2. Compiles Setup.iss with the Inno Setup compiler from the Tools.InnoSetup
-     NuGet package into Setup\Output\CarveMaker-Setup-<version>.exe
+     NuGet package into CarveMaker-Setup-<version>.exe in the solution root
   No Visual Studio extension is required; "dotnet build -c Release" or a
   Release build in Visual Studio produces the installer.
 -->
@@ -13,7 +13,7 @@
     <IsPackable>false</IsPackable>
     <AppProject>$(MSBuildThisFileDirectory)..\CarveMaker.vbproj</AppProject>
     <PublishDir>$(MSBuildThisFileDirectory)publish\</PublishDir>
-    <InstallerDir>$(MSBuildThisFileDirectory)Output\</InstallerDir>
+    <InstallerDir>$(MSBuildThisFileDirectory)..\</InstallerDir>
   </PropertyGroup>
 
   <ItemGroup>

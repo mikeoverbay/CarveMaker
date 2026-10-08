@@ -112,3 +112,22 @@ dotnet build -c Release
 NuGet packages: `OpenTK.GLControl` 4.0.2 (brings OpenTK 4.9.3) and `Clipper2`
 2.0.0. The OpenGL view needs an OpenGL 3.3 capable driver; if the context
 cannot be created the view shows the error text instead of crashing.
+
+## Installer
+
+The `Setup` project in the solution builds a Windows installer, **Release
+configuration only** (it is skipped in Debug): it publishes the app
+self-contained for x64 into `Setup\publish\` (no .NET install needed on the
+target PC) and compiles `Setup\Setup.iss` with the Inno Setup compiler that
+comes from the `Tools.InnoSetup` NuGet package, so no extension or separate
+download is required. The result is
+`Setup\Output\TextToCNCPath-Setup-<version>.exe` (about 48 MB).
+
+The installer offers per-user or all-users install, Start Menu and optional
+desktop shortcuts, an uninstaller, in-place upgrades (same AppId) and adds the
+app to "Open with" for `.prj` files (it only becomes the default `.prj` handler
+when nothing else owns the extension). Opening a `.prj` from Explorer launches
+the app with that project. Silent install: `/VERYSILENT /NORESTART`.
+
+The version number lives in `Directory.Build.props` and is used for the
+assembly, the installer file name and the Add/Remove Programs entry.

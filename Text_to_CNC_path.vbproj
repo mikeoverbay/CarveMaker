@@ -10,6 +10,10 @@
     <OptionExplicit>On</OptionExplicit>
     <OptionInfer>On</OptionInfer>
     <Nullable>disable</Nullable>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <!-- Lets the installer project publish self-contained for win-x64 from the same restore. -->
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
 
   <ItemGroup>

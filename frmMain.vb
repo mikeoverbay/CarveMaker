@@ -94,6 +94,26 @@ Public Class frmMain
         UpdateStats(Nothing)
         _dirty = False
         UpdateTitle()
+
+        ' Opened from Explorer / the installer's .prj association: load that project.
+        Dim startupProject As String = Nothing
+        For Each a In My.Application.CommandLineArgs
+            If a.EndsWith(ProjectFile.Extension, StringComparison.OrdinalIgnoreCase) AndAlso File.Exists(a) Then
+                startupProject = a
+                Exit For
+            End If
+        Next
+        If startupProject IsNot Nothing Then
+            Try
+                Dim pf = ProjectFile.Load(startupProject)
+                _projectPath = startupProject
+                LoadProjectIntoUi(pf)
+                lblStatus.Text = "Opened " & startupProject
+                Return
+            Catch ex As Exception
+                MessageBox.Show(Me, "Could not open the project:" & Environment.NewLine & ex.Message, "Open Project", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            End Try
+        End If
         RequestRegenerate(immediate:=True)
     End Sub
 

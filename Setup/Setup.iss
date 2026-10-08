@@ -1,4 +1,4 @@
-; ============================================================================
+﻿; ============================================================================
 ;  Setup.iss - Inno Setup script for Text to CNC Path
 ;  Compiled by Setup\Setup.vbproj in Release builds: the app is published
 ;  self-contained (no .NET install needed on the target PC) and packed into a
@@ -40,7 +40,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir={#OutputDir}
 OutputBaseFilename=TextToCNCPath-Setup-{#AppVersion}
-SetupIconFile=..\app.ico
+SetupIconFile=..\V.ico
 UninstallDisplayIcon={app}\{#AppExe}
 Compression=lzma2/max
 SolidCompression=yes

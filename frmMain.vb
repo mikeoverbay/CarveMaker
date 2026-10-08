@@ -62,6 +62,15 @@ Public Class frmMain
     ' ------------------------------------------------------------------ setup
 
     Private Sub frmMain_Load(sender As Object, e As EventArgs) Handles MyBase.Load
+        ' Window icon (title bar and taskbar) from the embedded V.ico.
+        Try
+            Using st = GetType(frmMain).Assembly.GetManifestResourceStream("app.ico")
+                If st IsNot Nothing Then Icon = New Icon(st)
+            End Using
+        Catch
+            ' Keep the default icon if the resource is missing or unreadable.
+        End Try
+
         ' The GL surface is created in code (not in the designer) so the
         ' WinForms designer never has to instantiate an OpenGL context.
         _glView = New ToolpathView() With {

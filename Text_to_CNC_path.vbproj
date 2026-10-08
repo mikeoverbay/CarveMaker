@@ -23,6 +23,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Multi-size window icon (title bar / taskbar); ApplicationIcon above only brands the exe file. -->
+    <EmbeddedResource Include="V.ico" LogicalName="app.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- OpenGL rendering surface for WinForms (pulls in OpenTK.Graphics / Mathematics / Windowing 4.9.3) -->
     <PackageReference Include="OpenTK.GLControl" Version="4.0.2" />
     <!-- Robust polygon union / offsetting used to build the V-carve toolpath -->

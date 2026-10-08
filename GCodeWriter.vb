@@ -37,7 +37,13 @@ Public Class GCodeWriter
                       ", Y" & F(tp.MinY * scale) & " to Y" & F(tp.MaxY * scale) & ")")
         sb.AppendLine("(Estimated time " & F(tp.EstimatedMinutes) & " min, " & tp.Contours.Count.ToString(Ci) & " passes)")
         sb.AppendLine(If(s.Units = OutputUnits.Millimeters, "G21", "G20") & " G90 G17 G94 G40 G49 G54")
-        sb.AppendLine("G0 Z" & F(s.SafeZ * scale))
+        If s.ParkZAtEnd Then
+            ' Fully up in machine coordinates before anything moves, then back to the work offset.
+            sb.AppendLine("G0 G53 Z0 (retract to home)")
+            sb.AppendLine("G54")
+        Else
+            sb.AppendLine("G0 Z" & F(s.SafeZ * scale))
+        End If
         If s.CoolantOn Then sb.AppendLine("M8")
         sb.AppendLine("S" & s.SpindleRpm.ToString(Ci) & " M3")
         If s.SpindleDwellSeconds > 0 Then sb.AppendLine("G4 P" & s.SpindleDwellSeconds.ToString("0.###", Ci))
@@ -52,6 +58,16 @@ Public Class GCodeWriter
 
         For Each mv In tp.Moves
             Dim t = mv.Target
+            If Not haveLast Then
+                ' First positioning move: travel in XY while fully up, then come down to the
+                ' safe height on its own line. Never move XY and Z together on a rapid.
+                sb.AppendLine("G0 X" & F(t.X * scale) & " Y" & F(t.Y * scale))
+                sb.AppendLine("G0 Z" & F(t.Z * scale))
+                last = t
+                haveLast = True
+                lastKind = mv.Kind
+                Continue For
+            End If
             Dim line As New StringBuilder(32)
             Select Case mv.Kind
                 Case MoveKind.Rapid

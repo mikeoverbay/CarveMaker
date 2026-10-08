@@ -552,8 +552,8 @@ Public Class CarveSettings
      Description("G4 pause after M3 so the spindle reaches speed before the first plunge (seconds; 0 = none). FluidNC and GRBL read P in seconds.")>
     Public Property SpindleDwellSeconds As Double = 2.0
 
-    <Category("4. Machine"), DisplayName("Park Z at machine home (G53)"),
-     Description("Write 'G0 G53 Z0' before M5 so the spindle lifts fully to the machine's Z home before stopping. Needs a homed machine.")>
+    <Category("4. Machine"), DisplayName("Retract to machine home (G53)"),
+     Description("Write 'G0 G53 Z0' at the start (before the first XY move) and before M5 at the end, so the spindle is fully up whenever it travels. Needs a homed machine.")>
     Public Property ParkZAtEnd As Boolean = True
 
     <Category("4. Machine"), DisplayName("Dust collection M8 / M9"),

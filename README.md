@@ -98,7 +98,7 @@ simulation on shows the finished part first; Reset and Play animate it.
 | Tip flat | Measured flat at the bit's point. Features narrower than it cannot be cut to depth. |
 | Milling direction | Direction of the closed contours relative to the material still to be removed (inside the loop). |
 | Cut order | *LineByLine* (default): finish each line of text, top line first, letters left to right. *Serpentine*: alternate lines run right to left. *LeftToRight*: every letter by X, which hops between lines. |
-| Spindle dwell / Coolant | `G4 P<seconds>` after `M3` (FluidNC and GRBL take P in seconds), and `M8` before the spindle starts / `M9` after `M5` when *Dust collection M8 / M9* is on (M8 runs the dust vacuum on this machine). |
+| Spindle dwell / Dust collection / Park | `G4 P<seconds>` after `M3` (FluidNC and GRBL take P in seconds), `G0 G53 Z0` before `M5` when *Park Z at machine home* is on, and `M8` before the spindle starts / `M9` after `M5` when *Dust collection M8 / M9* is on (M8 runs the dust vacuum on this machine). |
 | Centerline finishing pass | Turn off only for quick previews; without it the ridge of every stroke is left up to two depth steps high. |
 
 ## Building

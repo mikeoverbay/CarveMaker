@@ -86,6 +86,7 @@ Public Class GCodeWriter
         If Not haveLast OrElse last.Z < s.SafeZ - 0.000001 Then
             sb.AppendLine("G0 Z" & F(s.SafeZ * scale))
         End If
+        If s.ParkZAtEnd Then sb.AppendLine("G0 G53 Z0")
         sb.AppendLine("M5")
         If s.CoolantOn Then sb.AppendLine("M9")
         sb.AppendLine("G0 X0 Y0")

@@ -1,4 +1,4 @@
-name: Build and release
+﻿name: Build and release
 
 # Every push to master builds the solution (Release) as a check.
 # Pushing a tag like v1.2.0 additionally publishes a GitHub Release with the
@@ -26,11 +26,8 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
-      - name: Restore
-        run: dotnet restore CarveMaker.sln
-
       - name: Build (Release) and create installer
-        run: dotnet build CarveMaker.sln -c Release --no-restore
+        run: dotnet build CarveMaker.sln -c Release
 
       - name: Installer produced
         shell: pwsh

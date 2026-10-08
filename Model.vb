@@ -552,8 +552,8 @@ Public Class CarveSettings
      Description("G4 pause after M3 so the spindle reaches speed before the first plunge (seconds; 0 = none). FluidNC and GRBL read P in seconds.")>
     Public Property SpindleDwellSeconds As Double = 2.0
 
-    <Category("4. Machine"), DisplayName("Coolant M8 / M9"),
-     Description("Write M8 (flood on) on its own line before the spindle starts and M9 (off) after M5.")>
+    <Category("4. Machine"), DisplayName("Dust collection M8 / M9"),
+     Description("Write M8 on its own line before the spindle starts and M9 after M5. On this machine M8 switches the dust vacuum (the M7 socket is unused); on others it is flood coolant.")>
     Public Property CoolantOn As Boolean = True
 
     <Category("4. Machine"), DisplayName("Cut order"),

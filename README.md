@@ -15,6 +15,14 @@ installed font into a **V-carve toolpath** for a V-bit (default 1/4" diameter,
 +------------------------------+----------------------------------------+
 ```
 
+## Download
+
+Ready-made installers are on the
+[Releases page](https://github.com/mikeoverbay/CarveMaker/releases): download
+`CarveMaker-Setup-<version>.exe` and run it. Nothing else is needed; the
+installer carries its own .NET runtime. (The exe is unsigned, so Windows
+SmartScreen may ask you to confirm the first time.)
+
 ## Using it
 
 1. Type the text in the editor. Each line can have one of three letter sizes

@@ -44,6 +44,8 @@ Partial Class frmMain
         mnuViewRapids = New ToolStripMenuItem()
         mnuViewOutline = New ToolStripMenuItem()
         mnuViewGrid = New ToolStripMenuItem()
+        mnuViewSep2 = New ToolStripSeparator()
+        mnuViewSim = New ToolStripMenuItem()
         mnuToolpath = New ToolStripMenuItem()
         mnuToolpathGenerate = New ToolStripMenuItem()
         mnuToolpathAuto = New ToolStripMenuItem()
@@ -66,6 +68,14 @@ Partial Class frmMain
         tsbAlignRight = New ToolStripButton()
         pgSettings = New PropertyGrid()
         pnlView = New Panel()
+        pnlSim = New Panel()
+        tbSim = New TrackBar()
+        tsSim = New ToolStrip()
+        tsbSimPlay = New ToolStripButton()
+        tsbSimReset = New ToolStripButton()
+        tslSimSpeed = New ToolStripLabel()
+        tscSimSpeed = New ToolStripComboBox()
+        tslSimTime = New ToolStripLabel()
         tmrRegen = New Timer(components)
         dlgFont = New FontDialog()
         dlgSave = New SaveFileDialog()
@@ -77,6 +87,10 @@ Partial Class frmMain
         CType(splitMain, System.ComponentModel.ISupportInitialize).BeginInit()
         splitMain.Panel1.SuspendLayout()
         splitMain.Panel2.SuspendLayout()
+        pnlView.SuspendLayout()
+        pnlSim.SuspendLayout()
+        CType(tbSim, System.ComponentModel.ISupportInitialize).BeginInit()
+        tsSim.SuspendLayout()
         splitMain.SuspendLayout()
         tlpLeft.SuspendLayout()
         pnlEditor.SuspendLayout()
@@ -171,7 +185,7 @@ Partial Class frmMain
         '
         ' mnuView
         '
-        mnuView.DropDownItems.AddRange(New ToolStripItem() {mnuViewTop, mnuViewIso, mnuViewFit, mnuViewSep1, mnuViewRapids, mnuViewOutline, mnuViewGrid})
+        mnuView.DropDownItems.AddRange(New ToolStripItem() {mnuViewTop, mnuViewIso, mnuViewFit, mnuViewSep1, mnuViewRapids, mnuViewOutline, mnuViewGrid, mnuViewSep2, mnuViewSim})
         mnuView.Name = "mnuView"
         mnuView.Size = New Size(44, 20)
         mnuView.Text = "&View"
@@ -228,6 +242,19 @@ Partial Class frmMain
         mnuViewGrid.Name = "mnuViewGrid"
         mnuViewGrid.Size = New Size(200, 22)
         mnuViewGrid.Text = "Show 1"" &Grid"
+        ' 
+        ' mnuViewSep2
+        ' 
+        mnuViewSep2.Name = "mnuViewSep2"
+        mnuViewSep2.Size = New Size(197, 6)
+        ' 
+        ' mnuViewSim
+        ' 
+        mnuViewSim.CheckOnClick = True
+        mnuViewSim.Name = "mnuViewSim"
+        mnuViewSim.ShortcutKeys = Keys.Control Or Keys.M
+        mnuViewSim.Size = New Size(200, 22)
+        mnuViewSim.Text = "Show &Simulation"
         '
         ' mnuToolpath
         '
@@ -423,11 +450,83 @@ Partial Class frmMain
         ' pnlView
         '
         pnlView.BackColor = Color.FromArgb(CType(CType(30, Byte), Integer), CType(CType(30, Byte), Integer), CType(CType(34, Byte), Integer))
+        pnlView.Controls.Add(pnlSim)
         pnlView.Dock = DockStyle.Fill
         pnlView.Location = New Point(0, 0)
         pnlView.Name = "pnlView"
         pnlView.Size = New Size(774, 704)
         pnlView.TabIndex = 0
+        ' 
+        ' pnlSim
+        ' 
+        pnlSim.Controls.Add(tbSim)
+        pnlSim.Controls.Add(tsSim)
+        pnlSim.Dock = DockStyle.Bottom
+        pnlSim.BackColor = SystemColors.Control
+        pnlSim.Location = New Point(0, 644)
+        pnlSim.Name = "pnlSim"
+        pnlSim.Size = New Size(774, 60)
+        pnlSim.TabIndex = 1
+        pnlSim.Visible = False
+        ' 
+        ' tbSim
+        ' 
+        tbSim.AutoSize = False
+        tbSim.Dock = DockStyle.Fill
+        tbSim.LargeChange = 50
+        tbSim.Location = New Point(0, 25)
+        tbSim.Maximum = 1000
+        tbSim.Name = "tbSim"
+        tbSim.Size = New Size(774, 35)
+        tbSim.SmallChange = 5
+        tbSim.TabIndex = 1
+        tbSim.TickFrequency = 50
+        tbSim.TickStyle = TickStyle.None
+        ' 
+        ' tsSim
+        ' 
+        tsSim.GripStyle = ToolStripGripStyle.Hidden
+        tsSim.Items.AddRange(New ToolStripItem() {tsbSimPlay, tsbSimReset, tslSimSpeed, tscSimSpeed, tslSimTime})
+        tsSim.Location = New Point(0, 0)
+        tsSim.Name = "tsSim"
+        tsSim.RenderMode = ToolStripRenderMode.System
+        tsSim.Size = New Size(774, 25)
+        tsSim.TabIndex = 0
+        ' 
+        ' tsbSimPlay
+        ' 
+        tsbSimPlay.DisplayStyle = ToolStripItemDisplayStyle.Text
+        tsbSimPlay.Name = "tsbSimPlay"
+        tsbSimPlay.Size = New Size(35, 22)
+        tsbSimPlay.Text = "Play"
+        tsbSimPlay.ToolTipText = "Animate the cut (Play / Pause)"
+        ' 
+        ' tsbSimReset
+        ' 
+        tsbSimReset.DisplayStyle = ToolStripItemDisplayStyle.Text
+        tsbSimReset.Name = "tsbSimReset"
+        tsbSimReset.Size = New Size(39, 22)
+        tsbSimReset.Text = "Reset"
+        tsbSimReset.ToolTipText = "Back to the uncut blank"
+        ' 
+        ' tslSimSpeed
+        ' 
+        tslSimSpeed.Name = "tslSimSpeed"
+        tslSimSpeed.Size = New Size(42, 22)
+        tslSimSpeed.Text = "Speed:"
+        ' 
+        ' tscSimSpeed
+        ' 
+        tscSimSpeed.DropDownStyle = ComboBoxStyle.DropDownList
+        tscSimSpeed.Items.AddRange(New Object() {"1x", "2x", "5x", "10x", "25x", "100x", "Instant"})
+        tscSimSpeed.Name = "tscSimSpeed"
+        tscSimSpeed.Size = New Size(90, 25)
+        ' 
+        ' tslSimTime
+        ' 
+        tslSimTime.Name = "tslSimTime"
+        tslSimTime.Size = New Size(60, 22)
+        tslSimTime.Text = "0:00 / 0:00"
         '
         ' tmrRegen
         '
@@ -480,6 +579,12 @@ Partial Class frmMain
         stsMain.ResumeLayout(False)
         stsMain.PerformLayout()
         splitMain.Panel1.ResumeLayout(False)
+        pnlView.ResumeLayout(False)
+        pnlSim.ResumeLayout(False)
+        pnlSim.PerformLayout()
+        CType(tbSim, System.ComponentModel.ISupportInitialize).EndInit()
+        tsSim.ResumeLayout(False)
+        tsSim.PerformLayout()
         splitMain.Panel2.ResumeLayout(False)
         CType(splitMain, System.ComponentModel.ISupportInitialize).EndInit()
         splitMain.ResumeLayout(False)
@@ -513,6 +618,8 @@ Partial Class frmMain
     Friend WithEvents mnuViewRapids As ToolStripMenuItem
     Friend WithEvents mnuViewOutline As ToolStripMenuItem
     Friend WithEvents mnuViewGrid As ToolStripMenuItem
+    Friend WithEvents mnuViewSep2 As ToolStripSeparator
+    Friend WithEvents mnuViewSim As ToolStripMenuItem
     Friend WithEvents mnuToolpath As ToolStripMenuItem
     Friend WithEvents mnuToolpathGenerate As ToolStripMenuItem
     Friend WithEvents mnuToolpathAuto As ToolStripMenuItem
@@ -535,6 +642,14 @@ Partial Class frmMain
     Friend WithEvents tsbAlignRight As ToolStripButton
     Friend WithEvents pgSettings As PropertyGrid
     Friend WithEvents pnlView As Panel
+    Friend WithEvents pnlSim As Panel
+    Friend WithEvents tbSim As TrackBar
+    Friend WithEvents tsSim As ToolStrip
+    Friend WithEvents tsbSimPlay As ToolStripButton
+    Friend WithEvents tsbSimReset As ToolStripButton
+    Friend WithEvents tslSimSpeed As ToolStripLabel
+    Friend WithEvents tscSimSpeed As ToolStripComboBox
+    Friend WithEvents tslSimTime As ToolStripLabel
     Friend WithEvents tmrRegen As Timer
     Friend WithEvents dlgFont As FontDialog
     Friend WithEvents dlgSave As SaveFileDialog

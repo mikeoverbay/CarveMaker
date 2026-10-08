@@ -71,6 +71,8 @@ Public Class ToolMove
     Public Property Target As Pt3
     ''' <summary>Feed rate in inches/minute (ignored for rapids).</summary>
     Public Property Feed As Double
+    ''' <summary>Duration of this move in seconds (filled by the linker, used by the simulation clock).</summary>
+    Public Property Seconds As Double
 
     Public Sub New(kind As MoveKind, target As Pt3, feed As Double)
         Me.Kind = kind
@@ -301,6 +303,15 @@ Public Enum VerticalAlign
     Top
     Middle
     Bottom
+End Enum
+
+Public Enum SimResolution
+    ''' <summary>0.003" cells.</summary>
+    Fine
+    ''' <summary>0.005" cells.</summary>
+    Medium
+    ''' <summary>0.010" cells.</summary>
+    Coarse
 End Enum
 
 Public Enum CutOrder
@@ -540,6 +551,33 @@ Public Class CarveSettings
     <Category("4. Machine"), DisplayName("Cut order"),
      Description("LineByLine: finish each line of text (top line first, left to right) before the next. Serpentine: same but alternate lines run right to left. LeftToRight: every letter by X position, which hops between lines.")>
     Public Property Order As CutOrder = CutOrder.LineByLine
+
+    ' ---------------------------------------------------------------- Simulation
+    <Category("5. Simulation"), DisplayName("Precision"),
+     Description("Cell size of the material-removal heightmap: Fine 0.003"", Medium 0.005"", Coarse 0.010"". Finer costs GPU memory (blank area / cell size squared, 4 bytes per cell).")>
+    Public Property SimResolution As SimResolution = SimResolution.Medium
+
+    <Category("5. Simulation"), DisplayName("Max texture size (hardware)"), [ReadOnly](True), JsonIgnore,
+     Description("Largest texture edge this graphics card supports. The heightmap is coarsened automatically when the blank needs more cells than this.")>
+    Public ReadOnly Property SimMaxTextureSize As Integer
+        Get
+            Return HardwareMaxTextureSize
+        End Get
+    End Property
+
+    ''' <summary>Filled in by the OpenGL view once the context exists.</summary>
+    Public Shared Property HardwareMaxTextureSize As Integer = 0
+
+    ''' <summary>Heightmap cell size in inches for the chosen precision.</summary>
+    Public ReadOnly Property SimCellSize As Double
+        Get
+            Select Case SimResolution
+                Case SimResolution.Fine : Return 0.003
+                Case SimResolution.Coarse : Return 0.01
+                Case Else : Return 0.005
+            End Select
+        End Get
+    End Property
 
     <Category("4. Machine"), DisplayName("G-code units"),
      Description("Units written to the G-code file (G20 inches or G21 millimeters). The job is always designed in inches.")>

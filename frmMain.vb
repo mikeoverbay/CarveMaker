@@ -71,7 +71,11 @@ Public Class frmMain
             .ShowGrid = mnuViewGrid.Checked
         }
         pnlView.Controls.Add(_glView)
+        _glView.BringToFront()
         If _glView.InitError IsNot Nothing Then lblStatus.Text = "OpenGL view unavailable: " & _glView.InitError
+        AddHandler _glView.SimulationProgress, AddressOf OnSimulationProgress
+        AddHandler _glView.GLReady, Sub(o, ev) pgSettings.Refresh()
+        tscSimSpeed.SelectedIndex = 3      ' 10x
 
         pgSettings.SelectedObject = _settings
         UpdateSizeButtonCaptions()
@@ -484,7 +488,7 @@ Public Class frmMain
                     _toolpath = t.Result
                     _lastLinesKey = TextLine.KeyOf(lines)
                     _lastSettings = snapshot
-                    _glView.SetToolpath(_toolpath)
+                    _glView.SetToolpath(_toolpath, snapshot)
                     UpdateStats(_toolpath)
                     If _toolpath.Warnings.Count > 0 Then
                         lblStatus.Text = String.Join("  |  ", _toolpath.Warnings)
@@ -655,7 +659,7 @@ Public Class frmMain
                 _toolpath = tp
                 _lastLinesKey = TextLine.KeyOf(lines)
                 _lastSettings = snapshot
-                _glView.SetToolpath(tp)
+                _glView.SetToolpath(tp, snapshot)
                 UpdateStats(tp)
             Catch ex As Exception
                 MessageBox.Show(Me, ex.Message, "Generate", MessageBoxButtons.OK, MessageBoxIcon.Error)
@@ -757,6 +761,65 @@ Public Class frmMain
 
     Private Sub mnuViewGrid_CheckedChanged(sender As Object, e As EventArgs) Handles mnuViewGrid.CheckedChanged
         If _glView IsNot Nothing Then _glView.ShowGrid = mnuViewGrid.Checked
+    End Sub
+
+    ' ------------------------------------------------------------ Simulation
+
+    Private Sub mnuViewSim_CheckedChanged(sender As Object, e As EventArgs) Handles mnuViewSim.CheckedChanged
+        If _glView Is Nothing Then Return
+        pnlSim.Visible = mnuViewSim.Checked
+        _glView.ShowSimulation = mnuViewSim.Checked
+    End Sub
+
+    Private Shared Function FormatClock(seconds As Double) As String
+        If Double.IsInfinity(seconds) OrElse Double.IsNaN(seconds) Then seconds = 0
+        Dim t = TimeSpan.FromSeconds(Math.Max(0, seconds))
+        If t.TotalHours >= 1 Then Return String.Format(CultureInfo.InvariantCulture, "{0}:{1:00}:{2:00}", CInt(Math.Floor(t.TotalHours)), t.Minutes, t.Seconds)
+        Return String.Format(CultureInfo.InvariantCulture, "{0}:{1:00}", t.Minutes, t.Seconds)
+    End Function
+
+    Private _simUiUpdating As Boolean
+
+    Private Sub OnSimulationProgress(sender As Object, e As EventArgs)
+        If _glView Is Nothing Then Return
+        _simUiUpdating = True
+        Try
+            Dim total = _glView.SimulationTotalSeconds
+            Dim cur = _glView.SimulationSeconds
+            tslSimTime.Text = FormatClock(cur) & " / " & FormatClock(total)
+            tbSim.Value = If(total > 0, CInt(Math.Round(Math.Max(0, Math.Min(1, cur / total)) * tbSim.Maximum)), 0)
+            tsbSimPlay.Text = If(_glView.SimulationPlaying, "Pause", "Play")
+            Dim info = _glView.SimulationInfo
+            If mnuViewSim.Checked AndAlso info.Length > 0 AndAlso lblStatus.Text = "Ready" Then lblStatus.Text = "Ready - simulation " & info
+        Finally
+            _simUiUpdating = False
+        End Try
+    End Sub
+
+    Private Sub tsbSimPlay_Click(sender As Object, e As EventArgs) Handles tsbSimPlay.Click
+        If _glView.SimulationPlaying Then _glView.SimulationPause() Else _glView.SimulationPlay()
+    End Sub
+
+    Private Sub tsbSimReset_Click(sender As Object, e As EventArgs) Handles tsbSimReset.Click
+        _glView.SimulationPause()
+        _glView.SimulationSeek(0)
+    End Sub
+
+    Private Sub tscSimSpeed_SelectedIndexChanged(sender As Object, e As EventArgs) Handles tscSimSpeed.SelectedIndexChanged
+        If _glView Is Nothing Then Return
+        Dim text = If(tscSimSpeed.SelectedItem, "1x").ToString()
+        If text = "Instant" Then
+            _glView.SimulationSpeed = Double.PositiveInfinity
+        Else
+            Dim v As Double
+            If Double.TryParse(text.TrimEnd("x"c), NumberStyles.Float, CultureInfo.InvariantCulture, v) Then _glView.SimulationSpeed = v
+        End If
+    End Sub
+
+    Private Sub tbSim_Scroll(sender As Object, e As EventArgs) Handles tbSim.Scroll
+        If _simUiUpdating OrElse _glView Is Nothing Then Return
+        _glView.SimulationPause()
+        _glView.SimulationSeek(_glView.SimulationTotalSeconds * tbSim.Value / tbSim.Maximum)
     End Sub
 
     ' --------------------------------------------------------- Toolpath menu

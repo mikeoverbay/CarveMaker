@@ -1011,6 +1011,19 @@ Public Module ToolpathLinker
         tp.RapidLength = rapidLen
         Dim rapidRate As Double = If(s.RapidRate > 0, s.RapidRate, 100.0)
         tp.EstimatedMinutes = cutLen / s.FeedRate + plungeLen / s.PlungeRate + rapidLen / rapidRate
+
+        ' Per-move durations for the simulation clock (same rates as the estimate).
+        Dim prev As New Pt3(0, 0, safe)
+        For Each mv In moves
+            Dim rate As Double
+            Select Case mv.Kind
+                Case MoveKind.Rapid : rate = rapidRate
+                Case MoveKind.Plunge : rate = If(mv.Feed > 0, mv.Feed, s.PlungeRate)
+                Case Else : rate = If(mv.Feed > 0, mv.Feed, s.FeedRate)
+            End Select
+            mv.Seconds = prev.DistanceTo(mv.Target) / Math.Max(rate, 0.001) * 60.0
+            prev = mv.Target
+        Next
     End Sub
 
     ''' <summary>

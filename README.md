@@ -72,6 +72,21 @@ rasterises the ideal surface and the cut envelope: with the finishing pass on,
 test letters in Arial, Times, Segoe Script and Gabriola show at most 0.0005"
 uncut material and under 0.001" over-cut.
 
+## Simulation
+
+**View > Show Simulation** (Ctrl+M) replaces the line drawing with the carved
+board. The blank becomes a float heightmap texture on the GPU (one cell =
+*Precision* under *5. Simulation*: 0.003", 0.005" or 0.010"), automatically
+coarsened if the blank needs more cells than the graphics card allows (shown
+as *Max texture size (hardware)*). Material is removed by rendering the revolved
+tool model from above into that texture with MAX blending every half cell along
+each move, so the sweep is exact to the cell size and runs in milliseconds.
+
+The bar under the view has **Play / Pause**, **Reset**, a **Speed** list (1x to
+100x or Instant) and a scrub slider; the clock uses the same feed, plunge and
+rapid rates as the time estimate, so plunges deepen in real time. Toggling the
+simulation on shows the finished part first; Reset and Play animate it.
+
 ## Settings worth knowing
 
 | Setting | Meaning |

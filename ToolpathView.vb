@@ -68,6 +68,22 @@ Public Class ToolpathView
     Private _showOutline As Boolean = True
     Private _showGrid As Boolean = True
 
+    ' ---- material-removal simulation ---------------------------------------
+    Private ReadOnly _sim As New CarveSimulation()
+    Private _simSettings As CarveSettings
+    Private _simNeedsSetup As Boolean
+    Private _showSimulation As Boolean
+    Private _simPlaying As Boolean
+    Private _simSpeed As Double = 1.0           ' Double.PositiveInfinity = instant
+    Private _simTime As Double                  ' target simulated time (s)
+    Private _simLastTick As DateTime
+    Private WithEvents _simTimer As New Timer() With {.Interval = 33}
+
+    ''' <summary>Raised on the UI thread whenever the simulation clock or state changes.</summary>
+    Public Event SimulationProgress As EventHandler
+    ''' <summary>Raised once the OpenGL context and shaders are usable (hardware limits are known).</summary>
+    Public Event GLReady As EventHandler
+
     Public Sub New()
         MyBase.New(New GLControlSettings() With {
             .APIVersion = New Version(3, 3),
@@ -120,10 +136,153 @@ Public Class ToolpathView
 
     ''' <summary>Replaces the displayed toolpath and refits the view the first time.</summary>
     Public Sub SetToolpath(tp As Toolpath)
+        SetToolpath(tp, Nothing)
+    End Sub
+
+    ''' <summary>Replaces the toolpath; the settings drive the simulation (tool, blank, precision).</summary>
+    Public Sub SetToolpath(tp As Toolpath, settings As CarveSettings)
         Dim firstTime As Boolean = (_toolpath Is Nothing)
         _toolpath = tp
+        If settings IsNot Nothing Then _simSettings = settings
+        _simNeedsSetup = True
+        ' A new program: start the clock over; keep showing the finished part unless animating.
+        If Not _simPlaying Then _simTime = Double.PositiveInfinity
         BuildBuffers()
         If firstTime OrElse Not SceneIntersectsView() Then ZoomToFit() Else Invalidate()
+        RaiseEvent SimulationProgress(Me, EventArgs.Empty)
+    End Sub
+
+    ' ----------------------------------------------------------- simulation
+
+    ''' <summary>Shows the carved board instead of the bare outline.</summary>
+    Public Property ShowSimulation As Boolean
+        Get
+            Return _showSimulation
+        End Get
+        Set(value As Boolean)
+            If _showSimulation = value Then Return
+            _showSimulation = value
+            BuildBuffers()
+            If value Then
+                _simTime = Double.PositiveInfinity    ' first look: the finished part
+            Else
+                _simPlaying = False
+                _simTimer.Stop()
+            End If
+            Invalidate()
+            RaiseEvent SimulationProgress(Me, EventArgs.Empty)
+        End Set
+    End Property
+
+    Public ReadOnly Property SimulationTotalSeconds As Double
+        Get
+            Return If(_sim.IsReady, _sim.TotalSeconds, TotalSecondsOf(_toolpath))
+        End Get
+    End Property
+
+    Public ReadOnly Property SimulationSeconds As Double
+        Get
+            Return Math.Min(_simTime, SimulationTotalSeconds)
+        End Get
+    End Property
+
+    Public ReadOnly Property SimulationPlaying As Boolean
+        Get
+            Return _simPlaying
+        End Get
+    End Property
+
+    ''' <summary>Playback speed multiplier; PositiveInfinity jumps to the end.</summary>
+    Public Property SimulationSpeed As Double
+        Get
+            Return _simSpeed
+        End Get
+        Set(value As Double)
+            _simSpeed = If(value <= 0, 1.0, value)
+            If Double.IsPositiveInfinity(_simSpeed) AndAlso _simPlaying Then SimulationSeek(Double.PositiveInfinity)
+        End Set
+    End Property
+
+    ''' <summary>Text for the simulation status (cells, memory) once the heightmap exists.</summary>
+    Public ReadOnly Property SimulationInfo As String
+        Get
+            If _sim.SetupError IsNot Nothing Then Return "Simulation unavailable: " & _sim.SetupError
+            If Not _sim.IsReady Then Return ""
+            Return String.Format(Globalization.CultureInfo.InvariantCulture, "{0} x {1} cells at {2:0.0000}"" ({3:0} MB)",
+                                 _sim.TextureWidth, _sim.TextureHeight, _sim.CellSize, _sim.TextureWidth * CDbl(_sim.TextureHeight) * 4 / 1048576.0)
+        End Get
+    End Property
+
+    Private Shared Function TotalSecondsOf(tp As Toolpath) As Double
+        If tp Is Nothing Then Return 0
+        Dim t As Double = 0
+        For Each mv In tp.Moves
+            t += Math.Max(0.0, mv.Seconds)
+        Next
+        Return t
+    End Function
+
+    Public Sub SimulationPlay()
+        If _toolpath Is Nothing OrElse _toolpath.IsEmpty Then Return
+        If Not _showSimulation Then ShowSimulation = True
+        If _simTime >= SimulationTotalSeconds Then _simTime = 0     ' replay from the start
+        If Double.IsPositiveInfinity(_simSpeed) Then
+            SimulationSeek(Double.PositiveInfinity)
+            Return
+        End If
+        _simPlaying = True
+        _simLastTick = DateTime.UtcNow
+        _simTimer.Start()
+        RaiseEvent SimulationProgress(Me, EventArgs.Empty)
+    End Sub
+
+    Public Sub SimulationPause()
+        _simPlaying = False
+        _simTimer.Stop()
+        RaiseEvent SimulationProgress(Me, EventArgs.Empty)
+    End Sub
+
+    ''' <summary>Jumps the clock (seconds; PositiveInfinity = finished part). Backwards replays from zero.</summary>
+    Public Sub SimulationSeek(seconds As Double)
+        _simTime = Math.Max(0.0, seconds)
+        If _simTime >= SimulationTotalSeconds Then
+            _simPlaying = False
+            _simTimer.Stop()
+        End If
+        Invalidate()
+        RaiseEvent SimulationProgress(Me, EventArgs.Empty)
+    End Sub
+
+    Private Sub _simTimer_Tick(sender As Object, e As EventArgs) Handles _simTimer.Tick
+        If Not _simPlaying Then
+            _simTimer.Stop()
+            Return
+        End If
+        Dim now = DateTime.UtcNow
+        Dim dt = (now - _simLastTick).TotalSeconds
+        _simLastTick = now
+        _simTime += dt * _simSpeed
+        If _simTime >= SimulationTotalSeconds Then
+            _simTime = SimulationTotalSeconds
+            _simPlaying = False
+            _simTimer.Stop()
+        End If
+        Invalidate()
+        RaiseEvent SimulationProgress(Me, EventArgs.Empty)
+    End Sub
+
+    ''' <summary>Runs the pending stamps for the current clock. Context must be current.</summary>
+    Private Sub UpdateSimulation()
+        If _simNeedsSetup Then
+            _simNeedsSetup = False
+            If _toolpath Is Nothing OrElse _simSettings Is Nothing OrElse _toolpath.IsEmpty Then
+                _sim.Release()
+            Else
+                _sim.Setup(_toolpath, _simSettings, CarveSettings.HardwareMaxTextureSize)
+            End If
+        End If
+        If Not _sim.IsReady Then Return
+        _sim.AdvanceTo(Math.Min(_simTime, _sim.TotalSeconds))
     End Sub
 
     Public Sub SetTopView()
@@ -186,6 +345,8 @@ Public Class ToolpathView
         End If
 
         ' Grid: 1" cells, extended past the scene, plus bright axes through the origin.
+        ' With the simulation shown the grid sits under the board so it does not show through the surface.
+        Dim gz As Double = If(_showSimulation AndAlso _simSettings IsNot Nothing, -Math.Max(0.05, Math.Min(_simSettings.StockThickness, 2.0)) - 0.001, 0.0)
         Dim g0x As Integer = CInt(Math.Floor(minX)) - 2
         Dim g1x As Integer = CInt(Math.Ceiling(maxX)) + 2
         Dim g0y As Integer = CInt(Math.Floor(minY)) - 2
@@ -194,11 +355,11 @@ Public Class ToolpathView
         If g1y - g0y > 400 Then g1y = g0y + 400
         For x = g0x To g1x
             Dim c As Single = If(x = 0, 0.45F, 0.2F)
-            AddLine(grid, x, g0y, 0, x, g1y, 0, If(x = 0, 0.3F, c), If(x = 0, 0.8F, c), If(x = 0, 0.3F, c))
+            AddLine(grid, x, g0y, gz, x, g1y, gz, If(x = 0, 0.3F, c), If(x = 0, 0.8F, c), If(x = 0, 0.3F, c))
         Next
         For y = g0y To g1y
             Dim c As Single = If(y = 0, 0.45F, 0.2F)
-            AddLine(grid, g0x, y, 0, g1x, y, 0, If(y = 0, 0.9F, c), If(y = 0, 0.3F, c), If(y = 0, 0.3F, c))
+            AddLine(grid, g0x, y, gz, g1x, y, gz, If(y = 0, 0.9F, c), If(y = 0, 0.3F, c), If(y = 0, 0.3F, c))
         Next
 
         If tp IsNot Nothing Then
@@ -293,6 +454,8 @@ Public Class ToolpathView
         If _initialized AndAlso Not _contextFailed Then
             Try
                 MakeCurrent()
+                _sim.Release()
+                _simNeedsSetup = True
                 For Each layer In AllLayers
                     If layer.Vbo <> 0 Then GL.DeleteBuffer(layer.Vbo)
                     If layer.Vao <> 0 Then GL.DeleteVertexArray(layer.Vao)
@@ -374,7 +537,17 @@ Public Class ToolpathView
             GL.Enable(EnableCap.Multisample)
             GL.Enable(EnableCap.LineSmooth)
             GL.ClearColor(0.12F, 0.12F, 0.13F, 1.0F)
+
+            ' Hardware limits for the simulation heightmap: texture edge and render viewport.
+            Dim maxTex As Integer = GL.GetInteger(GetPName.MaxTextureSize)
+            Dim vp(1) As Integer
+            GL.GetInteger(GetPName.MaxViewportDims, vp)
+            Dim limit As Integer = maxTex
+            If vp(0) > 0 Then limit = Math.Min(limit, vp(0))
+            If vp(1) > 0 Then limit = Math.Min(limit, vp(1))
+            CarveSettings.HardwareMaxTextureSize = Math.Max(256, limit)
             _initialized = True
+            RaiseEvent GLReady(Me, EventArgs.Empty)
         Catch ex As Exception
             _initError = ex.Message
             ShowErrorLabel()
@@ -463,13 +636,24 @@ Public Class ToolpathView
             Return
         End If
 
+        ' Material removal happens in its own framebuffer before the view is drawn.
+        If _showSimulation Then
+            UpdateSimulation()
+            GL.Viewport(0, 0, Math.Max(ClientSize.Width, 1), Math.Max(ClientSize.Height, 1))
+        End If
+
         GL.Clear(ClearBufferMask.ColorBufferBit Or ClearBufferMask.DepthBufferBit)
         For Each layer In AllLayers
             UploadIfDirty(layer)
         Next
 
-        GL.UseProgram(_program)
         Dim mvp As Matrix4 = ViewMatrix() * ProjectionMatrix()
+        If _showSimulation AndAlso _sim.IsReady Then
+            _sim.DrawBoard(mvp)
+            If _simTime < _sim.TotalSeconds Then _sim.DrawTool(mvp, _sim.ToolPositionAt(_simTime))
+        End If
+
+        GL.UseProgram(_program)
         GL.UniformMatrix4(_mvpLoc, False, mvp)
 
         ' Reference layers never occlude the toolpath: draw them without depth writes.
@@ -477,8 +661,8 @@ Public Class ToolpathView
         If _showGrid Then DrawLayer(_grid)
         DrawLayer(_blank)
         GL.DepthMask(True)
-        If _showOutline Then DrawLayer(_outline)
-        DrawLayer(_cuts)
+        If _showOutline AndAlso Not _showSimulation Then DrawLayer(_outline)
+        If Not _showSimulation Then DrawLayer(_cuts)
         If _showRapids Then DrawLayer(_rapids)
 
         GL.BindVertexArray(0)

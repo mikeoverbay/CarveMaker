@@ -548,6 +548,14 @@ Public Class CarveSettings
     <Category("4. Machine"), DisplayName("Spindle RPM")>
     Public Property SpindleRpm As Integer = 16000
 
+    <Category("4. Machine"), DisplayName("Spindle dwell (s)"),
+     Description("G4 pause after M3 so the spindle reaches speed before the first plunge (seconds; 0 = none). FluidNC and GRBL read P in seconds.")>
+    Public Property SpindleDwellSeconds As Double = 2.0
+
+    <Category("4. Machine"), DisplayName("Coolant M8 / M9"),
+     Description("Write M8 (flood on) on its own line before the spindle starts and M9 (off) after M5.")>
+    Public Property CoolantOn As Boolean = True
+
     <Category("4. Machine"), DisplayName("Cut order"),
      Description("LineByLine: finish each line of text (top line first, left to right) before the next. Serpentine: same but alternate lines run right to left. LeftToRight: every letter by X position, which hops between lines.")>
     Public Property Order As CutOrder = CutOrder.LineByLine
@@ -625,6 +633,7 @@ Public Class CarveSettings
         If ClearanceZ <= 0 OrElse ClearanceZ > SafeZ Then errs.Add("Clearance Z must be positive and not above Safe Z.")
         If FeedRate <= 0 OrElse PlungeRate <= 0 Then errs.Add("Feed and plunge rates must be positive.")
         If SpindleRpm <= 0 Then errs.Add("Spindle RPM must be positive.")
+        If SpindleDwellSeconds < 0 Then errs.Add("Spindle dwell cannot be negative.")
         If CurveTolerance <= 0 Then errs.Add("Curve tolerance must be positive.")
         If LineSpacing <= 0 Then errs.Add("Line spacing must be positive.")
         Return errs

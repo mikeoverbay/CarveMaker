@@ -38,8 +38,9 @@ Public Class GCodeWriter
         sb.AppendLine("(Estimated time " & F(tp.EstimatedMinutes) & " min, " & tp.Contours.Count.ToString(Ci) & " passes)")
         sb.AppendLine(If(s.Units = OutputUnits.Millimeters, "G21", "G20") & " G90 G17 G94 G40 G49 G54")
         sb.AppendLine("G0 Z" & F(s.SafeZ * scale))
+        If s.CoolantOn Then sb.AppendLine("M8")
         sb.AppendLine("S" & s.SpindleRpm.ToString(Ci) & " M3")
-        sb.AppendLine("G4 P2")
+        If s.SpindleDwellSeconds > 0 Then sb.AppendLine("G4 P" & s.SpindleDwellSeconds.ToString("0.###", Ci))
 
         ' ---- motion -------------------------------------------------------
         Dim lastFeed As Double = -1
@@ -86,6 +87,7 @@ Public Class GCodeWriter
             sb.AppendLine("G0 Z" & F(s.SafeZ * scale))
         End If
         sb.AppendLine("M5")
+        If s.CoolantOn Then sb.AppendLine("M9")
         sb.AppendLine("G0 X0 Y0")
         sb.AppendLine("M30")
         sb.AppendLine("%")

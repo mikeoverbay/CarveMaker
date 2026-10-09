@@ -339,6 +339,11 @@ Public Class frmMain
     End Sub
 
     Private Sub tsbObjImport_Click(sender As Object, e As EventArgs) Handles tsbObjImport.Click
+        ' First time: start in the Samples folder shipped next to the program.
+        If String.IsNullOrEmpty(dlgSvg.FileName) AndAlso String.IsNullOrEmpty(dlgSvg.InitialDirectory) Then
+            Dim samples = Path.Combine(AppContext.BaseDirectory, "Samples")
+            If Directory.Exists(samples) Then dlgSvg.InitialDirectory = samples
+        End If
         If dlgSvg.ShowDialog(Me) <> DialogResult.OK Then Return
         Try
             ImportSvgFile(dlgSvg.FileName)

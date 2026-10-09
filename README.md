@@ -97,9 +97,10 @@ the view: click to select, drag to move, drag a corner handle to resize, arrow
 keys nudge by 0.01" (0.1" with Shift). The text block can be dragged the same
 way (it updates *Text offset X/Y*). Drawings are embedded in the `.prj` file.
 
-Sample files live in `Samples\` (basic shapes, Bézier curves, Inkscape-style
-groups and `<use>`, stroke line art, a mm plate without viewBox, and a path
-syntax torture test).
+Sample files live in the `Samples` solution folder (basic shapes, Bézier
+curves, Inkscape-style groups and `<use>`, stroke line art, a mm plate without
+viewBox, and a path syntax torture test). They are copied next to the exe and
+into the installer, and the Import SVG dialog opens there the first time.
 
 ## Simulation
 

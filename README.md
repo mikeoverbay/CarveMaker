@@ -85,11 +85,16 @@ uncut material and under 0.001" over-cut.
 **Drawings (SVG)** tab, or **File > Import SVG Drawing...**: logos, clipart and
 shapes are carved with the same engine as the text. The importer handles
 `<path>` (every command, relative and absolute, arcs), `rect` / `circle` /
-`ellipse` / `line` / `polyline` / `polygon`, groups with nested transforms,
-`<use>`, `viewBox` and unit handling (mm, cm, in, pt, px), `fill-rule`
-(nonzero / evenodd) per element, and stroke-only line art, which becomes an
-outline as wide as the stroke. `<text>` is skipped with a warning: convert text
-to paths in your drawing program first. Overlapping shapes merge.
+`ellipse` / `line` / `polyline` / `polygon`, groups and nested `<svg>` with
+transforms, `<use>` of shapes, groups and `<symbol>`s, `<switch>`, `viewBox`,
+`preserveAspectRatio` and units (mm, cm, in, pt, px), presentation attributes,
+inline styles and simple `<style>` sheets (tag, `.class`, `#id` selectors),
+`display` / `visibility`, `fill-rule` (nonzero / evenodd) per element, and
+stroke-only line art, which becomes an outline as wide as the stroke with the
+file's caps and joins (butt / round / square, miter / round / bevel, miter
+limit). `<text>` is skipped with a warning: convert text to paths in your
+drawing program first. Clip paths, masks, gradients and opacity are ignored:
+every painted shape is carved. Overlapping shapes merge.
 
 Each imported drawing is an object with X/Y, width/height (aspect locked by
 default), rotation, mirror and visibility, editable in the tab or directly in

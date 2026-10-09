@@ -3,10 +3,17 @@
 '  Reads an SVG file into clean polygons (inches, Y up) ready for the carve
 '  engine. Supported: <path> (all commands, absolute and relative, arcs),
 '  <rect> (with rx/ry), <circle>, <ellipse>, <line>, <polyline>, <polygon>,
-'  <g> with nested transforms, <use> of those elements, viewBox / width /
-'  height units, fill-rule (nonzero / evenodd) per element, and stroke-only
-'  art (converted to outlines by offsetting the stroke width). Not supported:
-'  <text> (convert to paths in your drawing program), clip paths, gradients.
+'  <g> / nested <svg> / <switch> with nested transforms, <use> of elements,
+'  groups and <symbol>s, viewBox + width/height units + preserveAspectRatio,
+'  presentation attributes, inline style, simple <style> sheets (tag, .class,
+'  #id selectors), fill-rule (nonzero / evenodd) per element, and stroke-only
+'  art converted to outlines (stroke width, caps and joins honoured).
+'  Not supported: <text> (convert to paths in your drawing program), clip
+'  paths, masks, gradients/opacity (every painted shape is carved).
+'
+'  Pipeline per element: flatten in user units -> fill: transform the points,
+'  union with the element's fill rule; stroke: offset in user units, transform
+'  the outline -> all shapes unioned, Y flipped, moved to the origin.
 ' ============================================================================
 
 Imports System.Globalization
@@ -21,6 +28,7 @@ Public Class SvgShapeSet
     Public Property Width As Double
     Public Property Height As Double
     Public Property Warnings As New List(Of String)
+    ''' <summary>Number of elements that contributed geometry.</summary>
     Public Property ElementCount As Integer
 End Class
 
@@ -34,6 +42,14 @@ Public Structure Affine
         End Get
     End Property
 
+    Public Shared Function Translation(x As Double, y As Double) As Affine
+        Return New Affine With {.A = 1, .D = 1, .E = x, .F = y}
+    End Function
+
+    Public Shared Function Scaling(sx As Double, sy As Double) As Affine
+        Return New Affine With {.A = sx, .D = sy}
+    End Function
+
     ''' <summary>this * other (apply other first, then this), matching SVG nesting.</summary>
     Public Function Times(o As Affine) As Affine
         Return New Affine With {
@@ -46,10 +62,13 @@ Public Structure Affine
         Return New PointD(A * x + C * y + E, B * x + D * y + F)
     End Function
 
-    ''' <summary>Approximate uniform scale factor (sqrt of |determinant|), used for flattening tolerances.</summary>
-    Public ReadOnly Property Scale As Double
+    ''' <summary>Largest stretch factor of the linear part (for tolerances).</summary>
+    Public ReadOnly Property MaxScale As Double
         Get
-            Return Math.Sqrt(Math.Abs(A * D - B * C))
+            Dim s = A * A + B * B + C * C + D * D
+            Dim det = A * D - B * C
+            Dim disc = Math.Sqrt(Math.Max(0, s * s - 4 * det * det))
+            Return Math.Sqrt(Math.Max(0.000000000001, (s + disc) / 2))
         End Get
     End Property
 End Structure
@@ -58,6 +77,8 @@ Public Module SvgImport
 
     Private ReadOnly Ci As CultureInfo = CultureInfo.InvariantCulture
     Private ReadOnly NumberRx As New Regex("[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?", RegexOptions.Compiled)
+    ''' <summary>Coordinates beyond this (inches) are treated as corrupt (Clipper scales by 1e5 into Int64).</summary>
+    Private Const MaxCoordinateIn As Double = 1000000.0
 
     ''' <summary>Loads an SVG file. Throws on unreadable XML; geometry problems become warnings.</summary>
     Public Function Load(path As String, curveToleranceIn As Double) As SvgShapeSet
@@ -73,37 +94,40 @@ Public Module SvgImport
             Throw New FormatException("The file is not an SVG document (no <svg> root element).")
         End If
 
+        Dim ctx As New ParseContext With {
+            .Tolerance = Math.Max(0.0001, curveToleranceIn),
+            .Result = result,
+            .Defs = New Dictionary(Of String, XElement),
+            .UseStack = New HashSet(Of XElement),
+            .Sheet = New Stylesheet()}
+        For Each el In root.Descendants()
+            Dim id = Attr(el, "id")
+            If Not String.IsNullOrEmpty(id) AndAlso Not ctx.Defs.ContainsKey(id) Then ctx.Defs(id) = el
+            If el.Name.LocalName = "style" Then ctx.Sheet.AddCss(el.Value, result.Warnings)
+        Next
+
         ' ---- document units: user unit -> inches ----------------------------
         Dim vb As Double() = ParseViewBox(Attr(root, "viewBox"))
         Dim widthIn As Double = ParseLength(Attr(root, "width"), Double.NaN)
         Dim heightIn As Double = ParseLength(Attr(root, "height"), Double.NaN)
-        Dim unitsPerIn As Double     ' user units per inch
-        Dim originX As Double = 0, originY As Double = 0
+        Dim toInches As Affine
         If vb IsNot Nothing AndAlso vb(2) > 0 AndAlso vb(3) > 0 Then
-            originX = vb(0) : originY = vb(1)
-            If Not Double.IsNaN(widthIn) AndAlso widthIn > 0 Then
-                unitsPerIn = vb(2) / widthIn
-            ElseIf Not Double.IsNaN(heightIn) AndAlso heightIn > 0 Then
-                unitsPerIn = vb(3) / heightIn
-            Else
-                unitsPerIn = 96.0          ' CSS px
+            Dim vw As Double = widthIn, vh As Double = heightIn
+            If Double.IsNaN(vw) AndAlso Double.IsNaN(vh) Then
+                vw = vb(2) / 96.0 : vh = vb(3) / 96.0                 ' px
+            ElseIf Double.IsNaN(vw) Then
+                vw = vb(2) * vh / vb(3)
+            ElseIf Double.IsNaN(vh) Then
+                vh = vb(3) * vw / vb(2)
             End If
+            toInches = ViewportTransform(vb, vw, vh, Attr(root, "preserveAspectRatio"))
         Else
-            unitsPerIn = 96.0              ' no viewBox: user units are px
+            toInches = Affine.Scaling(1 / 96.0, 1 / 96.0)            ' no viewBox: user units are px
         End If
-        Dim toInches As Affine = New Affine With {.A = 1 / unitsPerIn, .D = 1 / unitsPerIn, .E = -originX / unitsPerIn, .F = -originY / unitsPerIn}
 
         ' ---- walk the tree ----------------------------------------------------
-        Dim ctx As New ParseContext With {
-            .Tolerance = Math.Max(0.0001, curveToleranceIn),
-            .Result = result,
-            .Defs = New Dictionary(Of String, XElement)}
-        For Each el In root.Descendants()
-            Dim id = Attr(el, "id")
-            If Not String.IsNullOrEmpty(id) AndAlso Not ctx.Defs.ContainsKey(id) Then ctx.Defs(id) = el
-        Next
         Dim shapes As New PathsD()
-        WalkElement(root, toInches, New StyleState(), ctx, shapes, 0)
+        WalkChildren(root, toInches, StyleState.Initial.With_(root, ctx), ctx, shapes, 0)   ' root presentation attributes inherit too
 
         If shapes.Count = 0 Then
             result.Warnings.Add("No fillable or stroked shapes were found in the SVG.")
@@ -120,13 +144,34 @@ Public Module SvgImport
             Next
             flipped.Add(q)
         Next
-        ' Flipping reverses orientation; re-normalize so outers are positive again.
         merged = Clipper.Union(flipped, Nothing, FillRule.NonZero, GlyphOutline.ClipperPrecision)
         Dim b = Clipper.GetBounds(merged)
         result.Paths = Clipper.TranslatePaths(merged, -b.left, -b.top)
         result.Width = b.right - b.left
         result.Height = b.bottom - b.top
         Return result
+    End Function
+
+    ''' <summary>viewBox -> viewport (vw x vh, in target units) with preserveAspectRatio.</summary>
+    Private Function ViewportTransform(vb As Double(), vw As Double, vh As Double, par As String) As Affine
+        Dim sx = vw / vb(2), sy = vh / vb(3)
+        Dim align As String = "xmidymid", mode As String = "meet"
+        If Not String.IsNullOrWhiteSpace(par) Then
+            Dim parts = par.Trim().ToLowerInvariant().Split(New Char() {" "c}, StringSplitOptions.RemoveEmptyEntries)
+            If parts.Length > 0 Then align = parts(0)
+            If parts.Length > 1 Then mode = parts(1)
+        End If
+        Dim tx As Double = 0, ty As Double = 0
+        If align <> "none" Then
+            Dim s = If(mode = "slice", Math.Max(sx, sy), Math.Min(sx, sy))
+            sx = s : sy = s
+            Dim fx As Double = 0.5, fy As Double = 0.5
+            If align.StartsWith("xmin") Then fx = 0 Else If align.StartsWith("xmax") Then fx = 1
+            If align.EndsWith("ymin") Then fy = 0 Else If align.EndsWith("ymax") Then fy = 1
+            tx = (vw - vb(2) * s) * fx
+            ty = (vh - vb(3) * s) * fy
+        End If
+        Return Affine.Translation(tx, ty).Times(Affine.Scaling(sx, sy)).Times(Affine.Translation(-vb(0), -vb(1)))
     End Function
 
     ' =====================================================================
@@ -137,122 +182,369 @@ Public Module SvgImport
         Public Tolerance As Double
         Public Result As SvgShapeSet
         Public Defs As Dictionary(Of String, XElement)
+        Public UseStack As HashSet(Of XElement)
+        Public Sheet As Stylesheet
+        Public TextWarned As Boolean
+    End Class
+
+    ''' <summary>Minimal CSS: rules keyed by simple selectors (tag, .class, #id, tag.class, *).</summary>
+    Private Class Stylesheet
+        Private ReadOnly _rules As New List(Of KeyValuePair(Of String, Dictionary(Of String, String)))
+        Private _warnedComplex As Boolean
+
+        Public ReadOnly Property IsEmpty As Boolean
+            Get
+                Return _rules.Count = 0
+            End Get
+        End Property
+
+        Public Sub AddCss(css As String, warnings As List(Of String))
+            If String.IsNullOrWhiteSpace(css) Then Return
+            css = Regex.Replace(css, "/\*.*?\*/", "", RegexOptions.Singleline)
+            css = Regex.Replace(css, "@[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}", "")   ' drop @media / @font-face blocks
+            For Each m As Match In Regex.Matches(css, "([^{}]+)\{([^{}]*)\}")
+                Dim decls As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+                For Each part In m.Groups(2).Value.Split(";"c)
+                    Dim idx = part.IndexOf(":"c)
+                    If idx > 0 Then decls(part.Substring(0, idx).Trim()) = part.Substring(idx + 1).Trim()
+                Next
+                If decls.Count = 0 Then Continue For
+                For Each sel In m.Groups(1).Value.Split(","c)
+                    Dim s = sel.Trim()
+                    If s.Length = 0 Then Continue For
+                    If s.IndexOfAny(New Char() {" "c, ">"c, "+"c, "~"c, ":"c, "["c}) >= 0 Then
+                        If Not _warnedComplex Then
+                            warnings.Add("Some CSS selectors in <style> are not supported (only tag, .class and #id); those rules are ignored.")
+                            _warnedComplex = True
+                        End If
+                        Continue For
+                    End If
+                    _rules.Add(New KeyValuePair(Of String, Dictionary(Of String, String))(s, decls))
+                Next
+            Next
+        End Sub
+
+        ''' <summary>Declarations that apply to an element, in cascade order (tag, class, id; later rules win).</summary>
+        Public Sub ApplyTo(el As XElement, into As Dictionary(Of String, String))
+            If _rules.Count = 0 Then Return
+            Dim tag = el.Name.LocalName
+            Dim id = Attr(el, "id")
+            Dim classes = If(Attr(el, "class"), "").Split(New Char() {" "c, ControlChars.Tab, ControlChars.Lf, ControlChars.Cr}, StringSplitOptions.RemoveEmptyEntries)
+            For pass = 0 To 2
+                For Each rule In _rules
+                    Dim sel = rule.Key
+                    Dim matches As Boolean = False
+                    Select Case pass
+                        Case 0 : matches = (sel = "*" OrElse sel = tag)
+                        Case 1
+                            If sel.Contains("."c) Then
+                                Dim dot = sel.IndexOf("."c)
+                                Dim selTag = sel.Substring(0, dot)
+                                Dim selCls = sel.Substring(dot + 1)
+                                matches = (selTag.Length = 0 OrElse selTag = tag OrElse selTag = "*") AndAlso classes.Contains(selCls)
+                            End If
+                        Case 2 : matches = sel.StartsWith("#") AndAlso id IsNot Nothing AndAlso sel.Substring(1) = id
+                    End Select
+                    If matches Then
+                        For Each kv In rule.Value
+                            into(kv.Key) = kv.Value
+                        Next
+                    End If
+                Next
+            Next
+        End Sub
     End Class
 
     ''' <summary>Inherited presentation state.</summary>
     Private Structure StyleState
-        Public Fill As String          ' Nothing = inherit default (black)
-        Public Stroke As String
+        Public Fill As String          ' Nothing = default (black)
+        Public Stroke As String        ' Nothing = none
         Public StrokeWidth As Double   ' user units; NaN = unset (1)
         Public FillRuleEvenOdd As Boolean
-        Public Hidden As Boolean
+        Public DisplayNone As Boolean  ' sticky: subtree not rendered
+        Public VisibilityHidden As Boolean   ' inherited but children may set visible again
+        Public LineCap As String       ' butt (default), round, square
+        Public LineJoin As String      ' miter (default), round, bevel
+        Public MiterLimit As Double    ' NaN = 4
 
-        Public Function With_(el As XElement) As StyleState
+        ''' <summary>State at the root: nothing set. Needed because a structure's doubles default to 0, not NaN.</summary>
+        Public Shared ReadOnly Property Initial As StyleState
+            Get
+                Return New StyleState With {.StrokeWidth = Double.NaN, .MiterLimit = Double.NaN}
+            End Get
+        End Property
+
+        Public Function With_(el As XElement, ctx As ParseContext) As StyleState
             Dim s = Me
-            Dim st = ParseStyle(el)
+            Dim st = ParseStyle(el, ctx.Sheet)
             Dim v As String = Nothing
-            If st.TryGetValue("fill", v) Then s.Fill = v
-            If st.TryGetValue("stroke", v) Then s.Stroke = v
-            If st.TryGetValue("stroke-width", v) Then
-                Dim w = ParseNumber(v)
+            If st.TryGetValue("fill", v) AndAlso Not IsInherit(v) Then s.Fill = v
+            If st.TryGetValue("stroke", v) AndAlso Not IsInherit(v) Then s.Stroke = v
+            If st.TryGetValue("stroke-width", v) AndAlso Not IsInherit(v) Then
+                Dim w = ParseLengthUser(v)
                 If Not Double.IsNaN(w) Then s.StrokeWidth = w
             End If
-            If st.TryGetValue("fill-rule", v) Then s.FillRuleEvenOdd = (v.Trim().ToLowerInvariant() = "evenodd")
-            If st.TryGetValue("display", v) AndAlso v.Trim().ToLowerInvariant() = "none" Then s.Hidden = True
-            If st.TryGetValue("visibility", v) AndAlso v.Trim().ToLowerInvariant() = "hidden" Then s.Hidden = True
+            If st.TryGetValue("fill-rule", v) Then
+                Dim r = v.Trim().ToLowerInvariant()
+                If r = "evenodd" Then s.FillRuleEvenOdd = True
+                If r = "nonzero" Then s.FillRuleEvenOdd = False
+            End If
+            If st.TryGetValue("stroke-linecap", v) AndAlso Not IsInherit(v) Then s.LineCap = v.Trim().ToLowerInvariant()
+            If st.TryGetValue("stroke-linejoin", v) AndAlso Not IsInherit(v) Then s.LineJoin = v.Trim().ToLowerInvariant()
+            If st.TryGetValue("stroke-miterlimit", v) AndAlso Not IsInherit(v) Then
+                Dim ml = ParseNumber(v)
+                If Not Double.IsNaN(ml) AndAlso ml >= 1 Then s.MiterLimit = ml
+            End If
+            If st.TryGetValue("display", v) AndAlso v.Trim().ToLowerInvariant() = "none" Then s.DisplayNone = True
+            If st.TryGetValue("visibility", v) Then
+                Dim vis = v.Trim().ToLowerInvariant()
+                If vis = "hidden" OrElse vis = "collapse" Then s.VisibilityHidden = True
+                If vis = "visible" Then s.VisibilityHidden = False
+            End If
             Return s
         End Function
+
+        Private Shared Function IsInherit(v As String) As Boolean
+            Return v IsNot Nothing AndAlso v.Trim().Equals("inherit", StringComparison.OrdinalIgnoreCase)
+        End Function
     End Structure
+
+    Private Sub WalkChildren(parent As XElement, m As Affine, style As StyleState, ctx As ParseContext, shapes As PathsD, depth As Integer)
+        For Each child In parent.Elements()
+            WalkElement(child, m, style, ctx, shapes, depth + 1)
+        Next
+    End Sub
 
     Private Sub WalkElement(el As XElement, m As Affine, inherited As StyleState, ctx As ParseContext, shapes As PathsD, depth As Integer)
         If depth > 64 Then Return
         Dim name = el.Name.LocalName
-        Dim style = inherited.With_(el)
-        If style.Hidden Then Return
+        Dim style = inherited.With_(el, ctx)
+        If style.DisplayNone Then Return
         Dim local = m.Times(ParseTransform(Attr(el, "transform")))
 
         Select Case name
-            Case "svg", "g", "a", "switch"
+            Case "g", "a"
+                WalkChildren(el, local, style, ctx, shapes, depth)
+            Case "svg"
+                ' Nested viewport: x/y offset plus viewBox scaling when width/height are given.
+                Dim inner = local.Times(Affine.Translation(Num(el, "x", 0), Num(el, "y", 0)))
+                Dim vb = ParseViewBox(Attr(el, "viewBox"))
+                Dim w = Num(el, "width", Double.NaN), h = Num(el, "height", Double.NaN)
+                If vb IsNot Nothing AndAlso vb(2) > 0 AndAlso vb(3) > 0 AndAlso Not Double.IsNaN(w) AndAlso Not Double.IsNaN(h) AndAlso w > 0 AndAlso h > 0 Then
+                    inner = inner.Times(ViewportTransform(vb, w, h, Attr(el, "preserveAspectRatio")))
+                End If
+                WalkChildren(el, inner, style, ctx, shapes, depth)
+            Case "switch"
                 For Each child In el.Elements()
-                    WalkElement(child, local, style, ctx, shapes, depth + 1)
+                    If SwitchChildApplies(child) Then
+                        WalkElement(child, local, style, ctx, shapes, depth + 1)
+                        Exit For
+                    End If
                 Next
             Case "defs", "symbol", "clipPath", "mask", "marker", "pattern", "metadata", "title", "desc", "style", "linearGradient", "radialGradient", "filter"
                 ' Not rendered directly.
             Case "use"
-                Dim href = Attr(el, "href")
-                If String.IsNullOrEmpty(href) Then href = el.Attributes().Where(Function(a) a.Name.LocalName = "href").Select(Function(a) a.Value).FirstOrDefault()
-                If Not String.IsNullOrEmpty(href) AndAlso href.StartsWith("#") Then
-                    Dim target As XElement = Nothing
-                    If ctx.Defs.TryGetValue(href.Substring(1), target) Then
-                        Dim ux = ParseNumber(Attr(el, "x")), uy = ParseNumber(Attr(el, "y"))
-                        Dim shift As New Affine With {.A = 1, .D = 1, .E = If(Double.IsNaN(ux), 0, ux), .F = If(Double.IsNaN(uy), 0, uy)}
-                        WalkElement(target, local.Times(shift), style, ctx, shapes, depth + 1)
-                    End If
+                WalkUse(el, local, style, ctx, shapes, depth)
+            Case "text"
+                If Not ctx.TextWarned Then
+                    ctx.Result.Warnings.Add("Text elements are not imported; convert text to paths (outlines) in your drawing program.")
+                    ctx.TextWarned = True
                 End If
-            Case "text", "tspan"
-                If depth >= 0 AndAlso name = "text" Then ctx.Result.Warnings.Add("Text elements are not imported; convert text to paths (outlines) in your drawing program.")
             Case "image"
                 ctx.Result.Warnings.Add("Embedded images are ignored.")
             Case "path", "rect", "circle", "ellipse", "line", "polyline", "polygon"
-                Dim subpaths As List(Of SubPath) = ElementGeometry(el, name, local, ctx)
+                If style.VisibilityHidden Then Return
+                Dim tolUser As Double = ctx.Tolerance / local.MaxScale
+                Dim subpaths As List(Of SubPath) = ElementGeometry(el, name, tolUser, ctx)
                 If subpaths Is Nothing OrElse subpaths.Count = 0 Then Return
-                ctx.Result.ElementCount += 1
-                AddShape(subpaths, style, local, shapes)
+                If AddShape(subpaths, style, local, tolUser, ctx, shapes) Then ctx.Result.ElementCount += 1
         End Select
     End Sub
 
-    ''' <summary>A flattened subpath in inches (document orientation, Y down).</summary>
+    ''' <summary>First child of a &lt;switch&gt; whose conditional attributes pass.</summary>
+    Private Function SwitchChildApplies(child As XElement) As Boolean
+        Dim ext = Attr(child, "requiredExtensions")
+        If ext IsNot Nothing AndAlso ext.Trim().Length > 0 Then Return False
+        Dim feat = Attr(child, "requiredFeatures")
+        If feat IsNot Nothing AndAlso feat.Trim().Length = 0 Then Return False
+        Dim lang = Attr(child, "systemLanguage")
+        If lang IsNot Nothing Then
+            Dim want As New List(Of String) From {"en"}
+            Try
+                want.Add(CultureInfo.CurrentUICulture.TwoLetterISOLanguageName.ToLowerInvariant())
+            Catch
+            End Try
+            Dim ok = False
+            For Each l In lang.Split(","c)
+                Dim code = l.Trim().ToLowerInvariant()
+                If code.Length = 0 Then Continue For
+                Dim prefix = code.Split("-"c)(0)
+                If want.Contains(prefix) Then ok = True
+            Next
+            If Not ok Then Return False
+        End If
+        Return True
+    End Function
+
+    Private Sub WalkUse(el As XElement, local As Affine, style As StyleState, ctx As ParseContext, shapes As PathsD, depth As Integer)
+        Dim href = Attr(el, "href")
+        If String.IsNullOrEmpty(href) Then href = el.Attributes().Where(Function(a) a.Name.LocalName = "href").Select(Function(a) a.Value).FirstOrDefault()
+        If String.IsNullOrEmpty(href) OrElse Not href.StartsWith("#") Then
+            ctx.Result.Warnings.Add("A <use> element without a local #id reference was ignored.")
+            Return
+        End If
+        Dim target As XElement = Nothing
+        If Not ctx.Defs.TryGetValue(href.Substring(1), target) Then
+            ctx.Result.Warnings.Add("<use " & href & "> points at an element that does not exist; ignored.")
+            Return
+        End If
+        ' Cycle guard: the target may not be an ancestor of the use, nor already instantiating.
+        If ctx.UseStack.Contains(target) OrElse el.Ancestors().Contains(target) OrElse target Is el Then
+            ctx.Result.Warnings.Add("<use " & href & "> references itself (directly or through an ancestor); ignored.")
+            Return
+        End If
+        Dim ux = Num(el, "x", 0), uy = Num(el, "y", 0)
+        Dim placed = local.Times(Affine.Translation(ux, uy))
+        ctx.UseStack.Add(target)
+        Try
+            Dim tname = target.Name.LocalName
+            If tname = "symbol" OrElse tname = "svg" Then
+                Dim inner = placed
+                Dim vb = ParseViewBox(Attr(target, "viewBox"))
+                Dim w = Num(el, "width", Double.NaN), h = Num(el, "height", Double.NaN)
+                If Double.IsNaN(w) Then w = Num(target, "width", Double.NaN)
+                If Double.IsNaN(h) Then h = Num(target, "height", Double.NaN)
+                If vb IsNot Nothing AndAlso vb(2) > 0 AndAlso vb(3) > 0 AndAlso Not Double.IsNaN(w) AndAlso Not Double.IsNaN(h) AndAlso w > 0 AndAlso h > 0 Then
+                    inner = inner.Times(ViewportTransform(vb, w, h, Attr(target, "preserveAspectRatio")))
+                End If
+                Dim symStyle = style.With_(target, ctx)
+                inner = inner.Times(ParseTransform(Attr(target, "transform")))
+                WalkChildren(target, inner, symStyle, ctx, shapes, depth + 1)
+            Else
+                WalkElement(target, placed, style, ctx, shapes, depth + 1)
+            End If
+        Finally
+            ctx.UseStack.Remove(target)
+        End Try
+    End Sub
+
+    ''' <summary>A flattened subpath in user units (document orientation, Y down).</summary>
     Private Class SubPath
         Public Points As New PathD()
         Public Closed As Boolean
     End Class
 
-    ''' <summary>Turns fill and/or stroke of an element into normalized polygons.</summary>
-    Private Sub AddShape(subpaths As List(Of SubPath), style As StyleState, m As Affine, shapes As PathsD)
+    ''' <summary>Turns fill and/or stroke of an element into normalized polygons (inches). Returns True when geometry was added.</summary>
+    Private Function AddShape(subpaths As List(Of SubPath), style As StyleState, m As Affine, tolUser As Double, ctx As ParseContext, shapes As PathsD) As Boolean
         Dim fill = If(style.Fill, "black").Trim().ToLowerInvariant()
         Dim stroke = If(style.Stroke, "none").Trim().ToLowerInvariant()
         Dim hasFill = fill <> "none" AndAlso fill <> "transparent"
         Dim hasStroke = stroke <> "none" AndAlso stroke <> "transparent"
+        Dim added As Boolean = False
 
         If hasFill Then
             Dim raw As New PathsD()
             For Each sp In subpaths
-                If sp.Points.Count >= 3 Then raw.Add(sp.Points)       ' fill closes open subpaths implicitly
+                If sp.Points.Count >= 3 Then raw.Add(Transform(sp.Points, m))     ' fill closes open subpaths implicitly
             Next
             If raw.Count > 0 Then
+                If Not CoordinatesSane(raw, ctx) Then Return False
                 Dim rule = If(style.FillRuleEvenOdd, FillRule.EvenOdd, FillRule.NonZero)
                 Dim norm = Clipper.Union(raw, Nothing, rule, GlyphOutline.ClipperPrecision)
-                shapes.AddRange(norm)
+                If norm.Count > 0 Then
+                    shapes.AddRange(norm)
+                    added = True
+                End If
             End If
         End If
 
         If hasStroke Then
-            Dim w = If(Double.IsNaN(style.StrokeWidth), 1.0, style.StrokeWidth) * m.Scale   ' user units -> inches
+            Dim w = If(Double.IsNaN(style.StrokeWidth), 1.0, style.StrokeWidth)     ' user units
             If w > 0 Then
+                Dim cap = If(style.LineCap, "butt")
+                Dim endType As EndType = If(cap = "round", EndType.Round, If(cap = "square", EndType.Square, EndType.Butt))
+                Dim joinName = If(style.LineJoin, "miter")
+                Dim joinType As JoinType = If(joinName = "round", JoinType.Round, If(joinName = "bevel", JoinType.Bevel, JoinType.Miter))
+                Dim miter As Double = If(Double.IsNaN(style.MiterLimit), 4.0, style.MiterLimit)
                 Dim closedPaths As New PathsD(), openPaths As New PathsD()
                 For Each sp In subpaths
-                    If sp.Points.Count < 2 Then Continue For
-                    If sp.Closed AndAlso sp.Points.Count >= 3 Then closedPaths.Add(sp.Points) Else openPaths.Add(sp.Points)
+                    If sp.Points.Count < 1 Then Continue For
+                    If Extent(sp.Points) < 0.000000001 Then
+                        ' Zero-length: only round/square caps draw a dot (SVG spec).
+                        If cap = "butt" Then Continue For
+                        openPaths.Add(New PathD() From {sp.Points(0)})
+                    ElseIf sp.Closed AndAlso sp.Points.Count >= 3 Then
+                        closedPaths.Add(sp.Points)
+                    Else
+                        openPaths.Add(sp.Points)
+                    End If
                 Next
+                ' Offset in user units (so non-uniform transforms stretch the stroke correctly), then transform.
+                Dim arcTol As Double = Math.Max(tolUser, 0.00001)
+                Dim outlines As New PathsD()
                 If closedPaths.Count > 0 Then
-                    shapes.AddRange(Clipper.InflatePaths(closedPaths, w / 2, JoinType.Round, EndType.Joined, 2.0, GlyphOutline.ClipperPrecision, 0.0005))
+                    outlines.AddRange(Clipper.InflatePaths(closedPaths, w / 2, joinType, EndType.Joined, miter, GlyphOutline.ClipperPrecision, arcTol))
                 End If
                 If openPaths.Count > 0 Then
-                    shapes.AddRange(Clipper.InflatePaths(openPaths, w / 2, JoinType.Round, EndType.Round, 2.0, GlyphOutline.ClipperPrecision, 0.0005))
+                    outlines.AddRange(Clipper.InflatePaths(openPaths, w / 2, joinType, endType, miter, GlyphOutline.ClipperPrecision, arcTol))
+                End If
+                If outlines.Count > 0 Then
+                    Dim placed As New PathsD(outlines.Count)
+                    For Each p In outlines
+                        placed.Add(Transform(p, m))
+                    Next
+                    If Not CoordinatesSane(placed, ctx) Then Return added
+                    Dim norm = Clipper.Union(placed, Nothing, FillRule.NonZero, GlyphOutline.ClipperPrecision)
+                    If norm.Count > 0 Then
+                        shapes.AddRange(norm)
+                        added = True
+                    End If
                 End If
             End If
         End If
-    End Sub
+        Return added
+    End Function
+
+    Private Function Transform(p As PathD, m As Affine) As PathD
+        Dim q As New PathD(p.Count)
+        For Each pt In p
+            q.Add(m.Apply(pt.x, pt.y))
+        Next
+        Return q
+    End Function
+
+    Private Function Extent(p As PathD) As Double
+        If p.Count = 0 Then Return 0
+        Dim minX = Double.MaxValue, minY = Double.MaxValue, maxX = Double.MinValue, maxY = Double.MinValue
+        For Each pt In p
+            minX = Math.Min(minX, pt.x) : maxX = Math.Max(maxX, pt.x)
+            minY = Math.Min(minY, pt.y) : maxY = Math.Max(maxY, pt.y)
+        Next
+        Return Math.Max(maxX - minX, maxY - minY)
+    End Function
+
+    ''' <summary>Rejects geometry with non-finite or absurd coordinates (would overflow Clipper's integer scaling).</summary>
+    Private Function CoordinatesSane(paths As PathsD, ctx As ParseContext) As Boolean
+        For Each p In paths
+            For Each pt In p
+                If Double.IsNaN(pt.x) OrElse Double.IsNaN(pt.y) OrElse Double.IsInfinity(pt.x) OrElse Double.IsInfinity(pt.y) OrElse
+                   Math.Abs(pt.x) > MaxCoordinateIn OrElse Math.Abs(pt.y) > MaxCoordinateIn Then
+                    ctx.Result.Warnings.Add("An element with coordinates beyond " & MaxCoordinateIn.ToString("0", Ci) & " inches (or non-numeric) was ignored.")
+                    Return False
+                End If
+            Next
+        Next
+        Return True
+    End Function
 
     ' =====================================================================
-    '  element geometry (returns flattened subpaths in inches)
+    '  element geometry (flattened subpaths in USER units)
     ' =====================================================================
 
-    Private Function ElementGeometry(el As XElement, name As String, m As Affine, ctx As ParseContext) As List(Of SubPath)
-        Dim tolUser As Double = ctx.Tolerance / Math.Max(m.Scale, 0.000000001)   ' tolerance in user units
+    Private Function ElementGeometry(el As XElement, name As String, tolUser As Double, ctx As ParseContext) As List(Of SubPath)
         Select Case name
             Case "path"
-                Return ParsePathData(Attr(el, "d"), m, tolUser, ctx)
+                Return ParsePathData(Attr(el, "d"), tolUser, ctx)
             Case "rect"
                 Dim x = Num(el, "x", 0), y = Num(el, "y", 0), w = Num(el, "width", 0), h = Num(el, "height", 0)
                 Dim rx = Num(el, "rx", Double.NaN), ry = Num(el, "ry", Double.NaN)
@@ -268,38 +560,37 @@ Public Module SvgImport
                 Else
                     d = String.Format(Ci, "M{0},{1} H{2} V{3} H{0} Z", x, y, x + w, y + h)
                 End If
-                Return ParsePathData(d, m, tolUser, ctx)
+                Return ParsePathData(d, tolUser, ctx)
             Case "circle"
                 Dim cx = Num(el, "cx", 0), cy = Num(el, "cy", 0), r = Num(el, "r", 0)
                 If r <= 0 Then Return Nothing
-                Return EllipseSubpath(cx, cy, r, r, m, tolUser)
+                Return EllipseSubpath(cx, cy, r, r, tolUser)
             Case "ellipse"
                 Dim cx = Num(el, "cx", 0), cy = Num(el, "cy", 0), rx = Num(el, "rx", 0), ry = Num(el, "ry", 0)
                 If rx <= 0 OrElse ry <= 0 Then Return Nothing
-                Return EllipseSubpath(cx, cy, rx, ry, m, tolUser)
+                Return EllipseSubpath(cx, cy, rx, ry, tolUser)
             Case "line"
                 Dim sp As New SubPath()
-                sp.Points.Add(m.Apply(Num(el, "x1", 0), Num(el, "y1", 0)))
-                sp.Points.Add(m.Apply(Num(el, "x2", 0), Num(el, "y2", 0)))
+                sp.Points.Add(New PointD(Num(el, "x1", 0), Num(el, "y1", 0)))
+                sp.Points.Add(New PointD(Num(el, "x2", 0), Num(el, "y2", 0)))
                 Return New List(Of SubPath) From {sp}
             Case "polyline", "polygon"
                 Dim nums = Numbers(Attr(el, "points"))
                 Dim sp As New SubPath With {.Closed = (name = "polygon")}
                 For i = 0 To nums.Count - 2 Step 2
-                    sp.Points.Add(m.Apply(nums(i), nums(i + 1)))
+                    sp.Points.Add(New PointD(nums(i), nums(i + 1)))
                 Next
                 Return If(sp.Points.Count >= 2, New List(Of SubPath) From {sp}, Nothing)
         End Select
         Return Nothing
     End Function
 
-    Private Function EllipseSubpath(cx As Double, cy As Double, rx As Double, ry As Double, m As Affine, tolUser As Double) As List(Of SubPath)
-        Dim r = Math.Max(rx, ry)
-        Dim n As Integer = SegmentsForArc(r, 2 * Math.PI, tolUser)
+    Private Function EllipseSubpath(cx As Double, cy As Double, rx As Double, ry As Double, tolUser As Double) As List(Of SubPath)
+        Dim n As Integer = SegmentsForArc(Math.Max(rx, ry), 2 * Math.PI, tolUser)
         Dim sp As New SubPath With {.Closed = True}
         For i = 0 To n - 1
             Dim a = 2 * Math.PI * i / n
-            sp.Points.Add(m.Apply(cx + rx * Math.Cos(a), cy + ry * Math.Sin(a)))
+            sp.Points.Add(New PointD(cx + rx * Math.Cos(a), cy + ry * Math.Sin(a)))
         Next
         Return New List(Of SubPath) From {sp}
     End Function
@@ -316,11 +607,11 @@ Public Module SvgImport
     '  path data
     ' =====================================================================
 
-    Private Function ParsePathData(d As String, m As Affine, tolUser As Double, ctx As ParseContext) As List(Of SubPath)
+    Private Function ParsePathData(d As String, tolUser As Double, ctx As ParseContext) As List(Of SubPath)
         Dim result As New List(Of SubPath)
         If String.IsNullOrWhiteSpace(d) Then Return result
 
-        Dim tokens = TokenizePath(d)
+        Dim tokens = TokenizePath(d, ctx)
         Dim i As Integer = 0
         Dim cmd As Char = ControlChars.NullChar
         Dim cur As New PointD(0, 0)         ' current point (user units)
@@ -333,9 +624,9 @@ Public Module SvgImport
                              If sp Is Nothing Then
                                  sp = New SubPath()
                                  result.Add(sp)
-                                 sp.Points.Add(m.Apply(start.x, start.y))
+                                 sp.Points.Add(start)
                              End If
-                             sp.Points.Add(m.Apply(p.x, p.y))
+                             sp.Points.Add(p)
                          End Sub
 
         While i < tokens.Count
@@ -353,8 +644,10 @@ Public Module SvgImport
             ElseIf cmd = ControlChars.NullChar Then
                 ctx.Result.Warnings.Add("Path data does not start with a command; skipped.")
                 Return result
+            ElseIf cmd = "Z"c OrElse cmd = "z"c Then
+                ctx.Result.Warnings.Add("Numbers after Z are not allowed in path data; rest of the path skipped.")
+                Return result
             End If
-            ' Implicit repetition: after M comes L, after m comes l.
             Dim rel As Boolean = Char.IsLower(cmd)
             Dim c As Char = Char.ToUpperInvariant(cmd)
             Dim need As Integer
@@ -419,7 +712,6 @@ Public Module SvgImport
                         c1 = If(prevQuad, New PointD(2 * cur.x - lastCtrl.x, 2 * cur.y - lastCtrl.y), cur)
                         p = If(rel, New PointD(cur.x + v(0), cur.y + v(1)), New PointD(v(0), v(1)))
                     End If
-                    ' Quadratic -> cubic.
                     Dim cc1 As New PointD(cur.x + 2.0 / 3.0 * (c1.x - cur.x), cur.y + 2.0 / 3.0 * (c1.y - cur.y))
                     Dim cc2 As New PointD(p.x + 2.0 / 3.0 * (c1.x - p.x), p.y + 2.0 / 3.0 * (c1.y - p.y))
                     For Each q In FlattenCubic(cur, cc1, cc2, p, tolUser)
@@ -435,7 +727,6 @@ Public Module SvgImport
             End Select
             lastCmd = c
             If Not (c = "C"c OrElse c = "S"c OrElse c = "Q"c OrElse c = "T"c) Then lastCtrl = cur
-            ' Keep the relative/absolute flavour for implicit repeats.
             If c <> "M"c Then cmd = If(rel, Char.ToLowerInvariant(c), c)
         End While
         Return result
@@ -448,7 +739,7 @@ Public Module SvgImport
     End Structure
 
     ''' <summary>Splits path data into commands and numbers; arc flags may be glued together ("00-2").</summary>
-    Private Function TokenizePath(d As String) As List(Of PathToken)
+    Private Function TokenizePath(d As String, ctx As ParseContext) As List(Of PathToken)
         Dim tokens As New List(Of PathToken)
         Dim i As Integer = 0
         Dim pendingArcNumbers As Integer = 0      ' numbers remaining in the current arc group (7 per arc)
@@ -461,7 +752,6 @@ Public Module SvgImport
             ElseIf Char.IsWhiteSpace(ch) OrElse ch = ","c Then
                 i += 1
             Else
-                ' Arc flags are single digits that may not be separated from the next number.
                 If pendingArcNumbers = 4 OrElse pendingArcNumbers = 3 Then
                     If ch = "0"c OrElse ch = "1"c Then
                         tokens.Add(New PathToken With {.Value = If(ch = "1"c, 1, 0)})
@@ -472,18 +762,30 @@ Public Module SvgImport
                 End If
                 Dim mt = NumberRx.Match(d, i)
                 If Not mt.Success OrElse mt.Index <> i Then
-                    i += 1       ' skip junk
+                    i += 1
                     Continue While
                 End If
-                tokens.Add(New PathToken With {.Value = Double.Parse(mt.Value, NumberStyles.Float, Ci)})
+                Dim value As Double = Double.Parse(mt.Value, NumberStyles.Float, Ci)
+                If Double.IsInfinity(value) OrElse Double.IsNaN(value) Then
+                    ctx.Result.Warnings.Add("Path data contains a number that is out of range; rest of the path skipped.")
+                    Return tokens.Take(Math.Max(0, LastCommandIndex(tokens))).ToList()
+                End If
+                tokens.Add(New PathToken With {.Value = value})
                 i += mt.Length
                 If pendingArcNumbers > 0 Then
                     pendingArcNumbers -= 1
-                    If pendingArcNumbers = 0 Then pendingArcNumbers = 7   ' implicit repeated arcs
+                    If pendingArcNumbers = 0 Then pendingArcNumbers = 7
                 End If
             End If
         End While
         Return tokens
+    End Function
+
+    Private Function LastCommandIndex(tokens As List(Of PathToken)) As Integer
+        For i = tokens.Count - 1 To 0 Step -1
+            If tokens(i).IsCommand Then Return i
+        Next
+        Return 0
     End Function
 
     ''' <summary>Adaptive De Casteljau flattening; returns the points after the start.</summary>
@@ -495,7 +797,6 @@ Public Module SvgImport
     End Function
 
     Private Sub FlattenCubicRec(p0 As PointD, p1 As PointD, p2 As PointD, p3 As PointD, tol As Double, pts As List(Of PointD), depth As Integer)
-        ' Flat enough when both control points are within tol of the chord.
         Dim d1 = DistToSegment(p1, p0, p3), d2 = DistToSegment(p2, p0, p3)
         If (d1 <= tol AndAlso d2 <= tol) OrElse depth >= 16 Then Return
         Dim p01 = Mid(p0, p1), p12 = Mid(p1, p2), p23 = Mid(p2, p3)
@@ -624,13 +925,14 @@ Public Module SvgImport
         Return list
     End Function
 
-    ''' <summary>Presentation attributes plus the style="" attribute (style wins).</summary>
-    Private Function ParseStyle(el As XElement) As Dictionary(Of String, String)
+    ''' <summary>Presentation attributes, then stylesheet rules, then the style="" attribute (last wins).</summary>
+    Private Function ParseStyle(el As XElement, sheet As Stylesheet) As Dictionary(Of String, String)
         Dim d As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
-        For Each key In New String() {"fill", "stroke", "stroke-width", "fill-rule", "display", "visibility"}
+        For Each key In New String() {"fill", "stroke", "stroke-width", "fill-rule", "display", "visibility", "stroke-linecap", "stroke-linejoin", "stroke-miterlimit"}
             Dim v = Attr(el, key)
             If v IsNot Nothing Then d(key) = v
         Next
+        sheet.ApplyTo(el, d)
         Dim style = Attr(el, "style")
         If Not String.IsNullOrWhiteSpace(style) Then
             For Each part In style.Split(";"c)
@@ -654,17 +956,15 @@ Public Module SvgImport
                 Case "matrix"
                     If a.Count >= 6 Then t = New Affine With {.A = a(0), .B = a(1), .C = a(2), .D = a(3), .E = a(4), .F = a(5)}
                 Case "translate"
-                    t = New Affine With {.A = 1, .D = 1, .E = If(a.Count > 0, a(0), 0), .F = If(a.Count > 1, a(1), 0)}
+                    t = Affine.Translation(If(a.Count > 0, a(0), 0), If(a.Count > 1, a(1), 0))
                 Case "scale"
                     Dim sx = If(a.Count > 0, a(0), 1)
-                    t = New Affine With {.A = sx, .D = If(a.Count > 1, a(1), sx)}
+                    t = Affine.Scaling(sx, If(a.Count > 1, a(1), sx))
                 Case "rotate"
                     Dim ang = If(a.Count > 0, a(0), 0) * Math.PI / 180
                     Dim r = New Affine With {.A = Math.Cos(ang), .B = Math.Sin(ang), .C = -Math.Sin(ang), .D = Math.Cos(ang)}
                     If a.Count >= 3 Then
-                        Dim toC = New Affine With {.A = 1, .D = 1, .E = a(1), .F = a(2)}
-                        Dim back = New Affine With {.A = 1, .D = 1, .E = -a(1), .F = -a(2)}
-                        t = toC.Times(r).Times(back)
+                        t = Affine.Translation(a(1), a(2)).Times(r).Times(Affine.Translation(-a(1), -a(2)))
                     Else
                         t = r
                     End If

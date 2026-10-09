@@ -744,6 +744,8 @@ Public Class frmMain
                     End If
                     _toolpath = t.Result
                     _lastLinesKey = contentKey
+                    ' The precision may have changed while the worker ran; it does not affect the toolpath.
+                    snapshot.SimResolution = _settings.SimResolution
                     _lastSettings = snapshot
                     _glView.SetToolpath(_toolpath, snapshot)
                     UpdateStats(_toolpath)
@@ -842,6 +844,14 @@ Public Class frmMain
                         o.InvalidateShape()
                     Next
                     _glView.CurveTolerance = _settings.CurveTolerance
+                Case NameOf(CarveSettings.SimResolution)
+                    ' Simulation-only: rebuild the heightmap now, the toolpath is unchanged.
+                    ' Simulate the toolpath with the settings it was generated from, so pending tool or
+                    ' stock edits (Auto regenerate off) do not leak into the carved surface.
+                    If _lastSettings IsNot Nothing Then _lastSettings.SimResolution = _settings.SimResolution
+                    _glView.UpdateSimulationSettings(If(_lastSettings, _settings).Clone())
+                    pgSettings.Refresh()
+                    Return
             End Select
         End If
         pgSettings.Refresh() ' MaxToolDepthIn and other derived values
@@ -1057,7 +1067,8 @@ Public Class frmMain
             tbSim.Value = If(total > 0, CInt(Math.Round(Math.Max(0, Math.Min(1, cur / total)) * tbSim.Maximum)), 0)
             tsbSimPlay.Text = If(_glView.SimulationPlaying, "Pause", "Play")
             Dim info = _glView.SimulationInfo
-            If mnuViewSim.Checked AndAlso info.Length > 0 AndAlso lblStatus.Text = "Ready" Then lblStatus.Text = "Ready - simulation " & info
+            tslSimInfo.Text = info
+            tslSimInfo.ToolTipText = If(info.Length > 0, "Heightmap " & info & ". Set under 5. Simulation > Precision.", "")
         Finally
             _simUiUpdating = False
         End Try

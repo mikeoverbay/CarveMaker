@@ -435,8 +435,16 @@ Public Class ToolpathView
         Get
             If _sim.SetupError IsNot Nothing Then Return "Simulation unavailable: " & _sim.SetupError
             If Not _sim.IsReady Then Return ""
-            Return String.Format(Globalization.CultureInfo.InvariantCulture, "{0} x {1} cells at {2:0.0000}"" ({3:0} MB)",
-                                 _sim.TextureWidth, _sim.TextureHeight, _sim.CellSize, _sim.TextureWidth * CDbl(_sim.TextureHeight) * 4 / 1048576.0)
+            Dim ci = Globalization.CultureInfo.InvariantCulture
+            Dim info = String.Format(ci, "{0} x {1} cells at {2:0.0000}"" ({3:0.#} MB)",
+                                     _sim.TextureWidth, _sim.TextureHeight, _sim.CellSize, _sim.TextureWidth * CDbl(_sim.TextureHeight) * 4 / 1048576.0)
+            If _sim.CellSize > _sim.RequestedCellSize * 1.001 Then
+                info &= String.Format(ci, ", coarsened from {0:0.000}"" to fit the GPU", _sim.RequestedCellSize)
+            End If
+            If _sim.DisplayCellsX < _sim.TextureWidth OrElse _sim.DisplayCellsY < _sim.TextureHeight Then
+                info &= String.Format(ci, ", drawn at {0} x {1}", _sim.DisplayCellsX, _sim.DisplayCellsY)
+            End If
+            Return info
         End Get
     End Property
 
@@ -498,6 +506,17 @@ Public Class ToolpathView
         RaiseEvent SimulationProgress(Me, EventArgs.Empty)
     End Sub
 
+    ''' <summary>
+    ''' Applies simulation-only settings (precision) to the current toolpath without
+    ''' regenerating it; the heightmap is rebuilt on the next paint and the clock is kept.
+    ''' </summary>
+    Public Sub UpdateSimulationSettings(settings As CarveSettings)
+        If settings Is Nothing Then Return
+        _simSettings = settings
+        _simNeedsSetup = True
+        Invalidate()
+    End Sub
+
     ''' <summary>Runs the pending stamps for the current clock. Context must be current.</summary>
     Private Sub UpdateSimulation()
         If _simNeedsSetup Then
@@ -507,6 +526,8 @@ Public Class ToolpathView
             Else
                 _sim.Setup(_toolpath, _simSettings, CarveSettings.HardwareMaxTextureSize)
             End If
+            ' The heightmap size is known only now: tell the form after this paint finishes.
+            If IsHandleCreated Then BeginInvoke(Sub() RaiseEvent SimulationProgress(Me, EventArgs.Empty))
         End If
         If Not _sim.IsReady Then Return
         _sim.AdvanceTo(Math.Min(_simTime, _sim.TotalSeconds))

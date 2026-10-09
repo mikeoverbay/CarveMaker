@@ -115,7 +115,12 @@ board. The blank becomes a float heightmap texture on the GPU (one cell =
 coarsened if the blank needs more cells than the graphics card allows (shown
 as *Max texture size (hardware)*). Material is removed by rendering the revolved
 tool model from above into that texture with MAX blending every half cell along
-each move, so the sweep is exact to the cell size and runs in milliseconds.
+each move, so the sweep is exact to the cell size and runs in milliseconds. The
+carved surface is drawn with one vertex per cell (up to four million), so the
+chosen precision is what you see when you zoom into a letter; changing it
+rebuilds the heightmap immediately without regenerating the toolpath, and the
+simulation bar shows the resulting cell count, cell size and GPU memory (with a
+note when the hardware forced a coarser cell or a lighter display mesh).
 
 The bar under the view has **Play / Pause**, **Reset**, a **Speed** list (1x to
 100x or Instant) and a scrub slider; the clock uses the same feed, plunge and

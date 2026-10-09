@@ -33,6 +33,11 @@ Public Class CarveSimulation
     Private _toolVao, _toolVbo, _instVbo As Integer
     Private _surfVao, _surfVbo, _surfEbo As Integer
     Private _surfIndexCount As Integer
+    Private _surfGx, _surfGy As Integer            ' display mesh cells
+    Private _requestedCell As Double              ' cell size asked for before coarsening
+    ''' <summary>Vertex budget of the drawn surface; one vertex per texel up to this.</summary>
+    Private Const MaxDisplayCells As Double = 4000000.0
+    Private Const RestartIndex As Integer = -1     ' &HFFFFFFFF: separates triangle strips
     Private _wallVao, _wallVbo As Integer
     Private _wallVertexCount As Integer
     Private _ready As Boolean
@@ -85,6 +90,26 @@ Public Class CarveSimulation
         End Get
     End Property
 
+    ''' <summary>Cell size the settings asked for (CellSize is larger when the GPU limits forced coarsening).</summary>
+    Public ReadOnly Property RequestedCellSize As Double
+        Get
+            Return _requestedCell
+        End Get
+    End Property
+
+    ''' <summary>Cells of the drawn surface mesh along X (equals TextureWidth unless the vertex budget was hit).</summary>
+    Public ReadOnly Property DisplayCellsX As Integer
+        Get
+            Return _surfGx
+        End Get
+    End Property
+
+    Public ReadOnly Property DisplayCellsY As Integer
+        Get
+            Return _surfGy
+        End Get
+    End Property
+
     Public ReadOnly Property Tool As ToolModel
         Get
             Return _tool
@@ -114,6 +139,7 @@ Public Class CarveSimulation
         Dim maxEdge As Integer = Math.Max(256, maxTextureSize)
         Const MaxTexels As Double = 40000000.0     ' 160 MB of R32F
         _cell = s.SimCellSize
+        _requestedCell = _cell
         Do
             _texW = CInt(Math.Ceiling(_blankW / _cell))
             _texH = CInt(Math.Ceiling(_blankH / _cell))
@@ -191,9 +217,12 @@ Public Class CarveSimulation
     End Sub
 
     Private Sub CreateSurfaceGrid()
-        ' Display grid: at most ~1000 cells along the longer side.
-        Dim gx As Integer = Math.Max(2, Math.Min(_texW, CInt(1000 * Math.Min(1.0, _blankW / Math.Max(_blankW, _blankH)))))
-        Dim gy As Integer = Math.Max(2, Math.Min(_texH, CInt(1000 * Math.Min(1.0, _blankH / Math.Max(_blankW, _blankH)))))
+        ' Display grid: one vertex per heightmap texel, so the drawn surface shows the chosen
+        ' precision; scaled down uniformly only when the texture exceeds the vertex budget.
+        Dim f As Double = Math.Min(1.0, Math.Sqrt(MaxDisplayCells / (CDbl(_texW) * _texH)))
+        Dim gx As Integer = Math.Max(2, Math.Min(_texW, CInt(Math.Floor(_texW * f))))
+        Dim gy As Integer = Math.Max(2, Math.Min(_texH, CInt(Math.Floor(_texH * f))))
+        _surfGx = gx : _surfGy = gy
         Dim verts((gx + 1) * (gy + 1) * 2 - 1) As Single
         Dim k As Integer = 0
         For j = 0 To gy
@@ -202,18 +231,18 @@ Public Class CarveSimulation
                 k += 2
             Next
         Next
-        Dim idx(gx * gy * 6 - 1) As Integer
+        ' One triangle strip per row (upper vertex, lower vertex, ... = counter-clockwise from +Z),
+        ' rows separated by the primitive-restart index: a third of the indices of a triangle list.
+        Dim idx(gy * ((gx + 1) * 2 + 1) - 1) As Integer
         k = 0
         For j = 0 To gy - 1
-            For i = 0 To gx - 1
-                Dim a = j * (gx + 1) + i
-                Dim b = a + 1
-                Dim c = a + gx + 1
-                Dim d = c + 1
-                idx(k) = a : idx(k + 1) = b : idx(k + 2) = d
-                idx(k + 3) = a : idx(k + 4) = d : idx(k + 5) = c
-                k += 6
+            For i = 0 To gx
+                idx(k) = (j + 1) * (gx + 1) + i
+                idx(k + 1) = j * (gx + 1) + i
+                k += 2
             Next
+            idx(k) = RestartIndex
+            k += 1
         Next
         _surfIndexCount = idx.Length
         _surfVao = GL.GenVertexArray()
@@ -289,12 +318,14 @@ Public Class CarveSimulation
             "out vec3 vNormal;" & vbLf &
             "out float vDepth;" & vbLf &
             "void main() {" & vbLf &
-            "  float d  = texture(uHeight, aUV).r;" & vbLf &
-            "  float dx = texture(uHeight, aUV + vec2(uTexel.x, 0.0)).r - texture(uHeight, aUV - vec2(uTexel.x, 0.0)).r;" & vbLf &
-            "  float dy = texture(uHeight, aUV + vec2(0.0, uTexel.y)).r - texture(uHeight, aUV - vec2(0.0, uTexel.y)).r;" & vbLf &
+            "  vec2 suv = aUV + 0.5 * uTexel;" & vbLf &                                    ' sample at texel centres: vertex i of a per-texel grid reads texel i exactly
+            "  vec2 puv = min(suv, vec2(1.0)) * step(0.0001, aUV);" & vbLf &              ' vertex sits where it samples; first/last column and row stay on the blank edge
+            "  float d  = texture(uHeight, suv).r;" & vbLf &
+            "  float dx = texture(uHeight, suv + vec2(uTexel.x, 0.0)).r - texture(uHeight, suv - vec2(uTexel.x, 0.0)).r;" & vbLf &
+            "  float dy = texture(uHeight, suv + vec2(0.0, uTexel.y)).r - texture(uHeight, suv - vec2(0.0, uTexel.y)).r;" & vbLf &
             "  vNormal = normalize(vec3(dx / (2.0 * uCell), dy / (2.0 * uCell), 1.0));" & vbLf &
             "  vDepth = d;" & vbLf &
-            "  vec3 w = vec3(uBlank.x + aUV.x * uBlank.z, uBlank.y + aUV.y * uBlank.w, -d);" & vbLf &
+            "  vec3 w = vec3(uBlank.x + puv.x * uBlank.z, uBlank.y + puv.y * uBlank.w, -d);" & vbLf &
             "  gl_Position = uMvp * vec4(w, 1.0);" & vbLf &
             "}" & vbLf,
             "#version 330 core" & vbLf &
@@ -495,7 +526,10 @@ Public Class CarveSimulation
         GL.Uniform1(GL.GetUniformLocation(_surfProg, "uCell"), CSng(_blankW / _texW))
         GL.UniformMatrix4(GL.GetUniformLocation(_surfProg, "uMvp"), False, mvp)
         GL.BindVertexArray(_surfVao)
-        GL.DrawElements(PrimitiveType.Triangles, _surfIndexCount, DrawElementsType.UnsignedInt, 0)
+        GL.Enable(EnableCap.PrimitiveRestart)
+        GL.PrimitiveRestartIndex(UInteger.MaxValue)
+        GL.DrawElements(PrimitiveType.TriangleStrip, _surfIndexCount, DrawElementsType.UnsignedInt, 0)
+        GL.Disable(EnableCap.PrimitiveRestart)
         GL.BindVertexArray(0)
         GL.BindTexture(TextureTarget.Texture2D, 0)
 

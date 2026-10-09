@@ -87,6 +87,8 @@ Partial Class frmMain
         tslSimSpeed = New ToolStripLabel()
         tscSimSpeed = New ToolStripComboBox()
         tslSimTime = New ToolStripLabel()
+        tssSimInfo = New ToolStripSeparator()
+        tslSimInfo = New ToolStripLabel()
         tmrRegen = New Timer(components)
         dlgFont = New FontDialog()
         dlgSave = New SaveFileDialog()
@@ -607,7 +609,7 @@ Partial Class frmMain
         ' tsSim
         ' 
         tsSim.GripStyle = ToolStripGripStyle.Hidden
-        tsSim.Items.AddRange(New ToolStripItem() {tsbSimPlay, tsbSimReset, tslSimSpeed, tscSimSpeed, tslSimTime})
+        tsSim.Items.AddRange(New ToolStripItem() {tsbSimPlay, tsbSimReset, tslSimSpeed, tscSimSpeed, tslSimTime, tssSimInfo, tslSimInfo})
         tsSim.Location = New Point(0, 0)
         tsSim.Name = "tsSim"
         tsSim.RenderMode = ToolStripRenderMode.System
@@ -648,6 +650,18 @@ Partial Class frmMain
         tslSimTime.Name = "tslSimTime"
         tslSimTime.Size = New Size(60, 22)
         tslSimTime.Text = "0:00 / 0:00"
+        '
+        ' tssSimInfo
+        '
+        tssSimInfo.Name = "tssSimInfo"
+        tssSimInfo.Size = New Size(6, 25)
+        '
+        ' tslSimInfo
+        '
+        tslSimInfo.Name = "tslSimInfo"
+        tslSimInfo.Overflow = ToolStripItemOverflow.Never
+        tslSimInfo.Size = New Size(0, 22)
+        tslSimInfo.Text = ""
         '
         ' tmrRegen
         '
@@ -794,6 +808,8 @@ Partial Class frmMain
     Friend WithEvents tslSimSpeed As ToolStripLabel
     Friend WithEvents tscSimSpeed As ToolStripComboBox
     Friend WithEvents tslSimTime As ToolStripLabel
+    Friend WithEvents tssSimInfo As ToolStripSeparator
+    Friend WithEvents tslSimInfo As ToolStripLabel
     Friend WithEvents tmrRegen As Timer
     Friend WithEvents dlgFont As FontDialog
     Friend WithEvents dlgSave As SaveFileDialog

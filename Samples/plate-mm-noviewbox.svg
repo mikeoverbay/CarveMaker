@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- No viewBox: user units are px (96 per inch) even though width/height are given in mm.
+     A name plate outline with mounting holes and a border, plus a diamond made with rotate(). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="152.4mm" height="76.2mm">
+  <path fill="#222" fill-rule="evenodd"
+        d="M10,10 H566 V278 H10 Z M30,30 V258 H546 V30 Z M40,144 a12,12 0 1,1 24,0 a12,12 0 1,1 -24,0 M512,144 a12,12 0 1,1 24,0 a12,12 0 1,1 -24,0"/>
+  <rect x="268" y="124" width="40" height="40" transform="rotate(45 288 144)" fill="#000"/>
+</svg>

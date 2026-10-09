@@ -80,6 +80,27 @@ rasterises the ideal surface and the cut envelope: with the finishing pass on,
 test letters in Arial, Times, Segoe Script and Gabriola show at most 0.0005"
 uncut material and under 0.001" over-cut.
 
+## SVG drawings
+
+**Drawings (SVG)** tab, or **File > Import SVG Drawing...**: logos, clipart and
+shapes are carved with the same engine as the text. The importer handles
+`<path>` (every command, relative and absolute, arcs), `rect` / `circle` /
+`ellipse` / `line` / `polyline` / `polygon`, groups with nested transforms,
+`<use>`, `viewBox` and unit handling (mm, cm, in, pt, px), `fill-rule`
+(nonzero / evenodd) per element, and stroke-only line art, which becomes an
+outline as wide as the stroke. `<text>` is skipped with a warning: convert text
+to paths in your drawing program first. Overlapping shapes merge.
+
+Each imported drawing is an object with X/Y, width/height (aspect locked by
+default), rotation, mirror and visibility, editable in the tab or directly in
+the view: click to select, drag to move, drag a corner handle to resize, arrow
+keys nudge by 0.01" (0.1" with Shift). The text block can be dragged the same
+way (it updates *Text offset X/Y*). Drawings are embedded in the `.prj` file.
+
+Sample files live in `Samples\` (basic shapes, Bézier curves, Inkscape-style
+groups and `<use>`, stroke line art, a mm plate without viewBox, and a path
+syntax torture test).
+
 ## Simulation
 
 **View > Show Simulation** (Ctrl+M) replaces the line drawing with the carved

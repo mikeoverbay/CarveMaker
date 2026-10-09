@@ -140,6 +140,12 @@ Public Class Toolpath
     ''' <summary>Per-region boundary geometry (indexed by RegionIndex) used for gouge checks.</summary>
     Public Property Regions As New List(Of RegionShape)
 
+    ''' <summary>Bounds of the text block alone (for dragging it in the view); zero-size when there is no text.</summary>
+    Public Property TextMinX As Double
+    Public Property TextMinY As Double
+    Public Property TextMaxX As Double
+    Public Property TextMaxY As Double
+
     ''' <summary>Blank (stock) rectangle in machine coordinates, for display and the G-code header.</summary>
     Public Property BlankMinX As Double
     Public Property BlankMinY As Double
@@ -322,6 +328,143 @@ Public Enum CutOrder
     ''' <summary>All letters left to right regardless of line (shortest X travel, long Y hops).</summary>
     LeftToRight
 End Enum
+
+''' <summary>
+''' An imported SVG drawing placed on the blank. The SVG text is embedded so the
+''' project file is self-contained; the parsed shape is cached per instance.
+''' </summary>
+Public Class DesignObject
+    <Category("Object"), DisplayName("Name")>
+    Public Property Name As String = "Drawing"
+
+    <Category("Object"), DisplayName("Source file"), [ReadOnly](True)>
+    Public Property SvgFileName As String = ""
+
+    <Browsable(False)>
+    Public Property SvgContent As String = ""
+
+    <Category("Placement"), DisplayName("X (in)"), Description("Left edge of the drawing's bounding box in machine coordinates.")>
+    Public Property X As Double = 0.0
+
+    <Category("Placement"), DisplayName("Y (in)"), Description("Bottom edge of the drawing's bounding box in machine coordinates.")>
+    Public Property Y As Double = 0.0
+
+    <Category("Placement"), DisplayName("Width (in)")>
+    Public Property Width As Double = 1.0
+
+    <Category("Placement"), DisplayName("Height (in)")>
+    Public Property Height As Double = 1.0
+
+    <Category("Placement"), DisplayName("Rotation (deg)"), Description("Counter-clockwise rotation about the centre of the bounding box.")>
+    Public Property RotationDeg As Double = 0.0
+
+    <Category("Placement"), DisplayName("Lock aspect ratio"), Description("Changing width or height (or dragging a corner) keeps the drawing's proportions.")>
+    Public Property LockAspect As Boolean = True
+
+    <Category("Placement"), DisplayName("Mirror"), Description("Flip the drawing left-to-right (for stamps or reverse carving).")>
+    Public Property Mirror As Boolean = False
+
+    <Category("Object"), DisplayName("Visible"), Description("Hidden objects are not carved.")>
+    Public Property Visible As Boolean = True
+
+    ''' <summary>Parsed drawing at its natural size (lower-left at 0,0); Nothing until parsed.</summary>
+    <Browsable(False), JsonIgnore>
+    Public Property Shape As SvgShapeSet
+
+    <Browsable(False), JsonIgnore>
+    Public Property ParseError As String
+
+    ''' <summary>Natural width / height of the drawing in inches (1 when unknown).</summary>
+    <Browsable(False), JsonIgnore>
+    Public ReadOnly Property NaturalAspect As Double
+        Get
+            If Shape Is Nothing OrElse Shape.Width <= 0 OrElse Shape.Height <= 0 Then Return 1.0
+            Return Shape.Width / Shape.Height
+        End Get
+    End Property
+
+    ''' <summary>Parses the embedded SVG once (or again with a different tolerance).</summary>
+    Public Sub EnsureParsed(curveTolerance As Double)
+        If Shape IsNot Nothing OrElse ParseError IsNot Nothing Then Return
+        Try
+            Shape = SvgImport.Parse(SvgContent, curveTolerance)
+        Catch ex As Exception
+            ParseError = ex.Message
+        End Try
+    End Sub
+
+    ''' <summary>Forces a re-parse (after the tolerance changed).</summary>
+    Public Sub InvalidateShape()
+        Shape = Nothing
+        ParseError = Nothing
+    End Sub
+
+    ''' <summary>Sizes the object to its natural size, or to fit a box, keeping proportions.</summary>
+    Public Sub FitTo(maxW As Double, maxH As Double)
+        Dim a = NaturalAspect
+        Dim w = maxW, h = maxW / a
+        If h > maxH Then
+            h = maxH : w = maxH * a
+        End If
+        Width = Math.Round(Math.Max(0.01, w), 4)
+        Height = Math.Round(Math.Max(0.01, h), 4)
+    End Sub
+
+    ''' <summary>Corners of the placed (rotated) bounding box, counter-clockwise from the lower-left.</summary>
+    Public Function Corners() As Pt2()
+        Dim cx = X + Width / 2, cy = Y + Height / 2
+        Dim c = Math.Cos(RotationDeg * Math.PI / 180), s = Math.Sin(RotationDeg * Math.PI / 180)
+        Dim r(3) As Pt2
+        Dim lx = {-Width / 2, Width / 2, Width / 2, -Width / 2}
+        Dim ly = {-Height / 2, -Height / 2, Height / 2, Height / 2}
+        For i = 0 To 3
+            r(i) = New Pt2(cx + lx(i) * c - ly(i) * s, cy + lx(i) * s + ly(i) * c)
+        Next
+        Return r
+    End Function
+
+    ''' <summary>True when the machine point lies inside the placed bounding box.</summary>
+    Public Function HitTest(px As Double, py As Double) As Boolean
+        Dim cx = X + Width / 2, cy = Y + Height / 2
+        Dim c = Math.Cos(-RotationDeg * Math.PI / 180), s = Math.Sin(-RotationDeg * Math.PI / 180)
+        Dim dx = px - cx, dy = py - cy
+        Dim lx = dx * c - dy * s, ly = dx * s + dy * c
+        Return Math.Abs(lx) <= Width / 2 AndAlso Math.Abs(ly) <= Height / 2
+    End Function
+
+    ''' <summary>The drawing's polygons scaled, mirrored, rotated and moved into place (machine inches).</summary>
+    Public Function PlacedPaths(curveTolerance As Double) As Clipper2Lib.PathsD
+        EnsureParsed(curveTolerance)
+        Dim result As New Clipper2Lib.PathsD()
+        If Shape Is Nothing OrElse Shape.Paths.Count = 0 OrElse Shape.Width <= 0 OrElse Shape.Height <= 0 Then Return result
+        Dim sx = Width / Shape.Width, sy = Height / Shape.Height
+        Dim cx = X + Width / 2, cy = Y + Height / 2
+        Dim c = Math.Cos(RotationDeg * Math.PI / 180), s = Math.Sin(RotationDeg * Math.PI / 180)
+        For Each p In Shape.Paths
+            Dim q As New Clipper2Lib.PathD(p.Count)
+            For Each pt In p
+                ' Natural -> local (centred, scaled, mirrored) -> rotated -> placed.
+                Dim lx = (pt.x - Shape.Width / 2) * sx
+                Dim ly = (pt.y - Shape.Height / 2) * sy
+                If Mirror Then lx = -lx
+                q.Add(New Clipper2Lib.PointD(cx + lx * c - ly * s, cy + lx * s + ly * c))
+            Next
+            ' Mirroring flips orientation; the engine's union re-normalizes, but keep outers positive.
+            If Mirror Then q.Reverse()
+            result.Add(q)
+        Next
+        Return result
+    End Function
+
+    Public Function Clone() As DesignObject
+        Dim o = DirectCast(MemberwiseClone(), DesignObject)
+        Return o
+    End Function
+
+    Public Overrides Function ToString() As String
+        Return Name
+    End Function
+End Class
 
 ''' <summary>Lists the installed font families as a drop-down in the PropertyGrid.</summary>
 Public Class FontFamilyNameConverter

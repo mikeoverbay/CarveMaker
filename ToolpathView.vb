@@ -45,9 +45,193 @@ Public Class ToolpathView
 
     Private ReadOnly Property AllLayers As LineLayer()
         Get
-            Return New LineLayer() {_grid, _blank, _outline, _cuts, _rapids}
+            Return New LineLayer() {_grid, _blank, _outline, _cuts, _rapids, _selectionLayer}
         End Get
     End Property
+
+    ' ---------------------------------------------------- object editing API
+
+    ''' <summary>The live list of drawings (shared with the form).</summary>
+    Public Property Objects As List(Of DesignObject)
+        Get
+            Return _objects
+        End Get
+        Set(value As List(Of DesignObject))
+            _objects = If(value, New List(Of DesignObject))
+            If _selected >= _objects.Count Then _selected = -1
+            RebuildSelectionLayer()
+            Invalidate()
+        End Set
+    End Property
+
+    ''' <summary>Flattening tolerance used when placing drawings for the preview.</summary>
+    Public Property CurveTolerance As Double
+        Get
+            Return _curveTolerance
+        End Get
+        Set(value As Double)
+            _curveTolerance = Math.Max(0.0001, value)
+        End Set
+    End Property
+
+    ''' <summary>Index into Objects, TextSelection (-2) for the text block, or -1 for nothing.</summary>
+    Public Property SelectedObject As Integer
+        Get
+            Return _selected
+        End Get
+        Set(value As Integer)
+            If value >= _objects.Count Then value = -1
+            If value < -2 Then value = -1
+            If _selected = value Then Return
+            _selected = value
+            RebuildSelectionLayer()
+            Invalidate()
+            RaiseEvent SelectionChanged(Me, EventArgs.Empty)
+        End Set
+    End Property
+
+    Private Function HasText() As Boolean
+        Return _toolpath IsNot Nothing AndAlso _toolpath.TextMaxX > _toolpath.TextMinX AndAlso _toolpath.TextMaxY > _toolpath.TextMinY
+    End Function
+
+    ''' <summary>Object under a world point: topmost drawing first, then the text block.</summary>
+    Private Function HitTest(wx As Double, wy As Double) As Integer
+        For i = _objects.Count - 1 To 0 Step -1
+            If _objects(i).Visible AndAlso _objects(i).HitTest(wx, wy) Then Return i
+        Next
+        If HasText() Then
+            Dim tp = _toolpath
+            If wx >= tp.TextMinX AndAlso wx <= tp.TextMaxX AndAlso wy >= tp.TextMinY AndAlso wy <= tp.TextMaxY Then Return TextSelection
+        End If
+        Return -1
+    End Function
+
+    ''' <summary>Corner handle of the selected drawing under the mouse (0..3), or -1.</summary>
+    Private Function HandleHitTest(p As Point) As Integer
+        If _selected < 0 OrElse _selected >= _objects.Count Then Return -1
+        Dim corners = _objects(_selected).Corners()
+        Dim w = ScreenToWorld(p)
+        Dim tol As Double = 8 * _unitsPerPixel
+        For i = 0 To 3
+            If Math.Abs(corners(i).X - w.X) <= tol AndAlso Math.Abs(corners(i).Y - w.Y) <= tol Then Return i
+        Next
+        Return -1
+    End Function
+
+    ''' <summary>Highlight of the selected object: its outline (with live drag preview), box and handles.</summary>
+    Private Sub RebuildSelectionLayer()
+        Dim buf As New List(Of Single)
+        Dim hr As Single = 1.0F, hg As Single = 0.85F, hb As Single = 0.2F
+        If _selected >= 0 AndAlso _selected < _objects.Count Then
+            Dim o = _objects(_selected)
+            Dim preview As DesignObject = o
+            If _mode = DragMode.MoveObject OrElse _mode = DragMode.Resize Then
+                preview = o.Clone()
+                If _mode = DragMode.MoveObject Then
+                    preview.X = o.X + _dragDx : preview.Y = o.Y + _dragDy
+                Else
+                    preview.X = _resizeX : preview.Y = _resizeY : preview.Width = _resizeW : preview.Height = _resizeH
+                End If
+            End If
+            For Each path In preview.PlacedPaths(_curveTolerance)
+                For i = 0 To path.Count - 1
+                    Dim a = path(i), b = path((i + 1) Mod path.Count)
+                    AddLine(buf, a.x, a.y, 0.0005, b.x, b.y, 0.0005, hr, hg, hb)
+                Next
+            Next
+            Dim c = preview.Corners()
+            For i = 0 To 3
+                Dim a = c(i), b = c((i + 1) Mod 4)
+                AddLine(buf, a.X, a.Y, 0.001, b.X, b.Y, 0.001, 0.4F, 0.8F, 1.0F)
+            Next
+            ' Handles: small squares in screen size.
+            Dim h As Double = 5 * _unitsPerPixel
+            For i = 0 To 3
+                Dim p = c(i)
+                AddLine(buf, p.X - h, p.Y - h, 0.002, p.X + h, p.Y - h, 0.002, 1, 1, 1)
+                AddLine(buf, p.X + h, p.Y - h, 0.002, p.X + h, p.Y + h, 0.002, 1, 1, 1)
+                AddLine(buf, p.X + h, p.Y + h, 0.002, p.X - h, p.Y + h, 0.002, 1, 1, 1)
+                AddLine(buf, p.X - h, p.Y + h, 0.002, p.X - h, p.Y - h, 0.002, 1, 1, 1)
+            Next
+        ElseIf _selected = TextSelection AndAlso HasText() Then
+            Dim tp = _toolpath
+            Dim dx As Double = If(_mode = DragMode.MoveText, _dragDx, 0), dy As Double = If(_mode = DragMode.MoveText, _dragDy, 0)
+            Dim x0 = tp.TextMinX + dx, x1 = tp.TextMaxX + dx, y0 = tp.TextMinY + dy, y1 = tp.TextMaxY + dy
+            AddLine(buf, x0, y0, 0.001, x1, y0, 0.001, 0.4F, 0.8F, 1.0F)
+            AddLine(buf, x1, y0, 0.001, x1, y1, 0.001, 0.4F, 0.8F, 1.0F)
+            AddLine(buf, x1, y1, 0.001, x0, y1, 0.001, 0.4F, 0.8F, 1.0F)
+            AddLine(buf, x0, y1, 0.001, x0, y0, 0.001, 0.4F, 0.8F, 1.0F)
+            If _mode = DragMode.MoveText Then
+                For Each poly In tp.Outline
+                    For i = 0 To poly.Count - 1
+                        Dim a = poly(i), b = poly((i + 1) Mod poly.Count)
+                        If a.X >= tp.TextMinX - 0.001 AndAlso a.X <= tp.TextMaxX + 0.001 AndAlso a.Y >= tp.TextMinY - 0.001 AndAlso a.Y <= tp.TextMaxY + 0.001 Then
+                            AddLine(buf, a.X + dx, a.Y + dy, 0.0005, b.X + dx, b.Y + dy, 0.0005, hr, hg, hb)
+                        End If
+                    Next
+                Next
+            End If
+        End If
+        SetPending(_selectionLayer, buf)
+    End Sub
+
+    ''' <summary>Resize preview for the dragged corner; keeps the opposite corner fixed.</summary>
+    Private Sub ComputeResize(wx As Double, wy As Double)
+        Dim o = _objects(_selected)
+        Dim rot = o.RotationDeg * Math.PI / 180
+        Dim c = Math.Cos(rot), s = Math.Sin(rot)
+        Dim cx = _startX + _startW / 2, cy = _startY + _startH / 2
+        ' Mouse and the fixed (opposite) corner in the object's local, unrotated frame.
+        Dim dx = wx - cx, dy = wy - cy
+        Dim lx = dx * c + dy * s, ly = -dx * s + dy * c
+        Dim sx = If(_resizeHandle = 1 OrElse _resizeHandle = 2, 1.0, -1.0)   ' dragged corner side
+        Dim sy = If(_resizeHandle = 2 OrElse _resizeHandle = 3, 1.0, -1.0)
+        Dim fixX = -sx * _startW / 2, fixY = -sy * _startH / 2
+        Dim w = Math.Max(0.05, (lx - fixX) * sx)
+        Dim h = Math.Max(0.05, (ly - fixY) * sy)
+        If o.LockAspect Then
+            Dim a = If(_startH > 0, _startW / _startH, 1.0)
+            If w / a >= h Then h = w / a Else w = h * a
+        End If
+        ' New centre in local coordinates, then back to world.
+        Dim ncx = fixX + sx * w / 2, ncy = fixY + sy * h / 2
+        Dim wcx = cx + ncx * c - ncy * s, wcy = cy + ncx * s + ncy * c
+        _resizeW = w : _resizeH = h
+        _resizeX = wcx - w / 2 : _resizeY = wcy - h / 2
+    End Sub
+
+    ''' <summary>Moves the selection by a keyboard nudge (inches).</summary>
+    Public Sub NudgeSelection(dx As Double, dy As Double)
+        If _selected >= 0 AndAlso _selected < _objects.Count Then
+            _objects(_selected).X = Math.Round(_objects(_selected).X + dx, 4)
+            _objects(_selected).Y = Math.Round(_objects(_selected).Y + dy, 4)
+            RebuildSelectionLayer()
+            Invalidate()
+            RaiseEvent ObjectEdited(Me, New ObjectEditedEventArgs With {.Index = _selected})
+        ElseIf _selected = TextSelection Then
+            RaiseEvent TextMoved(Me, New TextMovedEventArgs With {.Dx = dx, .Dy = dy})
+        End If
+    End Sub
+
+    Protected Overrides Function IsInputKey(keyData As Keys) As Boolean
+        Select Case keyData And Keys.KeyCode
+            Case Keys.Left, Keys.Right, Keys.Up, Keys.Down
+                Return True
+        End Select
+        Return MyBase.IsInputKey(keyData)
+    End Function
+
+    Protected Overrides Sub OnKeyDown(e As KeyEventArgs)
+        MyBase.OnKeyDown(e)
+        If _selected = -1 Then Return
+        Dim stepIn As Double = If(e.Shift, 0.1, 0.01)
+        Select Case e.KeyCode
+            Case Keys.Left : NudgeSelection(-stepIn, 0) : e.Handled = True
+            Case Keys.Right : NudgeSelection(stepIn, 0) : e.Handled = True
+            Case Keys.Up : NudgeSelection(0, stepIn) : e.Handled = True
+            Case Keys.Down : NudgeSelection(0, -stepIn) : e.Handled = True
+        End Select
+    End Sub
 
     ' ---- scene ------------------------------------------------------------
     Private _toolpath As Toolpath
@@ -63,6 +247,48 @@ Public Class ToolpathView
     ' ---- interaction ------------------------------------------------------
     Private _dragButton As MouseButtons = MouseButtons.None
     Private _lastMouse As Point
+
+    ' ---- design objects (select / drag / resize) ---------------------------
+    Private Enum DragMode
+        None
+        Pan
+        Orbit
+        MoveObject
+        MoveText
+        Resize
+    End Enum
+
+    ''' <summary>Selection value meaning "the text block".</summary>
+    Public Const TextSelection As Integer = -2
+
+    Private _objects As List(Of DesignObject) = New List(Of DesignObject)
+    Private _selected As Integer = -1
+    Private _curveTolerance As Double = 0.0005
+    Private _mode As DragMode = DragMode.None
+    Private _dragStart As Vector3                ' world point where the drag began
+    Private _dragDx As Double, _dragDy As Double ' live move delta (inches)
+    Private _resizeHandle As Integer = -1
+    Private _resizeW As Double, _resizeH As Double, _resizeX As Double, _resizeY As Double   ' live resize result
+    Private _startX, _startY, _startW, _startH As Double
+    Private ReadOnly _selectionLayer As New LineLayer()
+
+    ''' <summary>Raised after the user moved or resized an object with the mouse or keyboard (index in Objects).</summary>
+    Public Event ObjectEdited As EventHandler(Of ObjectEditedEventArgs)
+    ''' <summary>Raised after the user dragged the text block (delta in inches).</summary>
+    Public Event TextMoved As EventHandler(Of TextMovedEventArgs)
+    ''' <summary>Raised when the selection changes (SelectedObject).</summary>
+    Public Event SelectionChanged As EventHandler
+
+    Public Class ObjectEditedEventArgs
+        Inherits EventArgs
+        Public Property Index As Integer
+    End Class
+
+    Public Class TextMovedEventArgs
+        Inherits EventArgs
+        Public Property Dx As Double
+        Public Property Dy As Double
+    End Class
 
     Private _showRapids As Boolean = True
     Private _showOutline As Boolean = True
@@ -148,6 +374,7 @@ Public Class ToolpathView
         ' A new program: start the clock over; keep showing the finished part unless animating.
         If Not _simPlaying Then _simTime = Double.PositiveInfinity
         BuildBuffers()
+        RebuildSelectionLayer()
         If firstTime OrElse Not SceneIntersectsView() Then ZoomToFit() Else Invalidate()
         RaiseEvent SimulationProgress(Me, EventArgs.Empty)
     End Sub
@@ -664,6 +891,10 @@ Public Class ToolpathView
         If _showOutline AndAlso Not _showSimulation Then DrawLayer(_outline)
         If Not _showSimulation Then DrawLayer(_cuts)
         If _showRapids Then DrawLayer(_rapids)
+        ' Selection highlight on top, never hidden by the surface.
+        GL.Disable(EnableCap.DepthTest)
+        DrawLayer(_selectionLayer)
+        GL.Enable(EnableCap.DepthTest)
 
         GL.BindVertexArray(0)
         GL.UseProgram(0)
@@ -689,32 +920,110 @@ Public Class ToolpathView
         Focus()
         _dragButton = e.Button
         _lastMouse = e.Location
+        _mode = DragMode.None
+        If e.Button = MouseButtons.Right Then
+            _mode = DragMode.Orbit
+        ElseIf e.Button = MouseButtons.Middle Then
+            _mode = DragMode.Pan
+        ElseIf e.Button = MouseButtons.Left Then
+            Dim w = ScreenToWorld(e.Location)
+            _dragStart = w
+            _dragDx = 0 : _dragDy = 0
+            Dim handle = HandleHitTest(e.Location)
+            If handle >= 0 Then
+                Dim o = _objects(_selected)
+                _resizeHandle = handle
+                _startX = o.X : _startY = o.Y : _startW = o.Width : _startH = o.Height
+                _resizeX = o.X : _resizeY = o.Y : _resizeW = o.Width : _resizeH = o.Height
+                _mode = DragMode.Resize
+            Else
+                Dim hit = HitTest(w.X, w.Y)
+                SelectedObject = hit
+                If hit >= 0 Then
+                    _mode = DragMode.MoveObject
+                ElseIf hit = TextSelection Then
+                    _mode = DragMode.MoveText
+                Else
+                    _mode = DragMode.Pan
+                End If
+            End If
+            If _mode = DragMode.MoveObject OrElse _mode = DragMode.Resize Then Cursor = Cursors.SizeAll
+        End If
     End Sub
 
     Protected Overrides Sub OnMouseUp(e As MouseEventArgs)
         MyBase.OnMouseUp(e)
+        Dim mode = _mode
+        _mode = DragMode.None
         _dragButton = MouseButtons.None
+        Cursor = Cursors.Default
+        Select Case mode
+            Case DragMode.MoveObject
+                If _selected >= 0 AndAlso _selected < _objects.Count AndAlso (_dragDx <> 0 OrElse _dragDy <> 0) Then
+                    _objects(_selected).X = Math.Round(_objects(_selected).X + _dragDx, 4)
+                    _objects(_selected).Y = Math.Round(_objects(_selected).Y + _dragDy, 4)
+                    _dragDx = 0 : _dragDy = 0
+                    RebuildSelectionLayer()
+                    Invalidate()
+                    RaiseEvent ObjectEdited(Me, New ObjectEditedEventArgs With {.Index = _selected})
+                End If
+            Case DragMode.Resize
+                If _selected >= 0 AndAlso _selected < _objects.Count Then
+                    Dim o = _objects(_selected)
+                    o.X = Math.Round(_resizeX, 4) : o.Y = Math.Round(_resizeY, 4) : o.Width = Math.Round(_resizeW, 4) : o.Height = Math.Round(_resizeH, 4)
+                    RebuildSelectionLayer()
+                    Invalidate()
+                    RaiseEvent ObjectEdited(Me, New ObjectEditedEventArgs With {.Index = _selected})
+                End If
+            Case DragMode.MoveText
+                Dim dx = _dragDx, dy = _dragDy
+                _dragDx = 0 : _dragDy = 0
+                RebuildSelectionLayer()
+                Invalidate()
+                If dx <> 0 OrElse dy <> 0 Then RaiseEvent TextMoved(Me, New TextMovedEventArgs With {.Dx = dx, .Dy = dy})
+        End Select
     End Sub
 
     Protected Overrides Sub OnMouseMove(e As MouseEventArgs)
         MyBase.OnMouseMove(e)
-        If _dragButton = MouseButtons.None Then Return
+        If _mode = DragMode.None Then
+            ' Hover feedback over handles / objects.
+            If _dragButton = MouseButtons.None Then
+                If HandleHitTest(e.Location) >= 0 Then
+                    Cursor = Cursors.SizeNWSE
+                Else
+                    Dim w = ScreenToWorld(e.Location)
+                    Cursor = If(HitTest(w.X, w.Y) <> -1, Cursors.Hand, Cursors.Default)
+                End If
+            End If
+            Return
+        End If
         Dim dx As Integer = e.X - _lastMouse.X
         Dim dy As Integer = e.Y - _lastMouse.Y
         _lastMouse = e.Location
 
-        If _dragButton = MouseButtons.Right Then
-            ' Drag right turns the model clockwise; drag up tilts it toward the viewer.
-            _yaw += dx * 0.01
-            _pitch = Math.Max(0, Math.Min(Math.PI / 2 - 0.05, _pitch - dy * 0.01))
-        Else
-            ' Pan: move the target opposite to the mouse, in screen-aligned world axes.
-            Dim wx As Double = -dx * _unitsPerPixel
-            Dim wy As Double = dy * _unitsPerPixel / PitchScale()
-            Dim c As Double = Math.Cos(-_yaw), sn As Double = Math.Sin(-_yaw)
-            _target.X += CSng(wx * c - wy * sn)
-            _target.Y += CSng(wx * sn + wy * c)
-        End If
+        Select Case _mode
+            Case DragMode.Orbit
+                ' Drag right turns the model clockwise; drag up tilts it toward the viewer.
+                _yaw += dx * 0.01
+                _pitch = Math.Max(0, Math.Min(Math.PI / 2 - 0.05, _pitch - dy * 0.01))
+            Case DragMode.Pan
+                ' Pan: move the target opposite to the mouse, in screen-aligned world axes.
+                Dim wx As Double = -dx * _unitsPerPixel
+                Dim wy As Double = dy * _unitsPerPixel / PitchScale()
+                Dim c As Double = Math.Cos(-_yaw), sn As Double = Math.Sin(-_yaw)
+                _target.X += CSng(wx * c - wy * sn)
+                _target.Y += CSng(wx * sn + wy * c)
+            Case DragMode.MoveObject, DragMode.MoveText
+                Dim w = ScreenToWorld(e.Location)
+                _dragDx = w.X - _dragStart.X
+                _dragDy = w.Y - _dragStart.Y
+                RebuildSelectionLayer()
+            Case DragMode.Resize
+                Dim w = ScreenToWorld(e.Location)
+                ComputeResize(w.X, w.Y)
+                RebuildSelectionLayer()
+        End Select
         Invalidate()
     End Sub
 
@@ -727,6 +1036,7 @@ Public Class ToolpathView
         ' Keep the world point under the cursor fixed.
         _target.X += before.X - after.X
         _target.Y += before.Y - after.Y
+        RebuildSelectionLayer()      ' handle size follows the zoom
         Invalidate()
     End Sub
 

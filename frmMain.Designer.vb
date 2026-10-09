@@ -31,6 +31,7 @@ Partial Class frmMain
         mnuFileSaveProjectAs = New ToolStripMenuItem()
         mnuFileSep0 = New ToolStripSeparator()
         mnuFileImportText = New ToolStripMenuItem()
+        mnuFileImportSvg = New ToolStripMenuItem()
         mnuFileSaveGcode = New ToolStripMenuItem()
         mnuFileSep1 = New ToolStripSeparator()
         mnuFileExit = New ToolStripMenuItem()
@@ -55,6 +56,16 @@ Partial Class frmMain
         splitMain = New SplitContainer()
         tlpLeft = New TableLayoutPanel()
         pnlEditor = New Panel()
+        tabLeft = New TabControl()
+        tabText = New TabPage()
+        tabObjects = New TabPage()
+        tsObjects = New ToolStrip()
+        tsbObjImport = New ToolStripButton()
+        tsbObjRemove = New ToolStripButton()
+        tsbObjFit = New ToolStripButton()
+        tsbObjCenter = New ToolStripButton()
+        lstObjects = New ListBox()
+        pgObject = New PropertyGrid()
         rtbText = New RichTextBox()
         tsFormat = New ToolStrip()
         tslSize = New ToolStripLabel()
@@ -82,6 +93,7 @@ Partial Class frmMain
         dlgOpen = New OpenFileDialog()
         dlgOpenProject = New OpenFileDialog()
         dlgSaveProject = New SaveFileDialog()
+        dlgSvg = New OpenFileDialog()
         mnuMain.SuspendLayout()
         stsMain.SuspendLayout()
         CType(splitMain, System.ComponentModel.ISupportInitialize).BeginInit()
@@ -94,6 +106,10 @@ Partial Class frmMain
         splitMain.SuspendLayout()
         tlpLeft.SuspendLayout()
         pnlEditor.SuspendLayout()
+        tabLeft.SuspendLayout()
+        tabText.SuspendLayout()
+        tabObjects.SuspendLayout()
+        tsObjects.SuspendLayout()
         tsFormat.SuspendLayout()
         SuspendLayout()
         '
@@ -108,7 +124,7 @@ Partial Class frmMain
         '
         ' mnuFile
         '
-        mnuFile.DropDownItems.AddRange(New ToolStripItem() {mnuFileNew, mnuFileOpenProject, mnuFileSaveProject, mnuFileSaveProjectAs, mnuFileSep0, mnuFileImportText, mnuFileSaveGcode, mnuFileSep1, mnuFileExit})
+        mnuFile.DropDownItems.AddRange(New ToolStripItem() {mnuFileNew, mnuFileOpenProject, mnuFileSaveProject, mnuFileSaveProjectAs, mnuFileSep0, mnuFileImportText, mnuFileImportSvg, mnuFileSaveGcode, mnuFileSep1, mnuFileExit})
         mnuFile.Name = "mnuFile"
         mnuFile.Size = New Size(37, 20)
         mnuFile.Text = "&File"
@@ -150,6 +166,12 @@ Partial Class frmMain
         mnuFileImportText.Name = "mnuFileImportText"
         mnuFileImportText.Size = New Size(230, 22)
         mnuFileImportText.Text = "&Import Text (.txt / .rtf)..."
+        ' 
+        ' mnuFileImportSvg
+        ' 
+        mnuFileImportSvg.Name = "mnuFileImportSvg"
+        mnuFileImportSvg.Size = New Size(230, 22)
+        mnuFileImportSvg.Text = "Import SVG &Drawing..."
         ' 
         ' mnuFileSaveGcode
         ' 
@@ -326,7 +348,7 @@ Partial Class frmMain
         '
         tlpLeft.ColumnCount = 1
         tlpLeft.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100.0F))
-        tlpLeft.Controls.Add(pnlEditor, 0, 0)
+        tlpLeft.Controls.Add(tabLeft, 0, 0)
         tlpLeft.Controls.Add(pgSettings, 0, 1)
         tlpLeft.Dock = DockStyle.Fill
         tlpLeft.Location = New Point(0, 0)
@@ -336,6 +358,105 @@ Partial Class frmMain
         tlpLeft.RowStyles.Add(New RowStyle(SizeType.Percent, 58.0F))
         tlpLeft.Size = New Size(420, 704)
         tlpLeft.TabIndex = 0
+        ' 
+        ' tabLeft
+        ' 
+        tabLeft.Controls.Add(tabText)
+        tabLeft.Controls.Add(tabObjects)
+        tabLeft.Dock = DockStyle.Fill
+        tabLeft.Location = New Point(3, 3)
+        tabLeft.Name = "tabLeft"
+        tabLeft.SelectedIndex = 0
+        tabLeft.Size = New Size(414, 289)
+        tabLeft.TabIndex = 0
+        ' 
+        ' tabText
+        ' 
+        tabText.Controls.Add(pnlEditor)
+        tabText.Location = New Point(4, 24)
+        tabText.Name = "tabText"
+        tabText.Padding = New Padding(3)
+        tabText.Size = New Size(406, 261)
+        tabText.TabIndex = 0
+        tabText.Text = "Text"
+        tabText.UseVisualStyleBackColor = True
+        ' 
+        ' tabObjects
+        ' 
+        tabObjects.Controls.Add(pgObject)
+        tabObjects.Controls.Add(lstObjects)
+        tabObjects.Controls.Add(tsObjects)
+        tabObjects.Location = New Point(4, 24)
+        tabObjects.Name = "tabObjects"
+        tabObjects.Padding = New Padding(3)
+        tabObjects.Size = New Size(406, 261)
+        tabObjects.TabIndex = 1
+        tabObjects.Text = "Drawings (SVG)"
+        tabObjects.UseVisualStyleBackColor = True
+        ' 
+        ' tsObjects
+        ' 
+        tsObjects.GripStyle = ToolStripGripStyle.Hidden
+        tsObjects.Items.AddRange(New ToolStripItem() {tsbObjImport, tsbObjRemove, tsbObjFit, tsbObjCenter})
+        tsObjects.Location = New Point(3, 3)
+        tsObjects.Name = "tsObjects"
+        tsObjects.RenderMode = ToolStripRenderMode.System
+        tsObjects.Size = New Size(400, 25)
+        tsObjects.TabIndex = 0
+        ' 
+        ' tsbObjImport
+        ' 
+        tsbObjImport.DisplayStyle = ToolStripItemDisplayStyle.Text
+        tsbObjImport.Name = "tsbObjImport"
+        tsbObjImport.Size = New Size(78, 22)
+        tsbObjImport.Text = "Import SVG..."
+        tsbObjImport.ToolTipText = "Add an SVG drawing to the blank"
+        ' 
+        ' tsbObjRemove
+        ' 
+        tsbObjRemove.DisplayStyle = ToolStripItemDisplayStyle.Text
+        tsbObjRemove.Name = "tsbObjRemove"
+        tsbObjRemove.Size = New Size(54, 22)
+        tsbObjRemove.Text = "Remove"
+        tsbObjRemove.ToolTipText = "Remove the selected drawing"
+        ' 
+        ' tsbObjFit
+        ' 
+        tsbObjFit.DisplayStyle = ToolStripItemDisplayStyle.Text
+        tsbObjFit.Name = "tsbObjFit"
+        tsbObjFit.Size = New Size(72, 22)
+        tsbObjFit.Text = "Fit to Blank"
+        tsbObjFit.ToolTipText = "Scale the drawing to fill the blank inside the margins"
+        ' 
+        ' tsbObjCenter
+        ' 
+        tsbObjCenter.DisplayStyle = ToolStripItemDisplayStyle.Text
+        tsbObjCenter.Name = "tsbObjCenter"
+        tsbObjCenter.Size = New Size(46, 22)
+        tsbObjCenter.Text = "Center"
+        tsbObjCenter.ToolTipText = "Center the drawing on the blank"
+        ' 
+        ' lstObjects
+        ' 
+        lstObjects.Dock = DockStyle.Top
+        lstObjects.FormattingEnabled = True
+        lstObjects.IntegralHeight = False
+        lstObjects.ItemHeight = 15
+        lstObjects.Location = New Point(3, 28)
+        lstObjects.Name = "lstObjects"
+        lstObjects.Size = New Size(400, 100)
+        lstObjects.TabIndex = 1
+        ' 
+        ' pgObject
+        ' 
+        pgObject.Dock = DockStyle.Fill
+        pgObject.HelpVisible = False
+        pgObject.Location = New Point(3, 128)
+        pgObject.Name = "pgObject"
+        pgObject.PropertySort = PropertySort.Categorized
+        pgObject.Size = New Size(400, 130)
+        pgObject.TabIndex = 2
+        pgObject.ToolbarVisible = False
         '
         ' pnlEditor
         '
@@ -560,6 +681,12 @@ Partial Class frmMain
         dlgSaveProject.DefaultExt = "prj"
         dlgSaveProject.Filter = "CarveMaker project (*.prj)|*.prj|All files (*.*)|*.*"
         dlgSaveProject.Title = "Save Project"
+        ' 
+        ' dlgSvg
+        ' 
+        dlgSvg.DefaultExt = "svg"
+        dlgSvg.Filter = "SVG drawings (*.svg)|*.svg|All files (*.*)|*.*"
+        dlgSvg.Title = "Import SVG"
         '
         ' frmMain
         '
@@ -591,6 +718,12 @@ Partial Class frmMain
         tlpLeft.ResumeLayout(False)
         pnlEditor.ResumeLayout(False)
         pnlEditor.PerformLayout()
+        tabLeft.ResumeLayout(False)
+        tabText.ResumeLayout(False)
+        tabObjects.ResumeLayout(False)
+        tabObjects.PerformLayout()
+        tsObjects.ResumeLayout(False)
+        tsObjects.PerformLayout()
         tsFormat.ResumeLayout(False)
         tsFormat.PerformLayout()
         ResumeLayout(False)
@@ -605,6 +738,7 @@ Partial Class frmMain
     Friend WithEvents mnuFileSaveProjectAs As ToolStripMenuItem
     Friend WithEvents mnuFileSep0 As ToolStripSeparator
     Friend WithEvents mnuFileImportText As ToolStripMenuItem
+    Friend WithEvents mnuFileImportSvg As ToolStripMenuItem
     Friend WithEvents mnuFileSaveGcode As ToolStripMenuItem
     Friend WithEvents mnuFileSep1 As ToolStripSeparator
     Friend WithEvents mnuFileExit As ToolStripMenuItem
@@ -629,6 +763,16 @@ Partial Class frmMain
     Friend WithEvents splitMain As SplitContainer
     Friend WithEvents tlpLeft As TableLayoutPanel
     Friend WithEvents pnlEditor As Panel
+    Friend WithEvents tabLeft As TabControl
+    Friend WithEvents tabText As TabPage
+    Friend WithEvents tabObjects As TabPage
+    Friend WithEvents tsObjects As ToolStrip
+    Friend WithEvents tsbObjImport As ToolStripButton
+    Friend WithEvents tsbObjRemove As ToolStripButton
+    Friend WithEvents tsbObjFit As ToolStripButton
+    Friend WithEvents tsbObjCenter As ToolStripButton
+    Friend WithEvents lstObjects As ListBox
+    Friend WithEvents pgObject As PropertyGrid
     Friend WithEvents rtbText As RichTextBox
     Friend WithEvents tsFormat As ToolStrip
     Friend WithEvents tslSize As ToolStripLabel
@@ -656,5 +800,6 @@ Partial Class frmMain
     Friend WithEvents dlgOpen As OpenFileDialog
     Friend WithEvents dlgOpenProject As OpenFileDialog
     Friend WithEvents dlgSaveProject As SaveFileDialog
+    Friend WithEvents dlgSvg As OpenFileDialog
 
 End Class

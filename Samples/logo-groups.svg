@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Inkscape-style: layer group with a transform, nested groups, style attributes,
+     <use> of a defined symbol (with rotate and scale), a hidden layer that must be
+     ignored, and text (ignored with a warning). 5in x 3in. -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="5in" height="3in" viewBox="0 0 127 76.2">
+  <defs>
+    <path id="leaf" d="M0,0 C 8,-10 20,-10 24,0 C 20,10 8,10 0,0 z"/>
+  </defs>
+  <g id="layer1" transform="translate(10,10)">
+    <g style="fill:#2a6;stroke:none">
+      <use xlink:href="#leaf" x="0" y="20" transform="rotate(-30)"/>
+      <use href="#leaf" x="20" y="40" transform="scale(1.4)"/>
+    </g>
+    <g transform="matrix(0.8,0,0,0.8,60,5)">
+      <rect x="0" y="0" width="50" height="30" style="fill:#444"/>
+      <rect x="8" y="8" width="34" height="14" style="fill:#fff"/>
+    </g>
+    <text x="10" y="60" style="font-size:12px">Not imported</text>
+  </g>
+  <g id="layer2" style="display:none">
+    <circle cx="60" cy="60" r="20"/>
+  </g>
+</svg>

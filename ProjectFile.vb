@@ -34,6 +34,8 @@ Public Class ProjectFile
     Public Property Version As Integer = CurrentVersion
     Public Property Settings As CarveSettings = New CarveSettings()
     Public Property Lines As New List(Of ProjectLine)
+    ''' <summary>Imported drawings placed on the blank (SVG text embedded).</summary>
+    Public Property Objects As New List(Of DesignObject)
 
     Private Shared ReadOnly Options As JsonSerializerOptions = CreateOptions()
 
@@ -64,6 +66,11 @@ Public Class ProjectFile
         If pf.Settings.FontMedium Is Nothing Then pf.Settings.FontMedium = New FontChoice("Arial")
         If pf.Settings.FontSmall Is Nothing Then pf.Settings.FontSmall = New FontChoice("Arial")
         If pf.Lines Is Nothing Then pf.Lines = New List(Of ProjectLine)
+        If pf.Objects Is Nothing Then pf.Objects = New List(Of DesignObject)
+        For Each o In pf.Objects
+            If o.SvgContent Is Nothing Then o.SvgContent = ""
+            If o.Name Is Nothing Then o.Name = "Drawing"
+        Next
         For Each l In pf.Lines
             If l.Text Is Nothing Then l.Text = ""
         Next

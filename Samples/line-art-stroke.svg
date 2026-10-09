@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Stroke-only artwork (fill:none): open and closed strokes become outlines by offsetting
+     half the stroke width. 2in x 2in, px units. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
+  <g fill="none" stroke="#000" stroke-width="6">
+    <path d="M20,100 C 60,20 130,20 172,100"/>
+    <polyline points="30,150 70,120 110,150 150,120"/>
+    <rect x="60" y="60" width="72" height="40" rx="8"/>
+    <line x1="20" y1="30" x2="172" y2="30" stroke-width="10"/>
+  </g>
+</svg>

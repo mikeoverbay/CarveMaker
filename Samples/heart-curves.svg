@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Cubic Beziers with relative commands and implicit repeats (the heart), and a
+     wavy-topped box using Q and T. 3in wide, px units. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="288" height="360" viewBox="0 0 288 360">
+  <path fill="#c00" d="M144 260 C 60 190, 10 130, 10 80 c0 -40 30 -65 65 -65 s60 25 69 45 c9 -20 34 -45 69 -45 s65 25 65 65 c0 50 -50 110 -134 180 z"/>
+  <path fill="#000" d="M40 310 q20 -30 40 0 t40 0 l0 40 h-80 z"/>
+</svg>

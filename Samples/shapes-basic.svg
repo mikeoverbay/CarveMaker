@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Basic shapes: 4in x 2in document in millimetres. A square ring (hole via evenodd),
+     a circle, a rounded rectangle, a star polygon and an ellipse, none overlapping. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="101.6mm" height="50.8mm" viewBox="0 0 101.6 50.8">
+  <path fill="#333" fill-rule="evenodd" d="M5,5 h20 v20 h-20 z M11,11 h8 v8 h-8 z"/>
+  <circle cx="48" cy="17.5" r="12"/>
+  <rect x="66" y="6" width="30" height="22" rx="5" ry="5" fill="black"/>
+  <polygon points="20,32 23.5,41 33,41.5 25.5,47.5 28,57 20,51.5 12,57 14.5,47.5 7,41.5 16.5,41" transform="translate(0,-6.5)"/>
+  <ellipse cx="66" cy="41" rx="20" ry="7" fill="#000"/>
+</svg>

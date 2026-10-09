@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Arc flags glued together without separators ("0 1130,0"), exponent numbers,
+     H/V/S/T commands and implicit repeated coordinates. 200px x 100px. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100" width="200px" height="100px">
+  <path d="M20,50a15,15 0 1130,0a15 15 0 1130 0z" fill="black"/>
+  <path d="M1.2e2,2e1H1.8e2V8e1S1.5e2,9e1,1.2e2,8e1T1.2e2,2e1z" fill="black"/>
+  <path d="M10 85 l0 -10 10 0 0 10 -10 0" fill="black"/>
+</svg>

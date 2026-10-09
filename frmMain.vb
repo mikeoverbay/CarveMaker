@@ -32,6 +32,10 @@ Public Class frmMain
     Private _projectPath As String
     Private _dirty As Boolean
 
+    ' Imported drawings placed on the blank (shared with the view for dragging).
+    Private _objects As New List(Of DesignObject)
+    Private _syncingSelection As Boolean
+
     ' Generation bookkeeping: only the newest request is allowed to publish a result.
     Private _genVersion As Integer
     Private _genCts As CancellationTokenSource
@@ -84,6 +88,11 @@ Public Class frmMain
         If _glView.InitError IsNot Nothing Then lblStatus.Text = "OpenGL view unavailable: " & _glView.InitError
         AddHandler _glView.SimulationProgress, AddressOf OnSimulationProgress
         AddHandler _glView.GLReady, Sub(o, ev) pgSettings.Refresh()
+        AddHandler _glView.SelectionChanged, AddressOf OnViewSelectionChanged
+        AddHandler _glView.ObjectEdited, AddressOf OnViewObjectEdited
+        AddHandler _glView.TextMoved, AddressOf OnViewTextMoved
+        _glView.Objects = _objects
+        _glView.CurveTolerance = _settings.CurveTolerance
         tscSimSpeed.SelectedIndex = 3      ' 10x
 
         pgSettings.SelectedObject = _settings
@@ -161,8 +170,214 @@ Public Class frmMain
     Private Function CollectProject() As ProjectFile
         Dim pf As New ProjectFile With {.Settings = _settings.Clone()}
         pf.Lines.AddRange(ReadEditorParagraphs())
+        pf.Objects.AddRange(_objects.Select(Function(o) o.Clone()))
         Return pf
     End Function
+
+    ' ---------------------------------------------------------- drawings
+
+    ''' <summary>Placed polygons of every visible drawing (computed on the UI thread, cached parse).</summary>
+    Private Function PlacedDrawings() As List(Of Clipper2Lib.PathsD)
+        Dim list As New List(Of Clipper2Lib.PathsD)
+        For Each o In _objects
+            If o.Visible Then list.Add(o.PlacedPaths(_settings.CurveTolerance))
+        Next
+        Return list
+    End Function
+
+    ''' <summary>Key describing all drawings, used to detect changes since the last generation.</summary>
+    Private Function ObjectsKey() As String
+        Dim sb As New Text.StringBuilder()
+        Dim ci = CultureInfo.InvariantCulture
+        For Each o In _objects
+            sb.Append(o.Name).Append("|").Append(o.X.ToString("R", ci)).Append("|").Append(o.Y.ToString("R", ci)).Append("|").
+               Append(o.Width.ToString("R", ci)).Append("|").Append(o.Height.ToString("R", ci)).Append("|").Append(o.RotationDeg.ToString("R", ci)).
+               Append("|").Append(o.Mirror).Append("|").Append(o.Visible).Append("|").Append(If(o.SvgContent, "").Length).Append(ControlChars.Lf)
+        Next
+        Return sb.ToString()
+    End Function
+
+    Private Sub RefreshObjectList(selectIndex As Integer)
+        _syncingSelection = True
+        Try
+            lstObjects.BeginUpdate()
+            lstObjects.Items.Clear()
+            For Each o In _objects
+                lstObjects.Items.Add(If(o.Visible, "", "(hidden) ") & o.Name)
+            Next
+            lstObjects.EndUpdate()
+            If selectIndex >= 0 AndAlso selectIndex < _objects.Count Then
+                lstObjects.SelectedIndex = selectIndex
+                pgObject.SelectedObject = _objects(selectIndex)
+            Else
+                lstObjects.SelectedIndex = -1
+                pgObject.SelectedObject = Nothing
+            End If
+        Finally
+            _syncingSelection = False
+        End Try
+        _glView.Objects = _objects
+        _glView.SelectedObject = selectIndex
+        Dim has = selectIndex >= 0 AndAlso selectIndex < _objects.Count
+        tsbObjRemove.Enabled = has
+        tsbObjFit.Enabled = has
+        tsbObjCenter.Enabled = has
+    End Sub
+
+    ''' <summary>The drawings currently placed on the blank (read-only view for tests and tools).</summary>
+    Public ReadOnly Property Drawings As IReadOnlyList(Of DesignObject)
+        Get
+            Return _objects
+        End Get
+    End Property
+
+    ''' <summary>Imports an SVG file as a new drawing centred on the blank.</summary>
+    Public Sub ImportSvgFile(path As String)
+        Dim o As New DesignObject With {
+            .Name = IO.Path.GetFileNameWithoutExtension(path),
+            .SvgFileName = IO.Path.GetFileName(path),
+            .SvgContent = File.ReadAllText(path)
+        }
+        o.EnsureParsed(_settings.CurveTolerance)
+        If o.ParseError IsNot Nothing Then
+            MessageBox.Show(Me, "Could not import the SVG:" & Environment.NewLine & o.ParseError, "Import SVG", MessageBoxButtons.OK, MessageBoxIcon.Error)
+            Return
+        End If
+        If o.Shape Is Nothing OrElse o.Shape.Paths.Count = 0 Then
+            MessageBox.Show(Me, "No carveable shapes were found in the SVG." & Environment.NewLine & String.Join(Environment.NewLine, o.Shape?.Warnings), "Import SVG", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            Return
+        End If
+        ' Natural size, shrunk to fit inside the margins if needed, centred on the blank.
+        Dim maxW = Math.Max(0.1, _settings.BlankWidthIn - 2 * _settings.MarginIn)
+        Dim maxH = Math.Max(0.1, _settings.BlankHeightIn - 2 * _settings.MarginIn)
+        If o.Shape.Width <= maxW AndAlso o.Shape.Height <= maxH Then
+            o.Width = Math.Round(o.Shape.Width, 4) : o.Height = Math.Round(o.Shape.Height, 4)
+        Else
+            o.FitTo(maxW, maxH)
+        End If
+        CenterObjectOnBlank(o)
+        _objects.Add(o)
+        RefreshObjectList(_objects.Count - 1)
+        tabLeft.SelectedTab = tabObjects
+        If o.Shape.Warnings.Count > 0 Then lblStatus.Text = String.Join("  |  ", o.Shape.Warnings)
+        MarkDirty()
+        RequestRegenerate(immediate:=True)
+    End Sub
+
+    Private Sub CenterObjectOnBlank(o As DesignObject)
+        o.X = Math.Round(_settings.BlankOriginX + (_settings.BlankWidthIn - o.Width) / 2, 4)
+        o.Y = Math.Round(_settings.BlankOriginY + (_settings.BlankHeightIn - o.Height) / 2, 4)
+    End Sub
+
+    Private Sub OnViewSelectionChanged(sender As Object, e As EventArgs)
+        If _syncingSelection Then Return
+        _syncingSelection = True
+        Try
+            Dim idx = _glView.SelectedObject
+            If idx >= 0 AndAlso idx < _objects.Count Then
+                lstObjects.SelectedIndex = idx
+                pgObject.SelectedObject = _objects(idx)
+                tabLeft.SelectedTab = tabObjects
+            Else
+                lstObjects.SelectedIndex = -1
+                pgObject.SelectedObject = Nothing
+                If idx = ToolpathView.TextSelection Then tabLeft.SelectedTab = tabText
+            End If
+            Dim has = idx >= 0 AndAlso idx < _objects.Count
+            tsbObjRemove.Enabled = has
+            tsbObjFit.Enabled = has
+            tsbObjCenter.Enabled = has
+        Finally
+            _syncingSelection = False
+        End Try
+    End Sub
+
+    Private Sub OnViewObjectEdited(sender As Object, e As ToolpathView.ObjectEditedEventArgs)
+        pgObject.Refresh()
+        MarkDirty()
+        RequestRegenerate(immediate:=True)
+    End Sub
+
+    Private Sub OnViewTextMoved(sender As Object, e As ToolpathView.TextMovedEventArgs)
+        _settings.TextOffsetX = Math.Round(_settings.TextOffsetX + e.Dx, 4)
+        _settings.TextOffsetY = Math.Round(_settings.TextOffsetY + e.Dy, 4)
+        pgSettings.Refresh()
+        MarkDirty()
+        RequestRegenerate(immediate:=True)
+    End Sub
+
+    Private Sub lstObjects_SelectedIndexChanged(sender As Object, e As EventArgs) Handles lstObjects.SelectedIndexChanged
+        If _syncingSelection Then Return
+        _syncingSelection = True
+        Try
+            Dim idx = lstObjects.SelectedIndex
+            pgObject.SelectedObject = If(idx >= 0, _objects(idx), Nothing)
+            _glView.SelectedObject = idx
+            tsbObjRemove.Enabled = idx >= 0
+            tsbObjFit.Enabled = idx >= 0
+            tsbObjCenter.Enabled = idx >= 0
+        Finally
+            _syncingSelection = False
+        End Try
+    End Sub
+
+    Private Sub pgObject_PropertyValueChanged(s As Object, e As PropertyValueChangedEventArgs) Handles pgObject.PropertyValueChanged
+        Dim o = TryCast(pgObject.SelectedObject, DesignObject)
+        If o Is Nothing Then Return
+        Dim name = If(e.ChangedItem?.PropertyDescriptor?.Name, "")
+        If o.LockAspect Then
+            If name = NameOf(DesignObject.Width) Then o.Height = Math.Round(o.Width / o.NaturalAspect, 4)
+            If name = NameOf(DesignObject.Height) Then o.Width = Math.Round(o.Height * o.NaturalAspect, 4)
+        End If
+        o.Width = Math.Max(0.01, o.Width)
+        o.Height = Math.Max(0.01, o.Height)
+        pgObject.Refresh()
+        If name = NameOf(DesignObject.Name) OrElse name = NameOf(DesignObject.Visible) Then RefreshObjectList(lstObjects.SelectedIndex)
+        _glView.Objects = _objects
+        MarkDirty()
+        RequestRegenerate(immediate:=True)
+    End Sub
+
+    Private Sub tsbObjImport_Click(sender As Object, e As EventArgs) Handles tsbObjImport.Click
+        If dlgSvg.ShowDialog(Me) <> DialogResult.OK Then Return
+        Try
+            ImportSvgFile(dlgSvg.FileName)
+        Catch ex As Exception
+            MessageBox.Show(Me, ex.Message, "Import SVG", MessageBoxButtons.OK, MessageBoxIcon.Error)
+        End Try
+    End Sub
+
+    Private Sub tsbObjRemove_Click(sender As Object, e As EventArgs) Handles tsbObjRemove.Click
+        Dim idx = lstObjects.SelectedIndex
+        If idx < 0 OrElse idx >= _objects.Count Then Return
+        _objects.RemoveAt(idx)
+        RefreshObjectList(Math.Min(idx, _objects.Count - 1))
+        MarkDirty()
+        RequestRegenerate(immediate:=True)
+    End Sub
+
+    Private Sub tsbObjFit_Click(sender As Object, e As EventArgs) Handles tsbObjFit.Click
+        Dim idx = lstObjects.SelectedIndex
+        If idx < 0 OrElse idx >= _objects.Count Then Return
+        Dim o = _objects(idx)
+        o.EnsureParsed(_settings.CurveTolerance)
+        o.FitTo(Math.Max(0.1, _settings.BlankWidthIn - 2 * _settings.MarginIn), Math.Max(0.1, _settings.BlankHeightIn - 2 * _settings.MarginIn))
+        CenterObjectOnBlank(o)
+        pgObject.Refresh()
+        _glView.Objects = _objects
+        MarkDirty()
+        RequestRegenerate(immediate:=True)
+    End Sub
+
+    Private Sub tsbObjCenter_Click(sender As Object, e As EventArgs) Handles tsbObjCenter.Click
+        Dim idx = lstObjects.SelectedIndex
+        If idx < 0 OrElse idx >= _objects.Count Then Return
+        CenterObjectOnBlank(_objects(idx))
+        pgObject.Refresh()
+        _glView.Objects = _objects
+        MarkDirty()
+        RequestRegenerate(immediate:=True)
+    End Sub
 
     ''' <summary>Saves to the current path, or prompts for one. Returns True when saved.</summary>
     Private Function SaveProject(saveAs As Boolean) As Boolean
@@ -193,6 +408,12 @@ Public Class frmMain
         _settings = pf.Settings
         pgSettings.SelectedObject = _settings
         UpdateSizeButtonCaptions()
+        _objects = New List(Of DesignObject)(pf.Objects.Select(Function(o) o.Clone()))
+        For Each o In _objects
+            o.InvalidateShape()
+        Next
+        _glView.CurveTolerance = _settings.CurveTolerance
+        RefreshObjectList(-1)
 
         _suppressEditorEvents = True
         Try
@@ -480,6 +701,8 @@ Public Class frmMain
     Private Sub GenerateAsync()
         Dim lines As List(Of TextLine) = ReadEditorLines()
         Dim snapshot As CarveSettings = _settings.Clone()
+        Dim drawings As List(Of Clipper2Lib.PathsD) = PlacedDrawings()
+        Dim contentKey As String = TextLine.KeyOf(lines) & ObjectsKey()
 
         Dim problems = snapshot.Validate()
         If problems.Count > 0 Then
@@ -501,7 +724,7 @@ Public Class frmMain
         lblStatus.Text = "Generating toolpath..."
         UseWaitCursor = True
 
-        Task.Run(Function() TextToToolpath.Generate(lines, snapshot, token), token).
+        Task.Run(Function() TextToToolpath.Generate(lines, drawings, snapshot, token), token).
             ContinueWith(
                 Sub(t As Task(Of Toolpath))
                     If IsDisposed OrElse myVersion <> _genVersion Then Return
@@ -515,7 +738,7 @@ Public Class frmMain
                         Return
                     End If
                     _toolpath = t.Result
-                    _lastLinesKey = TextLine.KeyOf(lines)
+                    _lastLinesKey = contentKey
                     _lastSettings = snapshot
                     _glView.SetToolpath(_toolpath, snapshot)
                     UpdateStats(_toolpath)
@@ -609,6 +832,11 @@ Public Class frmMain
                 Case NameOf(FontChoice.Family), NameOf(FontChoice.Bold), NameOf(FontChoice.Italic),
                      NameOf(CarveSettings.FontLarge), NameOf(CarveSettings.FontMedium), NameOf(CarveSettings.FontSmall)
                     NormalizeEditorFormatting()
+                Case NameOf(CarveSettings.CurveTolerance)
+                    For Each o In _objects
+                        o.InvalidateShape()
+                    Next
+                    _glView.CurveTolerance = _settings.CurveTolerance
             End Select
         End If
         pgSettings.Refresh() ' MaxToolDepthIn and other derived values
@@ -623,6 +851,10 @@ Public Class frmMain
         pf.Lines.Add(New ProjectLine("", SizeSlot.Large, TextAlign.Center))
         _projectPath = Nothing
         LoadProjectIntoUi(pf)
+    End Sub
+
+    Private Sub mnuFileImportSvg_Click(sender As Object, e As EventArgs) Handles mnuFileImportSvg.Click
+        tsbObjImport_Click(sender, e)
     End Sub
 
     Private Sub mnuFileOpenProject_Click(sender As Object, e As EventArgs) Handles mnuFileOpenProject.Click
@@ -681,12 +913,13 @@ Public Class frmMain
         End If
 
         Dim tp As Toolpath = _toolpath
-        If tp Is Nothing OrElse _running OrElse TextLine.KeyOf(lines) <> _lastLinesKey OrElse Not SameSettings(snapshot, _lastSettings) Then
+        Dim contentKey As String = TextLine.KeyOf(lines) & ObjectsKey()
+        If tp Is Nothing OrElse _running OrElse contentKey <> _lastLinesKey OrElse Not SameSettings(snapshot, _lastSettings) Then
             UseWaitCursor = True
             Try
-                tp = TextToToolpath.Generate(lines, snapshot, CancellationToken.None)
+                tp = TextToToolpath.Generate(lines, PlacedDrawings(), snapshot, CancellationToken.None)
                 _toolpath = tp
-                _lastLinesKey = TextLine.KeyOf(lines)
+                _lastLinesKey = contentKey
                 _lastSettings = snapshot
                 _glView.SetToolpath(tp, snapshot)
                 UpdateStats(tp)

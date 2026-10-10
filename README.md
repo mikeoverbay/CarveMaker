@@ -6,12 +6,14 @@ installed font into a **V-carve toolpath** for a V-bit (default 1/4" diameter,
 
 ```
 +------------------------------+----------------------------------------+
-| Size: Large Medium Small     |                                        |
-| Align: Left Center Right     |          OpenGL toolpath view          |
-| [ rich text editor ]         |   (pan: left drag, orbit: right drag,  |
-|                              |    zoom: wheel, double-click: fit)     |
-+------------------------------+                                        |
-| [ settings property grid ]   |                                        |
+| [Text] [Drawings (SVG)]      |                     +----------------+ |
+| Size: Large Medium Small     |   OpenGL toolpath   |Machine Settings| |
+| Align: Left Center Right     |   view (pan: left   | (Ctrl+K, tool  | |
+| [ rich text editor ]         |   drag, orbit:      |  window: blank,| |
+|------------------------------|   right drag, zoom: |  tool, carve,  | |
+| [ text settings: sizes,      |   wheel, double-    |  machine,      | |
+|   fonts, placement, text     |   click: fit)       |  simulation)   | |
+|   toolpath ]                 |                     +----------------+ |
 +------------------------------+----------------------------------------+
 ```
 
@@ -26,22 +28,29 @@ SmartScreen may ask you to confirm the first time.)
 ## Using it
 
 1. Type the text in the editor. Each line can have one of three letter sizes
-   (**Large / Medium / Small**, inch values editable under *1. Text*) and its own
+   (**Large / Medium / Small**, inch values editable in the settings under the
+   editor, *1. Sizes and fonts*) and its own
    alignment (**Left / Center / Right**). Formatting applies to whole lines.
 2. Each size has its own font: expand *Size 1 - Large font* (and Medium, Small)
-   in the grid to pick family, bold and italic, or put the caret on a line and
-   use **Font > Choose Font for Current Line's Size...** (Ctrl+F).
-3. Adjust tool, carve and machine settings in the grid. The toolpath regenerates
-   automatically (or press **F5**).
+   in the text settings to pick family, bold and italic, or put the caret on a
+   line and use **Font > Choose Font for Current Line's Size...** (Ctrl+F).
+3. The Text tab holds only text settings: sizes and fonts, placement on the
+   blank, and the text toolpath. Everything else, including the blank (stock),
+   V-carve tool, carve, machine and simulation settings, is in the **Machine
+   Settings** window. Open it with **Machine > Machine Settings...** (Ctrl+K). It
+   floats over the main window and stays open while you work. Closing it only
+   hides it. The toolpath regenerates automatically after every change (or press
+   **F5**).
 4. **File > Save Project** (Ctrl+S) stores everything, settings and formatted
    text, in a `.prj` file (readable JSON); **Open Project** (Ctrl+O) brings it
    back and **New Project** (Ctrl+N) starts over. The title bar shows a `*`
    while there are unsaved changes. **File > Export G-code...** (Ctrl+G) writes
    the program (`.nc`); **Import Text** reads a `.txt` or `.rtf` into the editor.
 
-Blank and placement (*0. Blank* in the grid): give the stock **width X** and
-**height Y** and the machine coordinates of its lower-left corner (*Blank
-origin*; use `-width/2, -height/2` if you zero at the centre). Each line is
+Blank (*Machine Settings > 1. Blank*): give the stock **width X**, **height Y**,
+**thickness** and **margin**, and the machine coordinates of its lower-left corner (*Blank
+origin*; use `-width/2, -height/2` if you zero at the centre). Placement (Text
+tab, *2. Placement on the blank*): each line is
 justified across the blank: **Left** starts at the left margin, **Center** is
 centred on the blank, **Right** ends at the right margin. The whole block is
 placed **Top / Middle / Bottom** between the margins, and *Text offset X/Y*
@@ -111,18 +120,18 @@ into the installer, and the Import SVG dialog opens there the first time.
 ## Pocket and profile toolpaths
 
 Every drawing has a **Toolpath** (Drawings tab, *Machining* category) and the
-text has a **Text operation** (*1. Text*). Each is one of:
+text has a **Text operation** (Text tab, *3. Toolpath*). Each is one of:
 
 | Operation | What it does | Settings |
 |---|---|---|
-| V-carve (default) | Carved with the V-bit under *2. Tool*, together with every other V-carved item | the *3. Carve* settings |
+| V-carve (default) | Carved with the V-bit under *Machine Settings > 2. Tool*, together with every other V-carved item | *Machine Settings > 3. Carve* |
 | Pocket | Clears the area to a flat floor with an end mill: offset rings from the centre out to the wall, level by level | tool, cut depth, pass depth, stepover % |
 | Profile | The tool follows the outline: **Outside** (cut the shape out at its true size), **Inside** (cut an opening) or **On the line** (engrave; a V-bit is allowed here) | tool, side, cut depth or *Cut through the stock*, pass depth, tabs (count, width, thickness) |
 
 The grid shows only the settings the chosen operation uses, and the **...**
 button on *Tool* opens the tool library filtered to the tools that can do it.
 Climb or conventional milling follows *Milling direction*. Through cuts go
-0.02" below the stock thickness (*4. Machine*). Tabs leave bridges of material
+0.02" below the stock thickness (*Machine Settings > 1. Blank*). Tabs leave bridges of material
 so the part stays put, and the simulation shows the cut-out see-through.
 Pocket clean-up passes cover the stripes a stepover above 50% would leave.
 Areas narrower than the tool are reported in the status bar.
@@ -138,7 +147,7 @@ stock. Each program has the usual FluidNC start and end.
 
 ## Tool library
 
-**Toolpath > Tool Library** (Ctrl+L), or the **...** button on *2. Tool > V-carve
+**Toolpath > Tool Library** (Ctrl+L), or the **...** button on *Machine Settings > 2. Tool > V-carve
 tool*. Tools are inch only and grouped by type; each is four numbers, shown on a
 scale drawing with its dimensions:
 
@@ -163,7 +172,7 @@ Projects saved before the library open with an equivalent V-bit.
 
 **View > Show Simulation** (Ctrl+M) replaces the line drawing with the carved
 board. The blank becomes a float heightmap texture on the GPU (one cell =
-*Precision* under *5. Simulation*: 0.003", 0.005" or 0.010"), automatically
+*Precision* under *Machine Settings > 5. Simulation*: 0.003", 0.005" or 0.010"), automatically
 coarsened if the blank needs more cells than the graphics card allows (shown
 as *Max texture size (hardware)*). Material is removed by rendering the revolved
 tool model from above into that texture with MAX blending every half cell along

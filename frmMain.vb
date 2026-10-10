@@ -23,6 +23,7 @@ Public Class frmMain
     Private Const PtSmall As Single = 11.0F
 
     Private _settings As New CarveSettings()
+    Private _machineWindow As frmMachineSettings
     Private _glView As ToolpathView
     Private _toolpath As Toolpath
     Private _lastLinesKey As String = ""
@@ -87,7 +88,7 @@ Public Class frmMain
         _glView.BringToFront()
         If _glView.InitError IsNot Nothing Then lblStatus.Text = "OpenGL view unavailable: " & _glView.InitError
         AddHandler _glView.SimulationProgress, AddressOf OnSimulationProgress
-        AddHandler _glView.GLReady, Sub(o, ev) pgSettings.Refresh()
+        AddHandler _glView.GLReady, Sub(o, ev) RefreshSettingsGrids()
         AddHandler _glView.SelectionChanged, AddressOf OnViewSelectionChanged
         AddHandler _glView.ObjectEdited, AddressOf OnViewObjectEdited
         AddHandler _glView.TextMoved, AddressOf OnViewTextMoved
@@ -95,7 +96,10 @@ Public Class frmMain
         _glView.CurveTolerance = _settings.CurveTolerance
         tscSimSpeed.SelectedIndex = 3      ' 10x
 
-        pgSettings.SelectedObject = _settings
+        ' Machine Settings window: created now (hidden) so its grid is always bound and current.
+        _machineWindow = New frmMachineSettings() With {.Owner = Me}
+        AddHandler _machineWindow.Grid.PropertyValueChanged, AddressOf Settings_PropertyValueChanged
+        BindSettingsGrids()
         UpdateSizeButtonCaptions()
 
         ' Sample text: one large centred line.
@@ -205,7 +209,7 @@ Public Class frmMain
     End Function
 
     ''' <summary>Opens an expandable row (the machining settings) so its options are in view.</summary>
-    Private Shared Sub ExpandGridRow(pg As PropertyGrid, propertyName As String)
+    Private Shared Sub ExpandGridRow(pg As PropertyGrid, propertyName As String, Optional scrollToTop As Boolean = False)
         Try
             If pg.IsDisposed OrElse pg.SelectedObject Is Nothing Then Return
             Dim root As GridItem = pg.SelectedGridItem
@@ -218,6 +222,8 @@ Public Class frmMain
                     If gi.PropertyDescriptor IsNot Nothing AndAlso gi.PropertyDescriptor.Name = propertyName AndAlso gi.Expandable Then gi.Expanded = True
                 Next
             Next
+            ' Expanding can scroll the first heading out of view: start at the top.
+            If scrollToTop AndAlso root.GridItems.Count > 0 Then root.GridItems(0).Select()
         Catch ex As ObjectDisposedException
             ' The grid was rebuilt again meanwhile; the next selection change expands it.
         End Try
@@ -228,8 +234,29 @@ Public Class frmMain
         If IsHandleCreated Then BeginInvoke(Sub() ExpandGridRow(pgObject, NameOf(DesignObject.Machining)))
     End Sub
 
-    Private Sub pgSettings_SelectedObjectsChanged(sender As Object, e As EventArgs) Handles pgSettings.SelectedObjectsChanged
-        If IsHandleCreated Then BeginInvoke(Sub() ExpandGridRow(pgSettings, NameOf(CarveSettings.TextMachining)))
+    Private Sub pgText_SelectedObjectsChanged(sender As Object, e As EventArgs) Handles pgText.SelectedObjectsChanged
+        If IsHandleCreated Then BeginInvoke(Sub() ExpandGridRow(pgText, NameOf(CarveSettings.TextMachining), scrollToTop:=True))
+    End Sub
+
+    ''' <summary>The Text tab grid shows the text settings, the Machine Settings window the rest (same object).</summary>
+    Private Sub BindSettingsGrids()
+        pgText.SelectedObject = SettingsGroups.TextView(_settings)
+        If _machineWindow IsNot Nothing Then _machineWindow.Grid.SelectedObject = SettingsGroups.MachineView(_settings)
+    End Sub
+
+    ''' <summary>Redraws both settings grids (derived values, fonts changed from the menu...).</summary>
+    Private Sub RefreshSettingsGrids()
+        pgText.Refresh()
+        If _machineWindow IsNot Nothing AndAlso Not _machineWindow.IsDisposed Then _machineWindow.Grid.Refresh()
+    End Sub
+
+    Private Sub mnuMachineSettings_Click(sender As Object, e As EventArgs) Handles mnuMachineSettings.Click
+        If _machineWindow Is Nothing OrElse _machineWindow.IsDisposed Then
+            _machineWindow = New frmMachineSettings() With {.Owner = Me}
+            AddHandler _machineWindow.Grid.PropertyValueChanged, AddressOf Settings_PropertyValueChanged
+            BindSettingsGrids()
+        End If
+        _machineWindow.ShowNear(Me)
     End Sub
 
     Private Sub RefreshObjectList(selectIndex As Integer)
@@ -336,7 +363,7 @@ Public Class frmMain
     Private Sub OnViewTextMoved(sender As Object, e As ToolpathView.TextMovedEventArgs)
         _settings.TextOffsetX = Math.Round(_settings.TextOffsetX + e.Dx, 4)
         _settings.TextOffsetY = Math.Round(_settings.TextOffsetY + e.Dy, 4)
-        pgSettings.Refresh()
+        RefreshSettingsGrids()
         MarkDirty()
         RequestRegenerate(immediate:=True)
     End Sub
@@ -455,7 +482,7 @@ Public Class frmMain
         _genCts?.Cancel()
         _genVersion += 1
         _settings = pf.Settings
-        pgSettings.SelectedObject = _settings
+        BindSettingsGrids()
         UpdateSizeButtonCaptions()
         _objects = New List(Of DesignObject)(pf.Objects.Select(Function(o) o.Clone()))
         For Each o In _objects
@@ -877,7 +904,8 @@ Public Class frmMain
         ApplyAlignmentToSelection(HorizontalAlignment.Right)
     End Sub
 
-    Private Sub pgSettings_PropertyValueChanged(s As Object, e As PropertyValueChangedEventArgs) Handles pgSettings.PropertyValueChanged
+    ''' <summary>Changes from the Text tab grid and from the Machine Settings window.</summary>
+    Private Sub Settings_PropertyValueChanged(s As Object, e As PropertyValueChangedEventArgs) Handles pgText.PropertyValueChanged
         MarkDirty()
         UpdateSizeButtonCaptions()
         If e.ChangedItem IsNot Nothing AndAlso e.ChangedItem.PropertyDescriptor IsNot Nothing Then
@@ -896,11 +924,11 @@ Public Class frmMain
                     ' stock edits (Auto regenerate off) do not leak into the carved surface.
                     If _lastSettings IsNot Nothing Then CopySimulationOnlySettings(_settings, _lastSettings)
                     _glView.UpdateSimulationSettings(If(_lastSettings, _settings).Clone())
-                    pgSettings.Refresh()
+                    RefreshSettingsGrids()
                     Return
             End Select
         End If
-        pgSettings.Refresh() ' MaxToolDepthIn and other derived values
+        RefreshSettingsGrids() ' MaxToolDepthIn and other derived values
         RequestRegenerate()
     End Sub
 
@@ -1047,7 +1075,7 @@ Public Class frmMain
         Dim inLibrary = ToolLibrary.Load().FindById(current.Id)
         If inLibrary IsNot Nothing AndAlso Not inLibrary.Equals(current) Then
             _settings.CarveTool = inLibrary.Clone()
-            pgSettings.Refresh()
+            RefreshSettingsGrids()
             MarkDirty()
             RequestRegenerate(immediate:=True)
             lblStatus.Text = "The V-carve tool was updated from the library: " & inLibrary.DisplayName()
@@ -1113,7 +1141,7 @@ Public Class frmMain
         choice.Family = dlgFont.Font.FontFamily.Name
         choice.Bold = dlgFont.Font.Bold
         choice.Italic = dlgFont.Font.Italic
-        pgSettings.Refresh()
+        RefreshSettingsGrids()
         NormalizeEditorFormatting()
         MarkDirty()
         lblStatus.Text = slot.ToString() & " font: " & choice.ToString()
@@ -1174,7 +1202,7 @@ Public Class frmMain
             tsbSimPlay.Text = If(_glView.SimulationPlaying, "Pause", "Play")
             Dim info = _glView.SimulationInfo
             tslSimInfo.Text = info
-            tslSimInfo.ToolTipText = If(info.Length > 0, "Heightmap " & info & ". Set under 5. Simulation > Precision.", "")
+            tslSimInfo.ToolTipText = If(info.Length > 0, "Heightmap " & info & ". Set under Machine > Machine Settings > 5. Simulation.", "")
         Finally
             _simUiUpdating = False
         End Try

@@ -2,7 +2,7 @@
 '  Machining.vb
 '  What happens to each item of the job (the text block, each drawing):
 '
-'    V-carve  carved with the V-bit under 2. Tool, together with every other
+'    V-carve  carved with the V-bit under Machine Settings > 2. Tool, with every other
 '             V-carved item (the original CarveMaker engine, VCarve.vb).
 '    Pocket   the area is cleared to a flat floor with an end mill: offset
 '             rings from the centre out to the wall, level by level.
@@ -97,7 +97,7 @@ Public Class Machining
     Private _operation As CutOperation = CutOperation.VCarve
 
     <DisplayName("Operation"), RefreshProperties(RefreshProperties.All), TypeConverter(GetType(CutOperationConverter)),
-     Description("V-carve: carved with the V-bit under 2. Tool. Pocket: the area is cleared to a flat floor with an end mill. Profile: the tool follows the outline (outside, inside or on the line), for example to cut the shape out of the board.")>
+     Description("V-carve: carved with the V-bit under Machine Settings > 2. Tool. Pocket: the area is cleared to a flat floor with an end mill. Profile: the tool follows the outline (outside, inside or on the line), for example to cut the shape out of the board.")>
     Public Property Operation As CutOperation
         Get
             Return _operation
@@ -117,7 +117,7 @@ Public Class Machining
     Public Property Side As ProfileSide = ProfileSide.Outside
 
     <DisplayName("Cut through the stock"), RefreshProperties(RefreshProperties.All),
-     Description("Cut the full stock thickness (4. Machine) plus 0.02"" so the shape comes free. Use tabs to hold it in place.")>
+     Description("Cut the full stock thickness (Machine Settings > 1. Blank) plus 0.02"" so the shape comes free. Use tabs to hold it in place.")>
     Public Property ThroughCut As Boolean = False
 
     <DisplayName("Cut depth (in)"), Description("Final depth below the top of the stock.")>

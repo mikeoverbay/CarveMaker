@@ -48,6 +48,8 @@ Partial Class frmMain
         mnuViewSep2 = New ToolStripSeparator()
         mnuViewSim = New ToolStripMenuItem()
         mnuToolpath = New ToolStripMenuItem()
+        mnuMachine = New ToolStripMenuItem()
+        mnuMachineSettings = New ToolStripMenuItem()
         mnuToolpathGenerate = New ToolStripMenuItem()
         mnuToolpathAuto = New ToolStripMenuItem()
         mnuToolpathSep1 = New ToolStripSeparator()
@@ -79,7 +81,8 @@ Partial Class frmMain
         tsbAlignLeft = New ToolStripButton()
         tsbAlignCenter = New ToolStripButton()
         tsbAlignRight = New ToolStripButton()
-        pgSettings = New PropertyGrid()
+        splitText = New SplitContainer()
+        pgText = New PropertyGrid()
         pnlView = New Panel()
         pnlSim = New Panel()
         tbSim = New TrackBar()
@@ -112,6 +115,10 @@ Partial Class frmMain
         pnlEditor.SuspendLayout()
         tabLeft.SuspendLayout()
         tabText.SuspendLayout()
+        CType(splitText, System.ComponentModel.ISupportInitialize).BeginInit()
+        splitText.Panel1.SuspendLayout()
+        splitText.Panel2.SuspendLayout()
+        splitText.SuspendLayout()
         tabObjects.SuspendLayout()
         tsObjects.SuspendLayout()
         tsFormat.SuspendLayout()
@@ -119,7 +126,7 @@ Partial Class frmMain
         '
         ' mnuMain
         '
-        mnuMain.Items.AddRange(New ToolStripItem() {mnuFile, mnuFont, mnuView, mnuToolpath})
+        mnuMain.Items.AddRange(New ToolStripItem() {mnuFile, mnuFont, mnuView, mnuToolpath, mnuMachine})
         mnuMain.Location = New Point(0, 0)
         mnuMain.Name = "mnuMain"
         mnuMain.Size = New Size(1200, 24)
@@ -289,6 +296,20 @@ Partial Class frmMain
         mnuToolpath.Size = New Size(64, 20)
         mnuToolpath.Text = "&Toolpath"
         '
+        ' mnuMachine
+        '
+        mnuMachine.DropDownItems.AddRange(New ToolStripItem() {mnuMachineSettings})
+        mnuMachine.Name = "mnuMachine"
+        mnuMachine.Size = New Size(65, 20)
+        mnuMachine.Text = "&Machine"
+        '
+        ' mnuMachineSettings
+        '
+        mnuMachineSettings.Name = "mnuMachineSettings"
+        mnuMachineSettings.ShortcutKeys = Keys.Control Or Keys.K
+        mnuMachineSettings.Size = New Size(220, 22)
+        mnuMachineSettings.Text = "Machine &Settings..."
+        '
         ' mnuToolpathGenerate
         '
         mnuToolpathGenerate.Name = "mnuToolpathGenerate"
@@ -365,13 +386,11 @@ Partial Class frmMain
         tlpLeft.ColumnCount = 1
         tlpLeft.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100.0F))
         tlpLeft.Controls.Add(tabLeft, 0, 0)
-        tlpLeft.Controls.Add(pgSettings, 0, 1)
         tlpLeft.Dock = DockStyle.Fill
         tlpLeft.Location = New Point(0, 0)
         tlpLeft.Name = "tlpLeft"
-        tlpLeft.RowCount = 2
-        tlpLeft.RowStyles.Add(New RowStyle(SizeType.Percent, 42.0F))
-        tlpLeft.RowStyles.Add(New RowStyle(SizeType.Percent, 58.0F))
+        tlpLeft.RowCount = 1
+        tlpLeft.RowStyles.Add(New RowStyle(SizeType.Percent, 100.0F))
         tlpLeft.Size = New Size(420, 704)
         tlpLeft.TabIndex = 0
         ' 
@@ -383,16 +402,16 @@ Partial Class frmMain
         tabLeft.Location = New Point(3, 3)
         tabLeft.Name = "tabLeft"
         tabLeft.SelectedIndex = 0
-        tabLeft.Size = New Size(414, 289)
+        tabLeft.Size = New Size(414, 698)
         tabLeft.TabIndex = 0
         ' 
         ' tabText
         ' 
-        tabText.Controls.Add(pnlEditor)
+        tabText.Controls.Add(splitText)
         tabText.Location = New Point(4, 24)
         tabText.Name = "tabText"
         tabText.Padding = New Padding(3)
-        tabText.Size = New Size(406, 261)
+        tabText.Size = New Size(406, 670)
         tabText.TabIndex = 0
         tabText.Text = "Text"
         tabText.UseVisualStyleBackColor = True
@@ -442,7 +461,7 @@ Partial Class frmMain
         tsbObjFit.Name = "tsbObjFit"
         tsbObjFit.Size = New Size(72, 22)
         tsbObjFit.Text = "Fit to Blank"
-        tsbObjFit.ToolTipText = "Scale the drawing to fill the blank inside the margins"
+        tsbObjFit.ToolTipText = "Scale the drawing to fill the blank inside the margins (Machine Settings > 1. Blank > Margin)"
         ' 
         ' tsbObjCenter
         ' 
@@ -474,14 +493,45 @@ Partial Class frmMain
         pgObject.TabIndex = 2
         pgObject.ToolbarVisible = False
         '
+        ' splitText
+        '
+        splitText.Dock = DockStyle.Fill
+        splitText.Location = New Point(3, 3)
+        splitText.Name = "splitText"
+        splitText.Orientation = Orientation.Horizontal
+        '
+        ' splitText.Panel1
+        '
+        splitText.Panel1.Controls.Add(pnlEditor)
+        splitText.Panel1MinSize = 120
+        '
+        ' splitText.Panel2
+        '
+        splitText.Panel2.Controls.Add(pgText)
+        splitText.Panel2MinSize = 120
+        splitText.Size = New Size(400, 664)
+        splitText.SplitterDistance = 300
+        splitText.SplitterWidth = 6
+        splitText.TabIndex = 0
+        '
+        ' pgText
+        '
+        pgText.Dock = DockStyle.Fill
+        pgText.Location = New Point(0, 0)
+        pgText.Name = "pgText"
+        pgText.PropertySort = PropertySort.Categorized
+        pgText.Size = New Size(400, 358)
+        pgText.TabIndex = 0
+        pgText.ToolbarVisible = False
+        '
         ' pnlEditor
         '
         pnlEditor.Controls.Add(rtbText)
         pnlEditor.Controls.Add(tsFormat)
         pnlEditor.Dock = DockStyle.Fill
-        pnlEditor.Location = New Point(3, 3)
+        pnlEditor.Location = New Point(0, 0)
         pnlEditor.Name = "pnlEditor"
-        pnlEditor.Size = New Size(414, 289)
+        pnlEditor.Size = New Size(400, 300)
         pnlEditor.TabIndex = 0
         '
         ' rtbText
@@ -573,16 +623,6 @@ Partial Class frmMain
         tsbAlignRight.Size = New Size(39, 22)
         tsbAlignRight.Text = "Right"
         tsbAlignRight.ToolTipText = "Right-align the selected line(s)"
-        '
-        ' pgSettings
-        '
-        pgSettings.Dock = DockStyle.Fill
-        pgSettings.Location = New Point(3, 298)
-        pgSettings.Name = "pgSettings"
-        pgSettings.PropertySort = PropertySort.Categorized
-        pgSettings.Size = New Size(414, 403)
-        pgSettings.TabIndex = 1
-        pgSettings.ToolbarVisible = False
         '
         ' pnlView
         '
@@ -748,6 +788,10 @@ Partial Class frmMain
         pnlEditor.PerformLayout()
         tabLeft.ResumeLayout(False)
         tabText.ResumeLayout(False)
+        splitText.Panel1.ResumeLayout(False)
+        splitText.Panel2.ResumeLayout(False)
+        CType(splitText, System.ComponentModel.ISupportInitialize).EndInit()
+        splitText.ResumeLayout(False)
         tabObjects.ResumeLayout(False)
         tabObjects.PerformLayout()
         tsObjects.ResumeLayout(False)
@@ -783,6 +827,8 @@ Partial Class frmMain
     Friend WithEvents mnuViewSep2 As ToolStripSeparator
     Friend WithEvents mnuViewSim As ToolStripMenuItem
     Friend WithEvents mnuToolpath As ToolStripMenuItem
+    Friend WithEvents mnuMachine As ToolStripMenuItem
+    Friend WithEvents mnuMachineSettings As ToolStripMenuItem
     Friend WithEvents mnuToolpathGenerate As ToolStripMenuItem
     Friend WithEvents mnuToolpathAuto As ToolStripMenuItem
     Friend WithEvents mnuToolpathSep1 As ToolStripSeparator
@@ -814,7 +860,8 @@ Partial Class frmMain
     Friend WithEvents tsbAlignLeft As ToolStripButton
     Friend WithEvents tsbAlignCenter As ToolStripButton
     Friend WithEvents tsbAlignRight As ToolStripButton
-    Friend WithEvents pgSettings As PropertyGrid
+    Friend WithEvents splitText As SplitContainer
+    Friend WithEvents pgText As PropertyGrid
     Friend WithEvents pnlView As Panel
     Friend WithEvents pnlSim As Panel
     Friend WithEvents tbSim As TrackBar

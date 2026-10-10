@@ -1,4 +1,4 @@
-# CarveMaker handoff (updated 2026-10-09: tool library, pocket and profile)
+# CarveMaker handoff (updated 2026-10-10: tool library, pocket and profile, settings layout)
 
 Written so any session (or person) can pick the project up without the chat
 history. Read this, then `README.md` for the user-facing description.
@@ -32,7 +32,7 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
 
 | File | Role |
 |---|---|
-| `Model.vb` | Pt2/Pt3, Toolpath/contours/moves, enums, `TextLine`, `DesignObject` (placed SVG), `CarveSettings` (PropertyGrid categories 0..5, `Clone`, `Validate`) |
+| `Model.vb` | Pt2/Pt3, Toolpath/contours/moves, enums, `TextLine`, `DesignObject` (placed SVG), `CarveSettings` (grid categories: Text tab 1..3, Machine Settings 1..5, split in `SettingsView.vb`; `Clone`, `Validate`) |
 | `GlyphOutline.vb` | Text to outlines: GDI+ `AddString` per line, cap-height sizing, justification across the blank, Clipper2 union |
 | `VCarve.vb` | `TextToToolpath.Generate`, `RegionShape` (distance field), `VCarveEngine` (inset roughing, bevel at flat depth, floor clearing, medial-axis centerline finish), `ToolpathLinker` (ordering, links, gouge checks, time) |
 | `GCodeWriter.vb` | FluidNC-style program: `G0 G53 Z0`, `G54`, `M8`, `S M3`, `G4 P`, first move `G0 X Y` then `G0 Z`, footer `G0 G53 Z0`, `M5`, `M9`, `M30` |
@@ -45,7 +45,9 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
 | `frmToolLibrary.vb` / `.Designer.vb` | Tool Library dialog: manage mode (Toolpath > Tool Library, Ctrl+L) and pick mode (filter: V-carving needs a V-bit) |
 | `SvgImport.vb` | SVG to Clipper polygons (inches, Y up): paths/shapes, groups, nested svg, use/symbol, CSS style sheets, preserveAspectRatio, strokes with caps/joins, fill rules |
 | `ProjectFile.vb` | `.prj` JSON (settings, lines, drawings), version check |
-| `frmMain.vb` / `.Designer.vb` | UI: editor tab, Drawings tab, settings grid, menus, simulation bar, regenerate pipeline (`RequestRegenerate` -> 400 ms timer -> `GenerateAsync` on a worker) |
+| `SettingsView.vb` | `SettingsView` (ICustomTypeDescriptor showing a subset of one `CarveSettings` object in a PropertyGrid; `GetPropertyOwner` returns the real object) and `SettingsGroups.TextPropertyNames` (what the Text tab shows; everything else goes to the Machine Settings window) |
+| `frmMachineSettings.vb` / `.Designer.vb` | Machine Settings tool window (Machine > Machine Settings, Ctrl+K), owned by the main form, hides on close |
+| `frmMain.vb` / `.Designer.vb` | UI: Text tab (editor + `pgText` text settings), Drawings tab, binds the Machine Settings window, menus, simulation bar, regenerate pipeline (`RequestRegenerate` -> 400 ms timer -> `GenerateAsync` on a worker) |
 | `Setup\` | Installer project and `Setup.iss` |
 | `Samples\` | Six sample SVGs shipped next to the exe |
 
@@ -63,6 +65,16 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
    instantly without regenerating the toolpath (also safe during an in-flight
    generation), and the simulation bar shows `W x H cells at 0.00xx" (MB)`.
 3. **Display mesh** (Full 4 M / Half 1 M / Low 250 k cells) for weak GPUs.
+6. **Settings layout.** The shared settings grid is gone. The Text tab has
+   `pgText` under the editor (sizes and fonts, placement on the blank, text
+   toolpath); the Machine Settings window (`_machineWindow.Grid`) has 1. Blank
+   (now with stock thickness and margin, which drawings use too), 2. Tool, 3. Carve (now with curve tolerance),
+   4. Machine, 5. Simulation. Both grids raise `Settings_PropertyValueChanged`;
+   `BindSettingsGrids` / `RefreshSettingsGrids` keep them on the current
+   `_settings` (call after loading a project). Property names are unchanged, so
+   .prj files are unaffected. The tool window forwards the main menu's shortcut
+   keys (`ProcessCmdKey`), because menu shortcuts only fire while focus is in
+   the window that owns the menu.
 5. **Pocket and profile toolpaths.** `DesignObject.Machining` and
    `CarveSettings.TextMachining`; `JobBuilder.Generate` replaces the old
    single V-carve call (`TextToToolpath.Generate` still works and goes through
@@ -98,6 +110,7 @@ torture SVG folders and their expectation scripts). Build with
 | `order` | Cut order modes |
 | `gui` | Drives the real form: types text, imports heart sample, drags/resizes, runs the simulation, saves screenshots |
 | `simres` | Changes Precision and Display mesh through the real PropertyGrid path, reads heightmap/mesh sizes, pixel-diffs screenshots, times frames |
+| `layout` | Settings layout: text grid inside the Text tab and hidden on the Drawings tab, Machine Settings categories, every setting in exactly one grid, edits from either grid regenerate and mark the project changed, window hides/reopens, project load rebinds both grids, screenshots |
 | `mill` | Pocket and profile: wall gouge and floor coverage, island clearance, 90% stepover clean-up, profile offsets and direction, through cut + tabs, refused tools, job order and tool groups, per-tool G-code, project round trip, and the form + multi-tool simulation on screen. `mill nogui` skips the screen part |
 | `tools` | Tool library: profiles and meshes of all standard tools, inch parsing, validation, settings/project migration, library file, the dialog (edits, type switch, save, pick mode) and the simulation tool, with screenshots. `tools nogui` skips the screen part |
 
@@ -120,6 +133,7 @@ The torture expectations (`svg-torture-transforms-expect.js`,
   `GL.Uniform3(loc, Vector3)` does not compile in VB.
 - VB: a local named like a type (`joinType` vs `JoinType`) shadows the type;
   Structure doubles default to 0.
+- GUI harness modes: clear `frmMain._dirty` before `f.Close()` or the save prompt blocks the run; run GUI modes one at a time (they share the desktop and SendKeys); never `taskkill smoke.exe` while a background harness run is going.
 - Bash tool mangles backslashes in heredocs; write edit scripts with the Write
   tool and run them with `node`.
 - PropertyGrid edits write straight into `_settings`; toolpath-relevant ones go

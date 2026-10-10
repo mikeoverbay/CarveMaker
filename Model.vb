@@ -396,7 +396,7 @@ Public Class DesignObject
     Public Property Visible As Boolean = True
 
     <Category("Machining"), DisplayName("Toolpath"),
-     Description("How this drawing is machined: V-carve (with the V-bit under 2. Tool), Pocket (cleared flat with an end mill) or Profile (the tool follows the outline, e.g. to cut it out). Expand to set the tool and depths.")>
+     Description("How this drawing is machined: V-carve (with the V-bit under Machine Settings > 2. Tool), Pocket (cleared flat with an end mill) or Profile (the tool follows the outline, e.g. to cut it out). Expand to set the tool and depths.")>
     Public Property Machining As New Machining()
 
     ''' <summary>Parsed drawing at its natural size (lower-left at 0,0); Nothing until parsed.</summary>
@@ -531,59 +531,59 @@ End Class
 Public Class CarveSettings
 
     ' ---------------------------------------------------------------- Blank
-    <Category("0. Blank"), DisplayName("Blank width X (in)"),
+    <Category("1. Blank"), DisplayName("Blank width X (in)"),
      Description("Width of the stock blank. Lines are justified Left / Center / Right across this width.")>
     Public Property BlankWidthIn As Double = 6.0
 
-    <Category("0. Blank"), DisplayName("Blank height Y (in)"),
+    <Category("1. Blank"), DisplayName("Blank height Y (in)"),
      Description("Height of the stock blank. The text block is placed Top / Middle / Bottom within it.")>
     Public Property BlankHeightIn As Double = 3.0
 
-    <Category("0. Blank"), DisplayName("Blank origin X (in)"),
+    <Category("1. Blank"), DisplayName("Blank origin X (in)"),
      Description("Machine X of the blank's lower-left corner. Use 0 when you zero the machine at the lower-left corner, or -width/2 when you zero at the center.")>
     Public Property BlankOriginX As Double = 0.0
 
-    <Category("0. Blank"), DisplayName("Blank origin Y (in)"),
+    <Category("1. Blank"), DisplayName("Blank origin Y (in)"),
      Description("Machine Y of the blank's lower-left corner.")>
     Public Property BlankOriginY As Double = 0.0
 
-    <Category("0. Blank"), DisplayName("Margin (in)"),
-     Description("Distance kept between the blank's edges and left/right-justified or top/bottom-placed text.")>
+    <Category("1. Blank"), DisplayName("Margin (in)"),
+     Description("Distance kept from the blank's edges: by left/right-justified and top/bottom-placed text, and by drawings sized with Fit to Blank.")>
     Public Property MarginIn As Double = 0.25
 
-    <Category("0. Blank"), DisplayName("Vertical placement"),
-     Description("Where the whole text block sits on the blank: against the top margin, centered, or against the bottom margin.")>
+    <Category("2. Placement on the blank"), DisplayName("Vertical placement"),
+     Description("Where the whole text block sits on the blank: against the top margin, centered, or against the bottom margin (Margin is under Machine Settings > 1. Blank).")>
     Public Property VerticalPlacement As VerticalAlign = VerticalAlign.Middle
 
-    <Category("0. Blank"), DisplayName("Text offset X (in)"),
+    <Category("2. Placement on the blank"), DisplayName("Text offset X (in)"),
      Description("Fine adjustment added to the justified text position.")>
     Public Property TextOffsetX As Double = 0.0
 
-    <Category("0. Blank"), DisplayName("Text offset Y (in)"),
+    <Category("2. Placement on the blank"), DisplayName("Text offset Y (in)"),
      Description("Fine adjustment added to the placed text position.")>
     Public Property TextOffsetY As Double = 0.0
 
     ' ---------------------------------------------------------------- Text
-    <Category("1. Text"), DisplayName("Size 1 - Large (in)"),
+    <Category("1. Sizes and fonts"), DisplayName("Size 1 - Large (in)"),
      Description("Letter size used by lines formatted 'Large' in the editor.")>
     Public Property SizeLargeIn As Double = 1.0
 
-    <Category("1. Text"), DisplayName("Size 1 - Large font"),
+    <Category("1. Sizes and fonts"), DisplayName("Size 1 - Large font"),
      Description("Font for lines formatted 'Large'. Expand to pick the family and style, or use Font > Choose Font... with the caret on such a line.")>
     Public Property FontLarge As New FontChoice("Arial")
 
-    <Category("1. Text"), DisplayName("Size 2 - Medium (in)"),
+    <Category("1. Sizes and fonts"), DisplayName("Size 2 - Medium (in)"),
      Description("Letter size used by lines formatted 'Medium' in the editor.")>
     Public Property SizeMediumIn As Double = 0.6
 
-    <Category("1. Text"), DisplayName("Size 2 - Medium font")>
+    <Category("1. Sizes and fonts"), DisplayName("Size 2 - Medium font")>
     Public Property FontMedium As New FontChoice("Arial")
 
-    <Category("1. Text"), DisplayName("Size 3 - Small (in)"),
+    <Category("1. Sizes and fonts"), DisplayName("Size 3 - Small (in)"),
      Description("Letter size used by lines formatted 'Small' in the editor.")>
     Public Property SizeSmallIn As Double = 0.35
 
-    <Category("1. Text"), DisplayName("Size 3 - Small font")>
+    <Category("1. Sizes and fonts"), DisplayName("Size 3 - Small font")>
     Public Property FontSmall As New FontChoice("Arial")
 
     ''' <summary>Font of a size slot.</summary>
@@ -626,11 +626,11 @@ Public Class CarveSettings
         End Set
     End Property
 
-    <Category("1. Text"), DisplayName("Size means"),
+    <Category("1. Sizes and fonts"), DisplayName("Size means"),
      Description("EmHeight: the font's design size (capitals are about 70% of it). CapHeight: a capital H is exactly this tall.")>
     Public Property SizeBy As SizeMode = SizeMode.CapHeight
 
-    <Category("1. Text"), DisplayName("Line spacing"),
+    <Category("1. Sizes and fonts"), DisplayName("Line spacing"),
      Description("Multiplier applied to the font's natural line height for multi-line text.")>
     Public Property LineSpacing As Double = 1.0
 
@@ -643,13 +643,9 @@ Public Class CarveSettings
         End Select
     End Function
 
-    <Category("1. Text"), DisplayName("Text operation"),
-     Description("How the text is machined: V-carve (with the V-bit under 2. Tool), Pocket (letters cleared flat with an end mill) or Profile (the tool follows the letter outlines). Expand to set the tool and depths.")>
+    <Category("3. Toolpath"), DisplayName("Text operation"),
+     Description("How the text is machined: V-carve (with the V-bit under Machine Settings > 2. Tool), Pocket (letters cleared flat with an end mill) or Profile (the tool follows the letter outlines). Expand to set the tool and depths.")>
     Public Property TextMachining As New Machining()
-
-    <Category("1. Text"), DisplayName("Curve tolerance (in)"),
-     Description("Chord error allowed when flattening glyph curves into line segments.")>
-    Public Property CurveTolerance As Double = 0.0005
 
     ' ---------------------------------------------------------------- Tool
     <Category("2. Tool"), DisplayName("V-carve tool"),
@@ -719,6 +715,10 @@ Public Class CarveSettings
      Description("Direction of the closed contours relative to the material still to be removed (inside the loop). Both flanks of a V cut are engaged, so this mostly affects the roughing contours.")>
     Public Property Direction As MillingDirection = MillingDirection.Climb
 
+    <Category("3. Carve"), DisplayName("Curve tolerance (in)"),
+     Description("Chord error allowed when flattening glyph curves into line segments.")>
+    Public Property CurveTolerance As Double = 0.0005
+
     ' ---------------------------------------------------------------- Machine
     <Category("4. Machine"), DisplayName("Safe Z (in)"),
      Description("Height above the stock top used for rapid moves between letters and at the start and end.")>
@@ -728,7 +728,7 @@ Public Class CarveSettings
      Description("Height above the stock top used for short rapid moves inside one letter.")>
     Public Property ClearanceZ As Double = 0.05
 
-    <Category("4. Machine"), DisplayName("Stock thickness (in)"),
+    <Category("1. Blank"), DisplayName("Stock thickness (in)"),
      Description("Used only to warn when the flat depth would cut through the stock.")>
     Public Property StockThickness As Double = 0.75
 
@@ -821,7 +821,8 @@ Public Class CarveSettings
     End Function
 
     ''' <summary>The flat depth actually used: never deeper than the tool can cut.</summary>
-    <JsonIgnore>
+    <Category("3. Carve"), DisplayName("Flat depth used (in)"), [ReadOnly](True), JsonIgnore,
+     Description("Flat depth after limiting it to the V-bit's max usable depth (2. Tool). This is the depth the V-carve really cuts.")>
     Public ReadOnly Property EffectiveFlatDepth As Double
         Get
             Return Math.Min(Math.Max(FlatDepth, 0.0), MaxToolDepthIn)
@@ -843,7 +844,7 @@ Public Class CarveSettings
         If SizeLargeIn <= 0 OrElse SizeMediumIn <= 0 OrElse SizeSmallIn <= 0 Then errs.Add("All three letter sizes must be positive.")
         Dim toolProblem = ToolPickerEditor.VCarveToolProblem(CarveTool)
         If toolProblem IsNot Nothing Then
-            errs.Add("V-carving needs a V-bit: choose one under 2. Tool.")
+            errs.Add("V-carving needs a V-bit: choose one under Machine > Machine Settings > 2. Tool.")
         Else
             For Each p In CarveTool.Problems()
                 errs.Add("Tool """ & CarveTool.DisplayName() & """: " & p)

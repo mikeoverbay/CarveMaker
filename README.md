@@ -116,11 +116,13 @@ coarsened if the blank needs more cells than the graphics card allows (shown
 as *Max texture size (hardware)*). Material is removed by rendering the revolved
 tool model from above into that texture with MAX blending every half cell along
 each move, so the sweep is exact to the cell size and runs in milliseconds. The
-carved surface is drawn with one vertex per cell (up to four million), so the
-chosen precision is what you see when you zoom into a letter; changing it
-rebuilds the heightmap immediately without regenerating the toolpath, and the
-simulation bar shows the resulting cell count, cell size and GPU memory (with a
-note when the hardware forced a coarser cell or a lighter display mesh).
+carved surface is drawn with one vertex per cell, so the chosen precision is
+what you see when you zoom into a letter; *Display mesh* (Full / Half / Low)
+caps that drawing at four million, one million or 250 thousand cells for
+weaker graphics hardware. Changing either setting rebuilds the heightmap
+immediately without regenerating the toolpath, and the simulation bar shows
+the resulting cell count, cell size and GPU memory (with a note when the
+hardware forced a coarser cell or the mesh is lighter than the heightmap).
 
 The bar under the view has **Play / Pause**, **Reset**, a **Speed** list (1x to
 100x or Instant) and a scrub slider; the clock uses the same feed, plunge and
@@ -140,6 +142,7 @@ simulation on shows the finished part first; Reset and Play animate it.
 | Cut order | *LineByLine* (default): finish each line of text, top line first, letters left to right. *Serpentine*: alternate lines run right to left. *LeftToRight*: every letter by X, which hops between lines. |
 | Spindle dwell / Dust collection / Park | `G4 P<seconds>` after `M3` (FluidNC and GRBL take P in seconds), `G0 G53 Z0` at the start and before `M5` when *Retract to machine home* is on; the first positioning move is `G0 X Y` while fully up, then `G0 Z` on its own line, and `M8` before the spindle starts / `M9` after `M5` when *Dust collection M8 / M9* is on (M8 runs the dust vacuum on this machine). |
 | Centerline finishing pass | Turn off only for quick previews; without it the ridge of every stroke is left up to two depth steps high. |
+| Precision / Display mesh | Simulation only. *Precision* is the heightmap cell (0.003" / 0.005" / 0.010"); *Display mesh* caps how many cells are drawn (Full 4 M, Half 1 M, Low 250 k): pick Low on a laptop with integrated graphics. Neither changes the toolpath. |
 
 ## Building
 

@@ -364,3 +364,4 @@ FodyWeavers.xsd
 # Installer build outputs
 Setup/publish/
 CarveMaker-Setup-*.exe
+/Samples/00717 Mandala Floral Pattern

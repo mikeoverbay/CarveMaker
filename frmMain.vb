@@ -745,7 +745,7 @@ Public Class frmMain
                     _toolpath = t.Result
                     _lastLinesKey = contentKey
                     ' The precision may have changed while the worker ran; it does not affect the toolpath.
-                    snapshot.SimResolution = _settings.SimResolution
+                    CopySimulationOnlySettings(_settings, snapshot)
                     _lastSettings = snapshot
                     _glView.SetToolpath(_toolpath, snapshot)
                     UpdateStats(_toolpath)
@@ -844,11 +844,11 @@ Public Class frmMain
                         o.InvalidateShape()
                     Next
                     _glView.CurveTolerance = _settings.CurveTolerance
-                Case NameOf(CarveSettings.SimResolution)
+                Case NameOf(CarveSettings.SimResolution), NameOf(CarveSettings.SimMeshDetail)
                     ' Simulation-only: rebuild the heightmap now, the toolpath is unchanged.
                     ' Simulate the toolpath with the settings it was generated from, so pending tool or
                     ' stock edits (Auto regenerate off) do not leak into the carved surface.
-                    If _lastSettings IsNot Nothing Then _lastSettings.SimResolution = _settings.SimResolution
+                    If _lastSettings IsNot Nothing Then CopySimulationOnlySettings(_settings, _lastSettings)
                     _glView.UpdateSimulationSettings(If(_lastSettings, _settings).Clone())
                     pgSettings.Refresh()
                     Return
@@ -961,6 +961,12 @@ Public Class frmMain
         Catch ex As Exception
             MessageBox.Show(Me, ex.Message, "Save G-code", MessageBoxButtons.OK, MessageBoxIcon.Error)
         End Try
+    End Sub
+
+    ''' <summary>Settings that only drive the simulation display, never the toolpath.</summary>
+    Private Shared Sub CopySimulationOnlySettings(source As CarveSettings, target As CarveSettings)
+        target.SimResolution = source.SimResolution
+        target.SimMeshDetail = source.SimMeshDetail
     End Sub
 
     Private Shared Function SameSettings(a As CarveSettings, b As CarveSettings) As Boolean

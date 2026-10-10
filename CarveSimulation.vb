@@ -35,8 +35,7 @@ Public Class CarveSimulation
     Private _surfIndexCount As Integer
     Private _surfGx, _surfGy As Integer            ' display mesh cells
     Private _requestedCell As Double              ' cell size asked for before coarsening
-    ''' <summary>Vertex budget of the drawn surface; one vertex per texel up to this.</summary>
-    Private Const MaxDisplayCells As Double = 4000000.0
+    Private _meshBudget As Double = 4000000.0     ' vertex budget of the drawn surface (settings: Display mesh)
     Private Const RestartIndex As Integer = -1     ' &HFFFFFFFF: separates triangle strips
     Private _wallVao, _wallVbo As Integer
     Private _wallVertexCount As Integer
@@ -140,6 +139,7 @@ Public Class CarveSimulation
         Const MaxTexels As Double = 40000000.0     ' 160 MB of R32F
         _cell = s.SimCellSize
         _requestedCell = _cell
+        _meshBudget = Math.Max(10000.0, s.SimMeshCells)
         Do
             _texW = CInt(Math.Ceiling(_blankW / _cell))
             _texH = CInt(Math.Ceiling(_blankH / _cell))
@@ -219,7 +219,7 @@ Public Class CarveSimulation
     Private Sub CreateSurfaceGrid()
         ' Display grid: one vertex per heightmap texel, so the drawn surface shows the chosen
         ' precision; scaled down uniformly only when the texture exceeds the vertex budget.
-        Dim f As Double = Math.Min(1.0, Math.Sqrt(MaxDisplayCells / (CDbl(_texW) * _texH)))
+        Dim f As Double = Math.Min(1.0, Math.Sqrt(_meshBudget / (CDbl(_texW) * _texH)))
         Dim gx As Integer = Math.Max(2, Math.Min(_texW, CInt(Math.Floor(_texW * f))))
         Dim gy As Integer = Math.Max(2, Math.Min(_texH, CInt(Math.Floor(_texH * f))))
         _surfGx = gx : _surfGy = gy

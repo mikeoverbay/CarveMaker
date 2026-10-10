@@ -320,6 +320,15 @@ Public Enum SimResolution
     Coarse
 End Enum
 
+Public Enum SimMeshDetail
+    ''' <summary>One vertex per heightmap cell, up to 4 million cells.</summary>
+    Full
+    ''' <summary>Up to 1 million cells.</summary>
+    Half
+    ''' <summary>Up to 250 thousand cells: for integrated graphics.</summary>
+    Low
+End Enum
+
 Public Enum CutOrder
     ''' <summary>Top line first; each line's letters left to right.</summary>
     LineByLine
@@ -723,7 +732,24 @@ Public Class CarveSettings
     ''' <summary>Filled in by the OpenGL view once the context exists.</summary>
     Public Shared Property HardwareMaxTextureSize As Integer = 0
 
+    <Category("5. Simulation"), DisplayName("Display mesh"),
+     Description("How finely the carved surface is drawn. Full: one vertex per heightmap cell, up to 4 million cells (discrete graphics card). Half: up to 1 million. Low: up to 250 thousand, for laptops with integrated graphics. Only the drawing changes, not the heightmap or its accuracy; the simulation bar shows ""drawn at"" when the mesh is lighter than the heightmap.")>
+    Public Property SimMeshDetail As SimMeshDetail = SimMeshDetail.Full
+
+    ''' <summary>Vertex budget (cells) of the drawn surface for the chosen display mesh.</summary>
+    <Browsable(False), JsonIgnore>
+    Public ReadOnly Property SimMeshCells As Double
+        Get
+            Select Case SimMeshDetail
+                Case SimMeshDetail.Half : Return 1000000.0
+                Case SimMeshDetail.Low : Return 250000.0
+                Case Else : Return 4000000.0
+            End Select
+        End Get
+    End Property
+
     ''' <summary>Heightmap cell size in inches for the chosen precision.</summary>
+    <Browsable(False), JsonIgnore>
     Public ReadOnly Property SimCellSize As Double
         Get
             Select Case SimResolution

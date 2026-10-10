@@ -1,4 +1,4 @@
-# CarveMaker handoff (updated 2026-10-09, tool library)
+# CarveMaker handoff (updated 2026-10-09: tool library, pocket and profile)
 
 Written so any session (or person) can pick the project up without the chat
 history. Read this, then `README.md` for the user-facing description.
@@ -41,6 +41,7 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
 | `ToolModel.vb` | Revolved mesh of any library tool (`ToolDefinition.FullProfile`: flutes + one-diameter shank stub) |
 | `ToolLibrary.vb` | `ToolType`, `ToolDefinition` (diameter, flute length, end radius, included angle; profile, validation, auto names), `ToolLibrary` (JSON in %AppData%\CarveMaker, standard inch tools), `InchFormat` (fractions), `ToolPickerEditor` (the "..." on the V-carve tool row) |
 | `ToolDrawing.vb` | Scale side view of a tool with dimensions; tree icons |
+| `Machining.vb` | `Machining` (per-item operation: V-carve / Pocket / Profile, tool, depths, side, through cut, tabs; grid shows only what the operation uses), `MachiningItem`, `MillingEngine` (pocket rings + residual clean-up, profile loops + tabs, `LinkPasses`), `JobBuilder.Generate` (V-carve, pockets, profiles in order, one `ToolpathSegment` per tool, `FinishStats`) |
 | `frmToolLibrary.vb` / `.Designer.vb` | Tool Library dialog: manage mode (Toolpath > Tool Library, Ctrl+L) and pick mode (filter: V-carving needs a V-bit) |
 | `SvgImport.vb` | SVG to Clipper polygons (inches, Y up): paths/shapes, groups, nested svg, use/symbol, CSS style sheets, preserveAspectRatio, strokes with caps/joins, fill rules |
 | `ProjectFile.vb` | `.prj` JSON (settings, lines, drawings), version check |
@@ -62,6 +63,14 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
    instantly without regenerating the toolpath (also safe during an in-flight
    generation), and the simulation bar shows `W x H cells at 0.00xx" (MB)`.
 3. **Display mesh** (Full 4 M / Half 1 M / Low 250 k cells) for weak GPUs.
+5. **Pocket and profile toolpaths.** `DesignObject.Machining` and
+   `CarveSettings.TextMachining`; `JobBuilder.Generate` replaces the old
+   single V-carve call (`TextToToolpath.Generate` still works and goes through
+   it; `TextToToolpath.CarveShape` is the V-carve core). `Toolpath.Segments`
+   records tool + move range; the simulation keeps one tool mesh per tool and
+   `GCodeWriter.ToolGroups` / `Write(tp, s, text, group, i, n)` write one
+   program per tool. Offsets add a 0.0003" gap (Clipper arc chords sit inside
+   the true arc). Feeds are still global (4. Machine).
 4. **Tool library** (inch only). Six types from four numbers; one profile
    function drives the dialog drawing and the simulation tool.
    `CarveSettings.CarveTool` replaces the old diameter / angle / tip flat
@@ -89,6 +98,7 @@ torture SVG folders and their expectation scripts). Build with
 | `order` | Cut order modes |
 | `gui` | Drives the real form: types text, imports heart sample, drags/resizes, runs the simulation, saves screenshots |
 | `simres` | Changes Precision and Display mesh through the real PropertyGrid path, reads heightmap/mesh sizes, pixel-diffs screenshots, times frames |
+| `mill` | Pocket and profile: wall gouge and floor coverage, island clearance, 90% stepover clean-up, profile offsets and direction, through cut + tabs, refused tools, job order and tool groups, per-tool G-code, project round trip, and the form + multi-tool simulation on screen. `mill nogui` skips the screen part |
 | `tools` | Tool library: profiles and meshes of all standard tools, inch parsing, validation, settings/project migration, library file, the dialog (edits, type switch, save, pick mode) and the simulation tool, with screenshots. `tools nogui` skips the screen part |
 
 The torture expectations (`svg-torture-transforms-expect.js`,
@@ -119,8 +129,8 @@ The torture expectations (`svg-torture-transforms-expect.js`,
 
 ## Ideas not started (VCarve-Pro direction)
 
-- Pocket and profile toolpaths with the library's end mills (the library and
-  its picker exist; the picker filter is `ToolPickerEditor.VCarveToolProblem`).
+- Ramped or helical entry for end mills (plunges are straight today).
+- V-carving inside a pocket (Z relative to the pocket floor).
 - Feeds and speeds per tool (today they are global under 4. Machine).
 - Raised carving (pocket the blank around the letters), inlay (male/female).
 - Shapes (rectangles, circles, stars), text on an arc, DXF import (the mandala

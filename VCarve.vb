@@ -42,41 +42,23 @@ Public Module TextToToolpath
         Return Generate(lines, Nothing, s, token)
     End Function
 
-    ''' <summary>Text lines plus already-placed drawings (machine inches) carved together.</summary>
+    ''' <summary>Text lines plus already-placed drawings (machine inches), all V-carved; the text follows its Text operation.</summary>
     Public Function Generate(lines As IList(Of TextLine), drawings As IList(Of PathsD), s As CarveSettings, token As CancellationToken) As Toolpath
-        Dim tp As New Toolpath()
-        tp.BlankMinX = s.BlankOriginX
-        tp.BlankMinY = s.BlankOriginY
-        tp.BlankMaxX = s.BlankOriginX + Math.Max(0.0, s.BlankWidthIn)
-        tp.BlankMaxY = s.BlankOriginY + Math.Max(0.0, s.BlankHeightIn)
-
-        Dim haveText As Boolean = lines IsNot Nothing AndAlso lines.Any(Function(l) Not String.IsNullOrWhiteSpace(l.Text))
-        Dim haveDrawings As Boolean = drawings IsNot Nothing AndAlso drawings.Any(Function(d) d IsNot Nothing AndAlso d.Count > 0)
-        If Not haveText AndAlso Not haveDrawings Then Return tp
-
-        Dim lineCenters As List(Of Double) = Nothing
-        Dim shape As PathsD = If(haveText, GlyphOutline.BuildShape(lines, s, tp.Warnings, lineCenters), New PathsD())
-        token.ThrowIfCancellationRequested()
-        If shape.Count > 0 Then
-            Dim tb = Clipper.GetBounds(shape)
-            tp.TextMinX = tb.left : tp.TextMaxX = tb.right : tp.TextMinY = tb.top : tp.TextMaxY = tb.bottom
-        End If
-
-        If haveDrawings Then
-            Dim all As New PathsD(shape)
+        Dim items As New List(Of MachiningItem)
+        If drawings IsNot Nothing Then
+            Dim n = 0
             For Each d In drawings
-                If d Is Nothing OrElse d.Count = 0 Then Continue For
-                Dim db = Clipper.GetBounds(d)
-                If db.left < tp.BlankMinX - 0.0001 OrElse db.right > tp.BlankMaxX + 0.0001 OrElse db.top < tp.BlankMinY - 0.0001 OrElse db.bottom > tp.BlankMaxY + 0.0001 Then
-                    tp.Warnings.Add("A drawing runs off the edge of the blank.")
-                End If
-                all.AddRange(d)
+                n += 1
+                items.Add(New MachiningItem("Drawing " & n, d, New Machining()))
             Next
-            ' Drawings and text may overlap: one more union keeps everything consistent.
-            shape = Clipper.Union(all, Nothing, FillRule.NonZero, GlyphOutline.ClipperPrecision)
         End If
-        If shape.Count = 0 Then Return tp
+        Return JobBuilder.Generate(lines, items, s, token)
+    End Function
 
+    ''' <summary>V-carves one (already unioned) shape with the V-bit: passes plus linked moves.</summary>
+    Public Function CarveShape(shape As PathsD, lineCenters As List(Of Double), s As CarveSettings, token As CancellationToken) As Toolpath
+        Dim tp As New Toolpath()
+        If shape Is Nothing OrElse shape.Count = 0 Then Return tp
         For Each p In shape
             tp.Outline.Add(GlyphOutline.ToPts(p))
         Next

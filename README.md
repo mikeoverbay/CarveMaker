@@ -108,6 +108,34 @@ curves, Inkscape-style groups and `<use>`, stroke line art, a mm plate without
 viewBox, and a path syntax torture test). They are copied next to the exe and
 into the installer, and the Import SVG dialog opens there the first time.
 
+## Pocket and profile toolpaths
+
+Every drawing has a **Toolpath** (Drawings tab, *Machining* category) and the
+text has a **Text operation** (*1. Text*). Each is one of:
+
+| Operation | What it does | Settings |
+|---|---|---|
+| V-carve (default) | Carved with the V-bit under *2. Tool*, together with every other V-carved item | the *3. Carve* settings |
+| Pocket | Clears the area to a flat floor with an end mill: offset rings from the centre out to the wall, level by level | tool, cut depth, pass depth, stepover % |
+| Profile | The tool follows the outline: **Outside** (cut the shape out at its true size), **Inside** (cut an opening) or **On the line** (engrave; a V-bit is allowed here) | tool, side, cut depth or *Cut through the stock*, pass depth, tabs (count, width, thickness) |
+
+The grid shows only the settings the chosen operation uses, and the **...**
+button on *Tool* opens the tool library filtered to the tools that can do it.
+Climb or conventional milling follows *Milling direction*. Through cuts go
+0.02" below the stock thickness (*4. Machine*). Tabs leave bridges of material
+so the part stays put, and the simulation shows the cut-out see-through.
+Pocket clean-up passes cover the stripes a stepover above 50% would leave.
+Areas narrower than the tool are reported in the status bar.
+
+The job runs in this order: V-carve first, then pockets, then profiles, with
+outside cut-outs last because they free the part. Items sharing a tool are cut
+together, and a pocket tool that also profiles goes last among the pockets so
+the profile follows without a tool change. When the job needs more than one
+tool, **Export G-code** writes one numbered program per tool, such as
+`Sign-1-1-4in_90_deg_V_bit.nc` and `Sign-2-1-4in_flat_end_mill.nc`, and lists
+the order. Before each program, fit its tool and re-zero Z on the top of the
+stock. Each program has the usual FluidNC start and end.
+
 ## Tool library
 
 **Toolpath > Tool Library** (Ctrl+L), or the **...** button on *2. Tool > V-carve
@@ -127,8 +155,8 @@ Numbers accept decimals or fractions (`0.25`, `1/4`, `1-1/4`). Names follow the
 numbers unless you type your own. **New** adds a tool of a type, **Duplicate**
 copies one, **Delete** removes it; **Save** writes the library to
 `%AppData%CarveMakerToolLibrary.json` (the standard tools are used until then).
-V-carving takes a V-bit; the other types are there for the pocket and profile
-toolpaths still to come. The simulation draws whichever bit carves the job.
+V-carving takes a V-bit. Pockets take end mills (flat, ball or bull nose).
+Profiles take end mills, or a V-bit on the line. The simulation draws whichever bit carves the job.
 Projects saved before the library open with an equivalent V-bit.
 
 ## Simulation

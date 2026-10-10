@@ -898,7 +898,7 @@ Public Class ToolpathView
         Dim mvp As Matrix4 = ViewMatrix() * ProjectionMatrix()
         If _showSimulation AndAlso _sim.IsReady Then
             _sim.DrawBoard(mvp)
-            If _simTime < _sim.TotalSeconds Then _sim.DrawTool(mvp, _sim.ToolPositionAt(_simTime))
+            If _simTime < _sim.TotalSeconds Then _sim.DrawTool(mvp, _sim.ToolPositionAt(_simTime), _sim.ToolIndexAt(_simTime))
         End If
 
         GL.UseProgram(_program)

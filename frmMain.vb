@@ -177,10 +177,11 @@ Public Class frmMain
     ' ---------------------------------------------------------- drawings
 
     ''' <summary>Placed polygons of every visible drawing (computed on the UI thread, cached parse).</summary>
-    Private Function PlacedDrawings() As List(Of Clipper2Lib.PathsD)
-        Dim list As New List(Of Clipper2Lib.PathsD)
+    ''' <summary>Visible drawings with their machining (copies: the worker thread uses them).</summary>
+    Private Function PlacedItems() As List(Of MachiningItem)
+        Dim list As New List(Of MachiningItem)
         For Each o In _objects
-            If o.Visible Then list.Add(o.PlacedPaths(_settings.CurveTolerance))
+            If o.Visible Then list.Add(New MachiningItem(o.Name, o.PlacedPaths(_settings.CurveTolerance), If(o.Machining?.Clone(), New Machining())))
         Next
         Return list
     End Function
@@ -192,10 +193,44 @@ Public Class frmMain
         For Each o In _objects
             sb.Append(o.Name).Append("|").Append(o.X.ToString("R", ci)).Append("|").Append(o.Y.ToString("R", ci)).Append("|").
                Append(o.Width.ToString("R", ci)).Append("|").Append(o.Height.ToString("R", ci)).Append("|").Append(o.RotationDeg.ToString("R", ci)).
-               Append("|").Append(o.Mirror).Append("|").Append(o.Visible).Append("|").Append(If(o.SvgContent, "").Length).Append(ControlChars.Lf)
+               Append("|").Append(o.Mirror).Append("|").Append(o.Visible).Append("|").Append(If(o.SvgContent, "").Length).
+               Append("|").Append(If(o.Machining?.Key(), "")).Append(ControlChars.Lf)
         Next
         Return sb.ToString()
     End Function
+
+    Private Shared Function ObjectListText(o As DesignObject) As String
+        Dim op = If(o.Machining Is Nothing OrElse o.Machining.Operation = CutOperation.VCarve, "", "   [" & If(o.Machining.Operation = CutOperation.Pocket, "pocket", "profile") & "]")
+        Return If(o.Visible, "", "(hidden) ") & o.Name & op
+    End Function
+
+    ''' <summary>Opens an expandable row (the machining settings) so its options are in view.</summary>
+    Private Shared Sub ExpandGridRow(pg As PropertyGrid, propertyName As String)
+        Try
+            If pg.IsDisposed OrElse pg.SelectedObject Is Nothing Then Return
+            Dim root As GridItem = pg.SelectedGridItem
+            If root Is Nothing Then Return
+            While root.Parent IsNot Nothing
+                root = root.Parent
+            End While
+            For Each cat As GridItem In root.GridItems
+                For Each gi As GridItem In cat.GridItems
+                    If gi.PropertyDescriptor IsNot Nothing AndAlso gi.PropertyDescriptor.Name = propertyName AndAlso gi.Expandable Then gi.Expanded = True
+                Next
+            Next
+        Catch ex As ObjectDisposedException
+            ' The grid was rebuilt again meanwhile; the next selection change expands it.
+        End Try
+    End Sub
+
+    ' The grid rebuilds its rows after SelectedObjectsChanged: expand once it has settled.
+    Private Sub pgObject_SelectedObjectsChanged(sender As Object, e As EventArgs) Handles pgObject.SelectedObjectsChanged
+        If IsHandleCreated Then BeginInvoke(Sub() ExpandGridRow(pgObject, NameOf(DesignObject.Machining)))
+    End Sub
+
+    Private Sub pgSettings_SelectedObjectsChanged(sender As Object, e As EventArgs) Handles pgSettings.SelectedObjectsChanged
+        If IsHandleCreated Then BeginInvoke(Sub() ExpandGridRow(pgSettings, NameOf(CarveSettings.TextMachining)))
+    End Sub
 
     Private Sub RefreshObjectList(selectIndex As Integer)
         _syncingSelection = True
@@ -203,7 +238,7 @@ Public Class frmMain
             lstObjects.BeginUpdate()
             lstObjects.Items.Clear()
             For Each o In _objects
-                lstObjects.Items.Add(If(o.Visible, "", "(hidden) ") & o.Name)
+                lstObjects.Items.Add(ObjectListText(o))
             Next
             lstObjects.EndUpdate()
             If selectIndex >= 0 AndAlso selectIndex < _objects.Count Then
@@ -332,7 +367,16 @@ Public Class frmMain
         o.Width = Math.Max(0.01, o.Width)
         o.Height = Math.Max(0.01, o.Height)
         pgObject.Refresh()
-        If name = NameOf(DesignObject.Name) OrElse name = NameOf(DesignObject.Visible) Then RefreshObjectList(lstObjects.SelectedIndex)
+        ' Keep the list row (name, hidden, operation) in step with the drawing.
+        Dim i = lstObjects.SelectedIndex
+        If i >= 0 AndAlso i < _objects.Count AndAlso lstObjects.Items(i).ToString() <> ObjectListText(_objects(i)) Then
+            _syncingSelection = True
+            Try
+                lstObjects.Items(i) = ObjectListText(_objects(i))
+            Finally
+                _syncingSelection = False
+            End Try
+        End If
         _glView.Objects = _objects
         MarkDirty()
         RequestRegenerate(immediate:=True)
@@ -706,7 +750,7 @@ Public Class frmMain
     Private Sub GenerateAsync()
         Dim lines As List(Of TextLine) = ReadEditorLines()
         Dim snapshot As CarveSettings = _settings.Clone()
-        Dim drawings As List(Of Clipper2Lib.PathsD) = PlacedDrawings()
+        Dim items As List(Of MachiningItem) = PlacedItems()
         Dim contentKey As String = TextLine.KeyOf(lines) & ObjectsKey()
 
         Dim problems = snapshot.Validate()
@@ -729,7 +773,7 @@ Public Class frmMain
         lblStatus.Text = "Generating toolpath..."
         UseWaitCursor = True
 
-        Task.Run(Function() TextToToolpath.Generate(lines, drawings, snapshot, token), token).
+        Task.Run(Function() JobBuilder.Generate(lines, items, snapshot, token), token).
             ContinueWith(
                 Sub(t As Task(Of Toolpath))
                     If IsDisposed OrElse myVersion <> _genVersion Then Return
@@ -771,6 +815,8 @@ Public Class frmMain
         lblStats.Text = String.Format(ci,
             "{0} letters, {1} passes | {2:0.0}"" x {3:0.00}"" | depth {4:0.000}"" | cut {5:0.0}"" | ~{6:0.0} min",
             tp.RegionCount, tp.Contours.Count, tp.Width, tp.Height, -tp.MinZ, tp.CutLength, tp.EstimatedMinutes)
+        Dim tools = GCodeWriter.ToolGroups(tp).Count
+        If tools > 1 Then lblStats.Text &= " | " & tools & " tools, one program each"
     End Sub
 
     ' ---------------------------------------------------------- input events
@@ -932,7 +978,7 @@ Public Class frmMain
         If tp Is Nothing OrElse _running OrElse contentKey <> _lastLinesKey OrElse Not SameSettings(snapshot, _lastSettings) Then
             UseWaitCursor = True
             Try
-                tp = TextToToolpath.Generate(lines, PlacedDrawings(), snapshot, CancellationToken.None)
+                tp = JobBuilder.Generate(lines, PlacedItems(), snapshot, CancellationToken.None)
                 _toolpath = tp
                 _lastLinesKey = contentKey
                 _lastSettings = snapshot
@@ -956,8 +1002,30 @@ Public Class frmMain
         End If
         If dlgSave.ShowDialog(Me) <> DialogResult.OK Then Return
         Try
-            File.WriteAllText(dlgSave.FileName, GCodeWriter.Write(tp, snapshot, rtbText.Text))
-            lblStatus.Text = "Saved " & dlgSave.FileName
+            Dim groups = GCodeWriter.ToolGroups(tp)
+            If groups.Count <= 1 Then
+                File.WriteAllText(dlgSave.FileName, GCodeWriter.Write(tp, snapshot, rtbText.Text))
+                lblStatus.Text = "Saved " & dlgSave.FileName
+                Return
+            End If
+            ' Several tools: one program per tool, numbered in the order they must run.
+            Dim dir = Path.GetDirectoryName(dlgSave.FileName)
+            Dim stem = Path.GetFileNameWithoutExtension(dlgSave.FileName)
+            Dim ext = Path.GetExtension(dlgSave.FileName)
+            If String.IsNullOrEmpty(ext) Then ext = ".nc"
+            Dim report As New Text.StringBuilder()
+            report.AppendLine("This job uses " & groups.Count & " tools, so it was saved as " & groups.Count & " programs.")
+            report.AppendLine("Run them in this order. Before each one, fit its tool and re-zero Z on the top of the stock:")
+            report.AppendLine()
+            For i = 0 To groups.Count - 1
+                Dim g = groups(i)
+                Dim fileName = stem & "-" & (i + 1).ToString(CultureInfo.InvariantCulture) & "-" & SafeFilePart(If(g.Tool?.AsciiName(), "tool")) & ext
+                File.WriteAllText(Path.Combine(dir, fileName), GCodeWriter.Write(tp, snapshot, rtbText.Text, g, i + 1, groups.Count))
+                report.AppendLine(String.Format(CultureInfo.InvariantCulture, "{0}. {1}{2}     {3}, about {4:0.0} min{2}     {5}",
+                                                i + 1, fileName, Environment.NewLine, If(g.Tool?.DisplayName(), "tool"), g.EstimatedMinutes, g.Operations))
+            Next
+            lblStatus.Text = "Saved " & groups.Count & " programs (one per tool) in " & dir
+            MessageBox.Show(Me, report.ToString(), "Save G-code", MessageBoxButtons.OK, MessageBoxIcon.Information)
         Catch ex As Exception
             MessageBox.Show(Me, ex.Message, "Save G-code", MessageBoxButtons.OK, MessageBoxIcon.Error)
         End Try
@@ -994,6 +1062,21 @@ Public Class frmMain
             If Not Object.Equals(p.GetValue(a), p.GetValue(b)) Then Return False
         Next
         Return True
+    End Function
+
+    ''' <summary>Text usable in a file name (letters, digits, - and _).</summary>
+    Private Shared Function SafeFilePart(text As String) As String
+        Dim sb As New Text.StringBuilder()
+        For Each ch In If(text, "")
+            If Char.IsLetterOrDigit(ch) Then
+                sb.Append(ch)
+            ElseIf ch = "/"c Then
+                sb.Append("-"c)
+            ElseIf sb.Length > 0 AndAlso sb(sb.Length - 1) <> "_"c Then
+                sb.Append("_"c)
+            End If
+        Next
+        Return sb.ToString().Trim("_"c)
     End Function
 
     Private Shared Function SuggestFileName(text As String) As String

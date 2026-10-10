@@ -18,6 +18,7 @@ Public Class frmToolLibrary
     Private _dirty As Boolean
     Private _selectedTool As ToolDefinition
     Private _notice As String
+    Private ReadOnly _pickTitle As String
 
     ''' <summary>Manage mode (designer and Toolpath > Tool Library).</summary>
     Public Sub New()
@@ -26,10 +27,11 @@ Public Class frmToolLibrary
 
     ''' <param name="pickFilter">Nothing for manage mode; otherwise returns why a tool cannot be used (Nothing when it can).</param>
     ''' <param name="current">Tool to select first (matched by Id, then by its numbers).</param>
-    Public Sub New(pickFilter As Func(Of ToolDefinition, String), current As ToolDefinition)
+    Public Sub New(pickFilter As Func(Of ToolDefinition, String), current As ToolDefinition, Optional pickTitle As String = Nothing)
         InitializeComponent()
         _pickFilter = pickFilter
         _initial = current
+        _pickTitle = pickTitle
     End Sub
 
     ''' <summary>The chosen tool after OK in pick mode.</summary>
@@ -49,7 +51,7 @@ Public Class frmToolLibrary
 
     Private Sub frmToolLibrary_Load(sender As Object, e As EventArgs) Handles MyBase.Load
         If IsPickMode Then
-            Text = "Tool Library - choose the V-carve tool"
+            Text = If(_pickTitle, "Tool Library - choose the V-carve tool")
             btnOK.Text = "Use This Tool"
         Else
             btnOK.Text = "Save"
@@ -226,11 +228,11 @@ Public Class frmToolLibrary
                 msg = String.Join("  ", probs)
                 isError = True
             ElseIf reason IsNot Nothing Then
-                msg = reason & " Pick one from the V-bit group, or add one with New > V-bit."
+                msg = reason
             End If
             If IsPickMode Then okEnabled = probs.Count = 0 AndAlso reason Is Nothing
         ElseIf IsPickMode Then
-            msg = "Select a V-bit."
+            msg = "Select a tool."
         End If
         If msg Is Nothing Then msg = _notice
         lblMessage.Text = If(msg, "")

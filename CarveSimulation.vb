@@ -23,7 +23,11 @@ Public Class CarveSimulation
     Private _cell As Double
     Private _blankX0, _blankY0, _blankW, _blankH As Double
     Private _thickness As Double
-    Private _tool As ToolModel
+    Private _tool As ToolModel                  ' first tool (kept for callers that ask for "the" tool)
+    Private _tools As New List(Of ToolModel)    ' one per distinct tool in the job
+    Private _toolVaos As New List(Of Integer), _toolVbos As New List(Of Integer)
+    Private _moveTool As Integer()              ' tool index of every move
+    Private _thicknessForDraw As Single
     Private _texW, _texH As Integer
 
     ' ---- GL resources -------------------------------------------------------
@@ -132,7 +136,30 @@ Public Class CarveSimulation
         _blankW = Math.Max(0.01, tp.BlankMaxX - tp.BlankMinX)
         _blankH = Math.Max(0.01, tp.BlankMaxY - tp.BlankMinY)
         _thickness = Math.Max(0.05, Math.Min(s.StockThickness, 2.0))
-        _tool = New ToolModel(If(s.CarveTool, ToolDefinition.DefaultVBit()), 32)
+        ' One mesh per distinct tool; every move knows which one cuts it.
+        _tools.Clear()
+        Dim defs As New List(Of ToolDefinition)
+        _moveTool = New Integer(Math.Max(0, tp.Moves.Count - 1)) {}
+        If tp.Segments.Count = 0 Then
+            defs.Add(If(s.CarveTool, ToolDefinition.DefaultVBit()))
+        Else
+            For Each sg In tp.Segments
+                Dim segTool = If(sg.Tool, If(s.CarveTool, ToolDefinition.DefaultVBit()))
+                Dim idx = defs.FindIndex(Function(d) d.SameGeometry(segTool))
+                If idx < 0 Then
+                    defs.Add(segTool)
+                    idx = defs.Count - 1
+                End If
+                For i = sg.FirstMove To Math.Min(tp.Moves.Count, sg.FirstMove + sg.MoveCount) - 1
+                    _moveTool(i) = idx
+                Next
+            Next
+        End If
+        For Each d In defs
+            _tools.Add(New ToolModel(d, 32))
+        Next
+        _tool = _tools(0)
+        _thicknessForDraw = CSng(_thickness)
 
         ' Cell size: requested, coarsened until the texture fits the hardware and a memory cap.
         Dim maxEdge As Integer = Math.Max(256, maxTextureSize)
@@ -198,22 +225,31 @@ Public Class CarveSimulation
     End Sub
 
     Private Sub CreateToolBuffers()
-        _toolVao = GL.GenVertexArray()
-        _toolVbo = GL.GenBuffer()
         _instVbo = GL.GenBuffer()
-        GL.BindVertexArray(_toolVao)
-        GL.BindBuffer(BufferTarget.ArrayBuffer, _toolVbo)
-        GL.BufferData(BufferTarget.ArrayBuffer, _tool.Vertices.Length * 4, _tool.Vertices, BufferUsageHint.StaticDraw)
-        GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, False, 24, 0)
-        GL.EnableVertexAttribArray(0)
-        GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, False, 24, 12)
-        GL.EnableVertexAttribArray(1)
         GL.BindBuffer(BufferTarget.ArrayBuffer, _instVbo)
         GL.BufferData(BufferTarget.ArrayBuffer, 12, IntPtr.Zero, BufferUsageHint.StreamDraw)
-        GL.VertexAttribPointer(2, 3, VertexAttribPointerType.Float, False, 12, 0)
-        GL.EnableVertexAttribArray(2)
-        GL.VertexAttribDivisor(2, 1)
-        GL.BindVertexArray(0)
+        _toolVaos.Clear()
+        _toolVbos.Clear()
+        For Each tm In _tools
+            Dim vao = GL.GenVertexArray()
+            Dim vbo = GL.GenBuffer()
+            GL.BindVertexArray(vao)
+            GL.BindBuffer(BufferTarget.ArrayBuffer, vbo)
+            GL.BufferData(BufferTarget.ArrayBuffer, tm.Vertices.Length * 4, tm.Vertices, BufferUsageHint.StaticDraw)
+            GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, False, 24, 0)
+            GL.EnableVertexAttribArray(0)
+            GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, False, 24, 12)
+            GL.EnableVertexAttribArray(1)
+            GL.BindBuffer(BufferTarget.ArrayBuffer, _instVbo)
+            GL.VertexAttribPointer(2, 3, VertexAttribPointerType.Float, False, 12, 0)
+            GL.EnableVertexAttribArray(2)
+            GL.VertexAttribDivisor(2, 1)
+            GL.BindVertexArray(0)
+            _toolVaos.Add(vao)
+            _toolVbos.Add(vbo)
+        Next
+        _toolVao = _toolVaos(0)
+        _toolVbo = _toolVbos(0)
     End Sub
 
     Private Sub CreateSurfaceGrid()
@@ -314,13 +350,14 @@ Public Class CarveSimulation
             "uniform vec4 uBlank;" & vbLf &        ' x0, y0, w, h
             "uniform vec2 uTexel;" & vbLf &        ' 1/texW, 1/texH
             "uniform float uCell;" & vbLf &        ' inches per texel
+            "uniform float uThickness;" & vbLf &   ' stock thickness: deeper cuts go through
             "uniform mat4 uMvp;" & vbLf &
             "out vec3 vNormal;" & vbLf &
             "out float vDepth;" & vbLf &
             "void main() {" & vbLf &
             "  vec2 suv = aUV + 0.5 * uTexel;" & vbLf &                                    ' sample at texel centres: vertex i of a per-texel grid reads texel i exactly
             "  vec2 puv = min(suv, vec2(1.0)) * step(0.0001, aUV);" & vbLf &              ' vertex sits where it samples; first/last column and row stay on the blank edge
-            "  float d  = texture(uHeight, suv).r;" & vbLf &
+            "  float d  = min(texture(uHeight, suv).r, uThickness);" & vbLf &
             "  float dx = texture(uHeight, suv + vec2(uTexel.x, 0.0)).r - texture(uHeight, suv - vec2(uTexel.x, 0.0)).r;" & vbLf &
             "  float dy = texture(uHeight, suv + vec2(0.0, uTexel.y)).r - texture(uHeight, suv - vec2(0.0, uTexel.y)).r;" & vbLf &
             "  vNormal = normalize(vec3(dx / (2.0 * uCell), dy / (2.0 * uCell), 1.0));" & vbLf &
@@ -331,8 +368,10 @@ Public Class CarveSimulation
             "#version 330 core" & vbLf &
             "in vec3 vNormal;" & vbLf &
             "in float vDepth;" & vbLf &
+            "uniform float uThickness;" & vbLf &
             "out vec4 FragColor;" & vbLf &
             "void main() {" & vbLf &
+            "  if (vDepth > uThickness - 0.0005) discard;" & vbLf &   ' cut through: see past the board
             "  vec3 L = normalize(vec3(0.35, 0.25, 1.0));" & vbLf &
             "  float diff = max(dot(normalize(vNormal), L), 0.0);" & vbLf &
             "  vec3 top = vec3(0.62, 0.46, 0.30);" & vbLf &        ' finished board surface
@@ -420,7 +459,7 @@ Public Class CarveSimulation
         If t < _appliedTime - 0.000001 Then ClearHeightmap()
         If t <= _appliedTime + 0.000001 AndAlso _appliedMove >= 0 Then Return
 
-        Dim stamps As New List(Of Single)
+        Dim stampsByTool As New Dictionary(Of Integer, List(Of Single))
         Dim moves = _tp.Moves
         Dim prev As Pt3 = If(_appliedMove >= 0, moves(_appliedMove).Target, New Pt3(0, 0, 0))
         Dim startMove As Integer = Math.Max(0, _appliedMove)
@@ -433,6 +472,12 @@ Public Class CarveSimulation
             Dim f1 As Double = If(dur <= 0, 1.0, Math.Min(1.0, (t - _moveStart(i)) / dur))
             Dim f0 As Double = If(i = startMove, startFrac, 0.0)
             If f1 > f0 AndAlso mv.Kind <> MoveKind.Rapid Then
+                Dim ti = If(_moveTool IsNot Nothing AndAlso i < _moveTool.Length, _moveTool(i), 0)
+                Dim stamps As List(Of Single) = Nothing
+                If Not stampsByTool.TryGetValue(ti, stamps) Then
+                    stamps = New List(Of Single)
+                    stampsByTool(ti) = stamps
+                End If
                 AddStamps(stamps, from, mv.Target, f0, f1)
             End If
             _appliedMove = i
@@ -441,7 +486,9 @@ Public Class CarveSimulation
             i += 1
         End While
         _appliedTime = t
-        If stamps.Count > 0 Then Stamp(stamps.ToArray())
+        For Each kv In stampsByTool
+            If kv.Value.Count > 0 Then Stamp(kv.Value.ToArray(), kv.Key)
+        Next
     End Sub
 
     ''' <summary>Tool tip positions along a move from fraction f0 to f1, every half cell.</summary>
@@ -459,7 +506,7 @@ Public Class CarveSimulation
     End Sub
 
     ''' <summary>Renders the tool at every stamp position into the heightmap with MAX blending.</summary>
-    Private Sub Stamp(data As Single())
+    Private Sub Stamp(data As Single(), toolIndex As Integer)
         Dim count As Integer = data.Length \ 3
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo)
         GL.Viewport(0, 0, _texW, _texH)
@@ -470,7 +517,8 @@ Public Class CarveSimulation
         GL.UseProgram(_stampProg)
         Dim ortho As Matrix4 = Matrix4.CreateOrthographicOffCenter(CSng(_blankX0), CSng(_blankX0 + _blankW), CSng(_blankY0), CSng(_blankY0 + _blankH), -1.0F, 1.0F)
         GL.UniformMatrix4(GL.GetUniformLocation(_stampProg, "uOrtho"), False, ortho)
-        GL.BindVertexArray(_toolVao)
+        Dim ti = Math.Max(0, Math.Min(_tools.Count - 1, toolIndex))
+        GL.BindVertexArray(_toolVaos(ti))
         GL.BindBuffer(BufferTarget.ArrayBuffer, _instVbo)
         Const Chunk As Integer = 50000
         Dim offset As Integer = 0
@@ -479,7 +527,7 @@ Public Class CarveSimulation
             Dim part(n * 3 - 1) As Single
             Array.Copy(data, offset * 3, part, 0, n * 3)
             GL.BufferData(BufferTarget.ArrayBuffer, part.Length * 4, part, BufferUsageHint.StreamDraw)
-            GL.DrawArraysInstanced(PrimitiveType.Triangles, 0, _tool.VertexCount, n)
+            GL.DrawArraysInstanced(PrimitiveType.Triangles, 0, _tools(ti).VertexCount, n)
             offset += n
         End While
         GL.BindVertexArray(0)
@@ -489,6 +537,18 @@ Public Class CarveSimulation
         GL.Enable(EnableCap.DepthTest)
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0)
     End Sub
+
+    ''' <summary>Index of the tool cutting at simulated time t.</summary>
+    Public Function ToolIndexAt(t As Double) As Integer
+        If _tp Is Nothing OrElse _tp.Moves.Count = 0 OrElse _moveTool Is Nothing Then Return 0
+        t = Math.Max(0.0, Math.Min(t, _total))
+        Dim lo = 0, hi = _tp.Moves.Count - 1
+        While lo < hi
+            Dim mid = (lo + hi) \ 2
+            If _moveStart(mid + 1) < t Then lo = mid + 1 Else hi = mid
+        End While
+        Return If(lo < _moveTool.Length, _moveTool(lo), 0)
+    End Function
 
     ''' <summary>Tool tip position at simulated time t (for drawing the tool).</summary>
     Public Function ToolPositionAt(t As Double) As Pt3
@@ -524,6 +584,7 @@ Public Class CarveSimulation
         GL.Uniform4(GL.GetUniformLocation(_surfProg, "uBlank"), CSng(_blankX0), CSng(_blankY0), CSng(_blankW), CSng(_blankH))
         GL.Uniform2(GL.GetUniformLocation(_surfProg, "uTexel"), CSng(1.0 / _texW), CSng(1.0 / _texH))
         GL.Uniform1(GL.GetUniformLocation(_surfProg, "uCell"), CSng(_blankW / _texW))
+        GL.Uniform1(GL.GetUniformLocation(_surfProg, "uThickness"), _thicknessForDraw)
         GL.UniformMatrix4(GL.GetUniformLocation(_surfProg, "uMvp"), False, mvp)
         GL.BindVertexArray(_surfVao)
         GL.Enable(EnableCap.PrimitiveRestart)
@@ -545,17 +606,18 @@ Public Class CarveSimulation
     End Sub
 
     ''' <summary>Draws the tool model with its tip at the given position.</summary>
-    Public Sub DrawTool(mvp As Matrix4, tip As Pt3)
+    Public Sub DrawTool(mvp As Matrix4, tip As Pt3, Optional toolIndex As Integer = 0)
         If Not _ready Then Return
+        Dim ti = Math.Max(0, Math.Min(_tools.Count - 1, toolIndex))
         GL.UseProgram(_meshProg)
         GL.UniformMatrix4(GL.GetUniformLocation(_meshProg, "uMvp"), False, mvp)
         GL.Uniform3(GL.GetUniformLocation(_meshProg, "uOffset"), CSng(tip.X), CSng(tip.Y), CSng(tip.Z))
         GL.Uniform3(GL.GetUniformLocation(_meshProg, "uColor"), 0.75F, 0.78F, 0.82F)
-        GL.BindVertexArray(_toolVao)
+        GL.BindVertexArray(_toolVaos(ti))
         ' The instance attribute is still enabled on this VAO: draw one instance at offset zero.
         GL.BindBuffer(BufferTarget.ArrayBuffer, _instVbo)
         GL.BufferData(BufferTarget.ArrayBuffer, 12, New Single() {0.0F, 0.0F, 0.0F}, BufferUsageHint.StreamDraw)
-        GL.DrawArraysInstanced(PrimitiveType.Triangles, 0, _tool.VertexCount, 1)
+        GL.DrawArraysInstanced(PrimitiveType.Triangles, 0, _tools(ti).VertexCount, 1)
         GL.BindVertexArray(0)
         GL.UseProgram(0)
     End Sub
@@ -570,9 +632,13 @@ Public Class CarveSimulation
         Try
             If _fbo <> 0 Then GL.DeleteFramebuffer(_fbo)
             If _tex <> 0 Then GL.DeleteTexture(_tex)
-            If _toolVbo <> 0 Then GL.DeleteBuffer(_toolVbo)
+            For Each b In _toolVbos
+                If b <> 0 Then GL.DeleteBuffer(b)
+            Next
+            For Each a In _toolVaos
+                If a <> 0 Then GL.DeleteVertexArray(a)
+            Next
             If _instVbo <> 0 Then GL.DeleteBuffer(_instVbo)
-            If _toolVao <> 0 Then GL.DeleteVertexArray(_toolVao)
             If _surfVbo <> 0 Then GL.DeleteBuffer(_surfVbo)
             If _surfEbo <> 0 Then GL.DeleteBuffer(_surfEbo)
             If _surfVao <> 0 Then GL.DeleteVertexArray(_surfVao)
@@ -584,6 +650,7 @@ Public Class CarveSimulation
         Catch
         End Try
         _fbo = 0 : _tex = 0 : _toolVbo = 0 : _instVbo = 0 : _toolVao = 0
+        _toolVaos.Clear() : _toolVbos.Clear()
         _surfVbo = 0 : _surfEbo = 0 : _surfVao = 0 : _wallVbo = 0 : _wallVao = 0
         _stampProg = 0 : _surfProg = 0 : _meshProg = 0
     End Sub
@@ -592,6 +659,7 @@ Public Class CarveSimulation
     Public Sub Forget()
         _ready = False
         _fbo = 0 : _tex = 0 : _toolVbo = 0 : _instVbo = 0 : _toolVao = 0
+        _toolVaos.Clear() : _toolVbos.Clear()
         _surfVbo = 0 : _surfEbo = 0 : _surfVao = 0 : _wallVbo = 0 : _wallVao = 0
         _stampProg = 0 : _surfProg = 0 : _meshProg = 0
     End Sub

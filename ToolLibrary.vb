@@ -455,7 +455,7 @@ Public Class ToolPickerEditor
     ''' <summary>Why a tool cannot V-carve (Nothing when it can).</summary>
     Public Shared Function VCarveToolProblem(t As ToolDefinition) As String
         If t Is Nothing Then Return "Pick a tool."
-        If t.Type <> ToolType.VBit Then Return "V-carving needs a V-bit."
+        If t.Type <> ToolType.VBit Then Return "V-carving needs a V-bit. Pick one from the V-bit group, or add one with New > V-bit."
         Return Nothing
     End Function
 End Class

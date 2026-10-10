@@ -91,7 +91,23 @@ Public Enum PassKind
     FloorClear
     ''' <summary>Variable-Z medial-axis (centerline) finishing pass. Open polyline.</summary>
     Centerline
+    ''' <summary>End-mill pocket clearing ring.</summary>
+    Pocket
+    ''' <summary>End-mill (or V-bit) profile loop.</summary>
+    Profile
 End Enum
+
+''' <summary>A run of moves cut with one tool for one operation (the job is a list of these).</summary>
+Public Class ToolpathSegment
+    Public Property Name As String = ""
+    Public Property Operation As CutOperation
+    Public Property Tool As ToolDefinition
+    Public Property FirstMove As Integer
+    Public Property MoveCount As Integer
+    Public Property EstimatedMinutes As Double
+    ''' <summary>Deepest Z of the segment (negative).</summary>
+    Public Property MinZ As Double
+End Class
 
 ''' <summary>One cutting pass: a closed constant-Z loop or an open variable-Z centerline.</summary>
 Public Class ToolpathContour
@@ -140,6 +156,8 @@ Public Class Toolpath
     Public Property Moves As New List(Of ToolMove)
     ''' <summary>Per-region boundary geometry (indexed by RegionIndex) used for gouge checks.</summary>
     Public Property Regions As New List(Of RegionShape)
+    ''' <summary>Moves grouped by operation and tool, in machining order.</summary>
+    Public Property Segments As New List(Of ToolpathSegment)
 
     ''' <summary>Bounds of the text block alone (for dragging it in the view); zero-size when there is no text.</summary>
     Public Property TextMinX As Double
@@ -377,6 +395,10 @@ Public Class DesignObject
     <Category("Object"), DisplayName("Visible"), Description("Hidden objects are not carved.")>
     Public Property Visible As Boolean = True
 
+    <Category("Machining"), DisplayName("Toolpath"),
+     Description("How this drawing is machined: V-carve (with the V-bit under 2. Tool), Pocket (cleared flat with an end mill) or Profile (the tool follows the outline, e.g. to cut it out). Expand to set the tool and depths.")>
+    Public Property Machining As New Machining()
+
     ''' <summary>Parsed drawing at its natural size (lower-left at 0,0); Nothing until parsed.</summary>
     <Browsable(False), JsonIgnore>
     Public Property Shape As SvgShapeSet
@@ -468,6 +490,7 @@ Public Class DesignObject
 
     Public Function Clone() As DesignObject
         Dim o = DirectCast(MemberwiseClone(), DesignObject)
+        o.Machining = If(Machining?.Clone(), New Machining())
         Return o
     End Function
 
@@ -619,6 +642,10 @@ Public Class CarveSettings
             Case Else : Return SizeLargeIn
         End Select
     End Function
+
+    <Category("1. Text"), DisplayName("Text operation"),
+     Description("How the text is machined: V-carve (with the V-bit under 2. Tool), Pocket (letters cleared flat with an end mill) or Profile (the tool follows the letter outlines). Expand to set the tool and depths.")>
+    Public Property TextMachining As New Machining()
 
     <Category("1. Text"), DisplayName("Curve tolerance (in)"),
      Description("Chord error allowed when flattening glyph curves into line segments.")>
@@ -789,6 +816,7 @@ Public Class CarveSettings
         c.FontMedium = FontMedium.Clone()
         c.FontSmall = FontSmall.Clone()
         c.CarveTool = If(CarveTool?.Clone(), ToolDefinition.DefaultVBit())
+        c.TextMachining = If(TextMachining?.Clone(), New Machining())
         Return c
     End Function
 
@@ -815,7 +843,7 @@ Public Class CarveSettings
         If SizeLargeIn <= 0 OrElse SizeMediumIn <= 0 OrElse SizeSmallIn <= 0 Then errs.Add("All three letter sizes must be positive.")
         Dim toolProblem = ToolPickerEditor.VCarveToolProblem(CarveTool)
         If toolProblem IsNot Nothing Then
-            errs.Add(toolProblem & " Choose one under 2. Tool.")
+            errs.Add("V-carving needs a V-bit: choose one under 2. Tool.")
         Else
             For Each p In CarveTool.Problems()
                 errs.Add("Tool """ & CarveTool.DisplayName() & """: " & p)

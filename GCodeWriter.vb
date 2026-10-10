@@ -8,34 +8,102 @@
 Imports System.Globalization
 Imports System.Text
 
+''' <summary>Consecutive segments cut with the same tool: one program file.</summary>
+Public Class ToolGroup
+    Public Property Tool As ToolDefinition
+    Public Property Segments As New List(Of ToolpathSegment)
+
+    Public ReadOnly Property EstimatedMinutes As Double
+        Get
+            Return Segments.Sum(Function(sg) sg.EstimatedMinutes)
+        End Get
+    End Property
+
+    Public ReadOnly Property Operations As String
+        Get
+            Return String.Join("; ", Segments.Select(Function(sg) sg.Name))
+        End Get
+    End Property
+
+    Public ReadOnly Property HasVCarve As Boolean
+        Get
+            Return Segments.Any(Function(sg) sg.Operation = CutOperation.VCarve)
+        End Get
+    End Property
+End Class
+
 Public Class GCodeWriter
 
     Private Const Inv As String = "en-US"
     Private Shared ReadOnly Ci As CultureInfo = CultureInfo.InvariantCulture
 
-    ''' <summary>Builds the complete G-code program text.</summary>
+    ''' <summary>The job split where the tool changes (consecutive segments with the same tool stay together).</summary>
+    Public Shared Function ToolGroups(tp As Toolpath) As List(Of ToolGroup)
+        Dim groups As New List(Of ToolGroup)
+        For Each sg In tp.Segments
+            Dim last = groups.LastOrDefault()
+            If last IsNot Nothing AndAlso last.Tool IsNot Nothing AndAlso sg.Tool IsNot Nothing AndAlso last.Tool.SameGeometry(sg.Tool) Then
+                last.Segments.Add(sg)
+            Else
+                Dim g As New ToolGroup With {.Tool = sg.Tool}
+                g.Segments.Add(sg)
+                groups.Add(g)
+            End If
+        Next
+        Return groups
+    End Function
+
+    ''' <summary>Builds the complete G-code program text for the whole job (one tool).</summary>
     Public Shared Function Write(tp As Toolpath, s As CarveSettings, sourceText As String) As String
+        Return Write(tp, s, sourceText, Nothing, 1, 1)
+    End Function
+
+    ''' <summary>Builds the program for one tool group (Nothing: every move), file index of count.</summary>
+    Public Shared Function Write(tp As Toolpath, s As CarveSettings, sourceText As String, group As ToolGroup, index As Integer, count As Integer) As String
+        Dim moveList As IEnumerable(Of ToolMove)
+        If group Is Nothing Then
+            moveList = tp.Moves
+        Else
+            moveList = group.Segments.SelectMany(Function(sg) tp.Moves.Skip(sg.FirstMove).Take(sg.MoveCount))
+        End If
+        Dim tool As ToolDefinition = If(group?.Tool, If(tp.Segments.FirstOrDefault()?.Tool, s.CarveTool))
+        Dim hasVCarve As Boolean = If(group Is Nothing, tp.Segments.Count = 0 OrElse tp.Segments.Any(Function(sg) sg.Operation = CutOperation.VCarve), group.HasVCarve)
+        Dim minutes As Double = If(group Is Nothing, tp.EstimatedMinutes, group.EstimatedMinutes)
         Dim sb As New StringBuilder(Math.Max(1024, tp.Moves.Count * 24))
         Dim scale As Double = If(s.Units = OutputUnits.Millimeters, 25.4, 1.0)
         Dim unitName As String = If(s.Units = OutputUnits.Millimeters, "mm", "in")
 
         ' ---- header -------------------------------------------------------
         sb.AppendLine("%")
-        sb.AppendLine("(CarveMaker V-carve)")
+        If count > 1 Then
+            sb.AppendLine("(CarveMaker job, program " & index.ToString(Ci) & " of " & count.ToString(Ci) & ")")
+            sb.AppendLine("(Fit this tool and re-zero Z on the top of the stock before running)")
+        Else
+            sb.AppendLine(If(hasVCarve AndAlso tp.Segments.Count <= 1, "(CarveMaker V-carve)", "(CarveMaker job)"))
+        End If
         sb.AppendLine("(Text: " & Comment(sourceText) & ")")
         sb.AppendLine("(Fonts: L=" & Comment(s.FontLarge.ToString()) & " " & F(s.SizeLargeIn * scale) &
                       ", M=" & Comment(s.FontMedium.ToString()) & " " & F(s.SizeMediumIn * scale) &
                       ", S=" & Comment(s.FontSmall.ToString()) & " " & F(s.SizeSmallIn * scale) &
                       " " & unitName & " " & If(s.SizeBy = SizeMode.CapHeight, "cap height", "em") & ")")
-        sb.AppendLine("(Tool: " & Comment(If(s.CarveTool?.AsciiName(), "V-bit")) & " - " & F(s.ToolDiameterIn * scale) & " " & unitName & " dia, " &
-                      F(s.IncludedAngleDeg) & " deg included)")
-        sb.AppendLine("(Max depth " & F(s.EffectiveFlatDepth * scale) & " " & unitName &
-                      ", depth step " & F(s.DepthStep * scale) & ", clearing stepover " & F(s.ClearStepover * scale) & ")")
+        If tp.Segments.Count > 1 OrElse (tp.Segments.Count = 1 AndAlso tp.Segments(0).Operation <> CutOperation.VCarve) Then
+            sb.AppendLine("(Operations: " & Comment(If(group Is Nothing, String.Join("; ", tp.Segments.Select(Function(sg) sg.Name)), group.Operations)) & ")")
+        End If
+        Dim toolText = Comment(If(tool?.AsciiName(), "V-bit")) & " - " & F(If(tool Is Nothing, s.ToolDiameterIn, tool.Diameter) * scale) & " " & unitName & " dia"
+        If tool IsNot Nothing AndAlso tool.UsesAngle Then toolText &= ", " & F(tool.AngleDeg) & " deg included"
+        sb.AppendLine("(Tool: " & toolText & ")")
+        If hasVCarve Then
+            sb.AppendLine("(Max depth " & F(s.EffectiveFlatDepth * scale) & " " & unitName &
+                          ", depth step " & F(s.DepthStep * scale) & ", clearing stepover " & F(s.ClearStepover * scale) & ")")
+        Else
+            Dim deepest = moveList.Select(Function(mv) mv.Target.Z).DefaultIfEmpty(0).Min()
+            sb.AppendLine("(Max depth " & F(-deepest * scale) & " " & unitName & ")")
+        End If
         sb.AppendLine("(Blank " & F(s.BlankWidthIn * scale) & " x " & F(s.BlankHeightIn * scale) & " " & unitName &
                       ", lower-left corner at X" & F(s.BlankOriginX * scale) & " Y" & F(s.BlankOriginY * scale) & ")")
         sb.AppendLine("(Z0 = top of stock. Text extents X" & F(tp.MinX * scale) & " to X" & F(tp.MaxX * scale) &
                       ", Y" & F(tp.MinY * scale) & " to Y" & F(tp.MaxY * scale) & ")")
-        sb.AppendLine("(Estimated time " & F(tp.EstimatedMinutes) & " min, " & tp.Contours.Count.ToString(Ci) & " passes)")
+        sb.AppendLine("(Estimated time " & F(minutes) & " min" & If(group Is Nothing, ", " & tp.Contours.Count.ToString(Ci) & " passes", "") & ")")
         sb.AppendLine(If(s.Units = OutputUnits.Millimeters, "G21", "G20") & " G90 G17 G94 G40 G49 G54")
         If s.ParkZAtEnd Then
             ' Fully up in machine coordinates before anything moves, then back to the work offset.
@@ -56,7 +124,7 @@ Public Class GCodeWriter
         Dim feedIn As Double = s.FeedRate * scale
         Dim plungeIn As Double = s.PlungeRate * scale
 
-        For Each mv In tp.Moves
+        For Each mv In moveList
             Dim t = mv.Target
             If Not haveLast Then
                 ' First positioning move: travel in XY while fully up, then come down to the

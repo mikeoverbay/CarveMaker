@@ -969,6 +969,23 @@ Public Class frmMain
         target.SimMeshDetail = source.SimMeshDetail
     End Sub
 
+    ''' <summary>Toolpath > Tool Library: manage tools; follows edits to the project's own tool.</summary>
+    Private Sub mnuToolLibrary_Click(sender As Object, e As EventArgs) Handles mnuToolLibrary.Click
+        Using dlg As New frmToolLibrary(Nothing, _settings.CarveTool)
+            If dlg.ShowDialog(Me) <> DialogResult.OK Then Return
+        End Using
+        Dim current = _settings.CarveTool
+        If current Is Nothing Then Return
+        Dim inLibrary = ToolLibrary.Load().FindById(current.Id)
+        If inLibrary IsNot Nothing AndAlso Not inLibrary.Equals(current) Then
+            _settings.CarveTool = inLibrary.Clone()
+            pgSettings.Refresh()
+            MarkDirty()
+            RequestRegenerate(immediate:=True)
+            lblStatus.Text = "The V-carve tool was updated from the library: " & inLibrary.DisplayName()
+        End If
+    End Sub
+
     Private Shared Function SameSettings(a As CarveSettings, b As CarveSettings) As Boolean
         If a Is Nothing OrElse b Is Nothing Then Return False
         ' Compare every public property value; cheap and avoids a hand-written equality list.

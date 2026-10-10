@@ -51,7 +51,8 @@ internally; G-code can be written in inches (G20) or millimetres (G21).
 
 ## How the toolpath is made
 
-For a V-bit with half angle *a* and tip flat *f*, a tip at depth *z* cuts a cone
+For a V-bit with half angle *a* and tip flat *f* (0 for the sharp bits in the tool
+library), a tip at depth *z* cuts a cone
 of surface radius `f/2 + z*tan(a)`. The ideal carved surface is therefore the
 distance field of the letter outline, clamped at the flat depth *F*.
 
@@ -107,6 +108,29 @@ curves, Inkscape-style groups and `<use>`, stroke line art, a mm plate without
 viewBox, and a path syntax torture test). They are copied next to the exe and
 into the installer, and the Import SVG dialog opens there the first time.
 
+## Tool library
+
+**Toolpath > Tool Library** (Ctrl+L), or the **...** button on *2. Tool > V-carve
+tool*. Tools are inch only and grouped by type; each is four numbers, shown on a
+scale drawing with its dimensions:
+
+| Type | Diameter | Flute length | End radius | Angle (included) |
+|---|---|---|---|---|
+| Flat end mill | yes | yes | | |
+| Ball nose | yes | yes | always half the diameter | |
+| Bull nose | yes | yes | corner radius | |
+| V-bit | yes | yes | | yes |
+| Tapered ball nose | yes | yes | tip radius | taper |
+| Drill | yes | yes | | point angle |
+
+Numbers accept decimals or fractions (`0.25`, `1/4`, `1-1/4`). Names follow the
+numbers unless you type your own. **New** adds a tool of a type, **Duplicate**
+copies one, **Delete** removes it; **Save** writes the library to
+`%AppData%CarveMakerToolLibrary.json` (the standard tools are used until then).
+V-carving takes a V-bit; the other types are there for the pocket and profile
+toolpaths still to come. The simulation draws whichever bit carves the job.
+Projects saved before the library open with an equivalent V-bit.
+
 ## Simulation
 
 **View > Show Simulation** (Ctrl+M) replaces the line drawing with the carved
@@ -137,7 +161,7 @@ simulation on shows the finished part first; Reset and Play animate it.
 | Flat depth | Maximum depth. Clamped to the bit's usable depth `(D/2 - f/2)/tan(a)` = 0.125" for a sharp 1/4" 90 degree bit; default 0.12" keeps a margin. |
 | Roughing depth step / allowance | Coarser steps are fine because the centerline pass finishes the surface. |
 | Floor stepover | Scallop height on flat floors is about half of this on straight runs. |
-| Tip flat | Measured flat at the bit's point. Features narrower than it cannot be cut to depth. |
+| V-carve tool | The V-bit from the tool library (a copy is stored in the project). *Max usable depth* is where it reaches full diameter, or the end of its flutes if shorter. |
 | Milling direction | Direction of the closed contours relative to the material still to be removed (inside the loop). |
 | Cut order | *LineByLine* (default): finish each line of text, top line first, letters left to right. *Serpentine*: alternate lines run right to left. *LeftToRight*: every letter by X, which hops between lines. |
 | Spindle dwell / Dust collection / Park | `G4 P<seconds>` after `M3` (FluidNC and GRBL take P in seconds), `G0 G53 Z0` at the start and before `M5` when *Retract to machine home* is on; the first positioning move is `G0 X Y` while fully up, then `G0 Z` on its own line, and `M8` before the spindle starts / `M9` after `M5` when *Dust collection M8 / M9* is on (M8 runs the dust vacuum on this machine). |

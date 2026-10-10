@@ -27,7 +27,7 @@ Public Class GCodeWriter
                       ", M=" & Comment(s.FontMedium.ToString()) & " " & F(s.SizeMediumIn * scale) &
                       ", S=" & Comment(s.FontSmall.ToString()) & " " & F(s.SizeSmallIn * scale) &
                       " " & unitName & " " & If(s.SizeBy = SizeMode.CapHeight, "cap height", "em") & ")")
-        sb.AppendLine("(Tool: V-bit " & F(s.ToolDiameterIn * scale) & " " & unitName & " dia, " &
+        sb.AppendLine("(Tool: " & Comment(If(s.CarveTool?.AsciiName(), "V-bit")) & " - " & F(s.ToolDiameterIn * scale) & " " & unitName & " dia, " &
                       F(s.IncludedAngleDeg) & " deg included)")
         sb.AppendLine("(Max depth " & F(s.EffectiveFlatDepth * scale) & " " & unitName &
                       ", depth step " & F(s.DepthStep * scale) & ", clearing stepover " & F(s.ClearStepover * scale) & ")")

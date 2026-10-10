@@ -132,7 +132,7 @@ Public Class CarveSimulation
         _blankW = Math.Max(0.01, tp.BlankMaxX - tp.BlankMinX)
         _blankH = Math.Max(0.01, tp.BlankMaxY - tp.BlankMinY)
         _thickness = Math.Max(0.05, Math.Min(s.StockThickness, 2.0))
-        _tool = New ToolModel(s.ToolDiameterIn, s.TipFlatIn, s.IncludedAngleDeg, 32)
+        _tool = New ToolModel(If(s.CarveTool, ToolDefinition.DefaultVBit()), 32)
 
         ' Cell size: requested, coarsened until the texture fits the hardware and a memory cap.
         Dim maxEdge As Integer = Math.Max(256, maxTextureSize)

@@ -1,4 +1,4 @@
-# CarveMaker handoff (2026-10-09)
+# CarveMaker handoff (updated 2026-10-09, tool library)
 
 Written so any session (or person) can pick the project up without the chat
 history. Read this, then `README.md` for the user-facing description.
@@ -6,11 +6,10 @@ history. Read this, then `README.md` for the user-facing description.
 ## State of the repo
 
 - Folder `C:\Text_to_CNC_path`, branch `master`, remote `github.com/mikeoverbay/CarveMaker`.
-- **Five local commits are not pushed yet**: `a139a6f` SVG import + drag/resize,
-  `a4dec42` Samples solution folder, `85fafb0` SVG importer fixes,
-  `68b2d93` simulation precision fix, `0f54774` Display mesh setting.
-  Push with `git push origin master`. Nothing is uncommitted except
-  `Samples\00717 Mandala Floral Pattern` (stock-art test pack, git-ignored).
+- Everything up to the handoff commit `e23cc0c` is pushed. Check `git status`
+  and `git log origin/master..master` for anything newer; push with
+  `git push origin master` only when the user asks.
+  `Samples\00717 Mandala Floral Pattern` is a git-ignored stock-art test pack.
 - Releases: GitHub Actions (`.github/workflows/release.yml`) builds Release on
   every push and publishes `CarveMaker-Setup-<ver>.exe` on tags `v*`. To ship:
   bump `<Version>` in `Directory.Build.props`, commit, `git tag v1.1.0`,
@@ -39,7 +38,10 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
 | `GCodeWriter.vb` | FluidNC-style program: `G0 G53 Z0`, `G54`, `M8`, `S M3`, `G4 P`, first move `G0 X Y` then `G0 Z`, footer `G0 G53 Z0`, `M5`, `M9`, `M30` |
 | `ToolpathView.vb` | OpenTK GLControl: layers, camera, object selection/drag/resize, simulation playback API (`SetToolpath`, `UpdateSimulationSettings`, `SimulationInfo`) |
 | `CarveSimulation.vb` | GPU material removal: R32F heightmap FBO, instanced tool stamps with MAX blend every half cell, surface mesh (one vertex per cell up to the Display mesh budget, triangle strips, texel-centre sampling), board walls |
-| `ToolModel.vb` | Revolved V-bit mesh (tip flat, cone, one-diameter shank) |
+| `ToolModel.vb` | Revolved mesh of any library tool (`ToolDefinition.FullProfile`: flutes + one-diameter shank stub) |
+| `ToolLibrary.vb` | `ToolType`, `ToolDefinition` (diameter, flute length, end radius, included angle; profile, validation, auto names), `ToolLibrary` (JSON in %AppData%\CarveMaker, standard inch tools), `InchFormat` (fractions), `ToolPickerEditor` (the "..." on the V-carve tool row) |
+| `ToolDrawing.vb` | Scale side view of a tool with dimensions; tree icons |
+| `frmToolLibrary.vb` / `.Designer.vb` | Tool Library dialog: manage mode (Toolpath > Tool Library, Ctrl+L) and pick mode (filter: V-carving needs a V-bit) |
 | `SvgImport.vb` | SVG to Clipper polygons (inches, Y up): paths/shapes, groups, nested svg, use/symbol, CSS style sheets, preserveAspectRatio, strokes with caps/joins, fill rules |
 | `ProjectFile.vb` | `.prj` JSON (settings, lines, drawings), version check |
 | `frmMain.vb` / `.Designer.vb` | UI: editor tab, Drawings tab, settings grid, menus, simulation bar, regenerate pipeline (`RequestRegenerate` -> 400 ms timer -> `GenerateAsync` on a worker) |
@@ -60,6 +62,14 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
    instantly without regenerating the toolpath (also safe during an in-flight
    generation), and the simulation bar shows `W x H cells at 0.00xx" (MB)`.
 3. **Display mesh** (Full 4 M / Half 1 M / Low 250 k cells) for weak GPUs.
+4. **Tool library** (inch only). Six types from four numbers; one profile
+   function drives the dialog drawing and the simulation tool.
+   `CarveSettings.CarveTool` replaces the old diameter / angle / tip flat
+   settings; `ToolDiameterIn` and `IncludedAngleDeg` are now read-only views
+   that are still written to the .prj for older versions, and
+   `ProjectFile.MigrateTool` turns pre-library projects into a V-bit. Tip
+   flat is gone from the UI (the user asked for exactly four numbers);
+   `TipFlatIn` returns 0 and the engine still supports a flat.
 
 ## Test harness (not in the repo)
 
@@ -79,6 +89,7 @@ torture SVG folders and their expectation scripts). Build with
 | `order` | Cut order modes |
 | `gui` | Drives the real form: types text, imports heart sample, drags/resizes, runs the simulation, saves screenshots |
 | `simres` | Changes Precision and Display mesh through the real PropertyGrid path, reads heightmap/mesh sizes, pixel-diffs screenshots, times frames |
+| `tools` | Tool library: profiles and meshes of all standard tools, inch parsing, validation, settings/project migration, library file, the dialog (edits, type switch, save, pick mode) and the simulation tool, with screenshots. `tools nogui` skips the screen part |
 
 The torture expectations (`svg-torture-transforms-expect.js`,
 `fillrules-expect.js`) are independent of the importer; run them with `node`.
@@ -108,7 +119,9 @@ The torture expectations (`svg-torture-transforms-expect.js`,
 
 ## Ideas not started (VCarve-Pro direction)
 
-- Tool library and end-mill pocket/profile toolpaths (currently one V-bit).
+- Pocket and profile toolpaths with the library's end mills (the library and
+  its picker exist; the picker filter is `ToolPickerEditor.VCarveToolProblem`).
+- Feeds and speeds per tool (today they are global under 4. Machine).
 - Raised carving (pocket the blank around the letters), inlay (male/female).
 - Shapes (rectangles, circles, stars), text on an arc, DXF import (the mandala
   pack has DXF too).

@@ -56,7 +56,8 @@ Public Class ProjectFile
 
     ''' <summary>Loads a project, tolerating missing members (older files get defaults).</summary>
     Public Shared Function Load(path As String) As ProjectFile
-        Dim pf As ProjectFile = JsonSerializer.Deserialize(Of ProjectFile)(File.ReadAllText(path), Options)
+        Dim json = File.ReadAllText(path)
+        Dim pf As ProjectFile = JsonSerializer.Deserialize(Of ProjectFile)(json, Options)
         If pf Is Nothing Then Throw New InvalidDataException("The file is not a CarveMaker project.")
         If pf.Version > CurrentVersion Then
             Throw New InvalidDataException("This project was saved by a newer version of the program (file version " & pf.Version & ").")
@@ -65,6 +66,7 @@ Public Class ProjectFile
         If pf.Settings.FontLarge Is Nothing Then pf.Settings.FontLarge = New FontChoice("Arial")
         If pf.Settings.FontMedium Is Nothing Then pf.Settings.FontMedium = New FontChoice("Arial")
         If pf.Settings.FontSmall Is Nothing Then pf.Settings.FontSmall = New FontChoice("Arial")
+        MigrateTool(json, pf.Settings)
         If pf.Lines Is Nothing Then pf.Lines = New List(Of ProjectLine)
         If pf.Objects Is Nothing Then pf.Objects = New List(Of DesignObject)
         For Each o In pf.Objects
@@ -75,5 +77,52 @@ Public Class ProjectFile
             If l.Text Is Nothing Then l.Text = ""
         Next
         Return pf
+    End Function
+
+    ''' <summary>
+    ''' Projects saved before the tool library stored the V-bit as ToolDiameterIn /
+    ''' IncludedAngleDeg. Turn those into a V-bit (the library's 1/4" 90 degree bit when
+    ''' they match it). A missing or broken tool falls back to that standard bit.
+    ''' </summary>
+    Private Shared Sub MigrateTool(json As String, s As CarveSettings)
+        Dim hasTool As Boolean = False
+        Dim dia As Double = Double.NaN, angle As Double = Double.NaN
+        Try
+            Using doc = JsonDocument.Parse(json, New JsonDocumentOptions With {.AllowTrailingCommas = True, .CommentHandling = JsonCommentHandling.Skip})
+                Dim settingsEl As JsonElement
+                If FindMember(doc.RootElement, "Settings", settingsEl) AndAlso settingsEl.ValueKind = JsonValueKind.Object Then
+                    Dim el As JsonElement
+                    hasTool = FindMember(settingsEl, "CarveTool", el) AndAlso el.ValueKind = JsonValueKind.Object
+                    If FindMember(settingsEl, "ToolDiameterIn", el) AndAlso el.ValueKind = JsonValueKind.Number Then dia = el.GetDouble()
+                    If FindMember(settingsEl, "IncludedAngleDeg", el) AndAlso el.ValueKind = JsonValueKind.Number Then angle = el.GetDouble()
+                End If
+            End Using
+        Catch
+            ' The main deserializer already accepted the file; keep whatever it produced.
+        End Try
+        If hasTool AndAlso s.CarveTool IsNot Nothing Then
+            If String.IsNullOrWhiteSpace(s.CarveTool.Id) Then s.CarveTool.Id = ToolDefinition.NewId()
+            If s.CarveTool.Name Is Nothing Then s.CarveTool.Name = ""
+            s.CarveTool.Normalize()
+            Return
+        End If
+        If dia > 0 AndAlso angle > 0 AndAlso angle < 180 Then
+            Dim std = ToolDefinition.DefaultVBit()
+            Dim t = ToolDefinition.MakeVBit(dia, angle)
+            s.CarveTool = If(t.SameGeometry(std), std, t)
+        Else
+            s.CarveTool = ToolDefinition.DefaultVBit()
+        End If
+    End Sub
+
+    Private Shared Function FindMember(obj As JsonElement, name As String, ByRef value As JsonElement) As Boolean
+        If obj.ValueKind <> JsonValueKind.Object Then Return False
+        For Each p In obj.EnumerateObject()
+            If String.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase) Then
+                value = p.Value
+                Return True
+            End If
+        Next
+        Return False
     End Function
 End Class

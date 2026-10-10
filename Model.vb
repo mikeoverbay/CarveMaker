@@ -7,6 +7,7 @@
 ' ============================================================================
 
 Imports System.ComponentModel
+Imports System.Drawing.Design
 Imports System.Drawing.Text
 Imports System.Globalization
 Imports System.Text.Json.Serialization
@@ -624,24 +625,41 @@ Public Class CarveSettings
     Public Property CurveTolerance As Double = 0.0005
 
     ' ---------------------------------------------------------------- Tool
-    <Category("2. Tool"), DisplayName("Diameter (in)"),
-     Description("Largest cutting diameter of the V-bit.")>
-    Public Property ToolDiameterIn As Double = 0.25
+    <Category("2. Tool"), DisplayName("V-carve tool"),
+     Description("The V-bit that carves the job (a copy is kept in the project). Click the ... button to choose it from the tool library, or to add and edit tools there (also Toolpath > Tool Library, Ctrl+L)."),
+     Editor(GetType(ToolPickerEditor), GetType(UITypeEditor))>
+    Public Property CarveTool As ToolDefinition = ToolDefinition.DefaultVBit()
 
-    <Category("2. Tool"), DisplayName("Included angle (deg)"),
-     Description("Full included angle of the V-bit tip (90 for a 90-degree V-bit).")>
-    Public Property IncludedAngleDeg As Double = 90.0
+    ' Read-only views of the carving tool for the V-carve engine. Diameter and angle are
+    ' still written to the project file so older CarveMaker versions open it with the
+    ' right bit; on load they only matter for files that predate the tool library.
+    <Browsable(False)>
+    Public ReadOnly Property ToolDiameterIn As Double
+        Get
+            Return If(CarveTool Is Nothing, 0.25, CarveTool.Diameter)
+        End Get
+    End Property
 
-    <Category("2. Tool"), DisplayName("Tip flat (in)"),
-     Description("Diameter of the flat at the very tip of the V-bit (0 for a sharp point). Measure it; many 1/4"" bits have 0.005-0.02"".")>
-    Public Property TipFlatIn As Double = 0.0
+    <Browsable(False)>
+    Public ReadOnly Property IncludedAngleDeg As Double
+        Get
+            Return If(CarveTool Is Nothing, 90.0, CarveTool.AngleDeg)
+        End Get
+    End Property
+
+    ''' <summary>Library tools have sharp V tips; the engine still supports a flat for future tool types.</summary>
+    <Browsable(False), JsonIgnore>
+    Public ReadOnly Property TipFlatIn As Double
+        Get
+            Return 0.0
+        End Get
+    End Property
 
     <Category("2. Tool"), DisplayName("Max usable depth (in)"), [ReadOnly](True), JsonIgnore,
-     Description("Depth at which the V-bit reaches its full diameter: (radius - tip flat / 2) / tan(half angle).")>
+     Description("Deepest the V-bit can carve: where it reaches its full diameter, or the end of its flutes if they are shorter.")>
     Public ReadOnly Property MaxToolDepthIn As Double
         Get
-            Dim half = Math.Max(1.0, Math.Min(179.0, IncludedAngleDeg)) * Math.PI / 360.0
-            Return Math.Round(Math.Max(0.0, ToolDiameterIn / 2.0 - Math.Max(0.0, TipFlatIn) / 2.0) / Math.Tan(half), 6)
+            Return If(CarveTool Is Nothing, 0.0, Math.Round(CarveTool.UsableDepth, 6))
         End Get
     End Property
 
@@ -770,6 +788,7 @@ Public Class CarveSettings
         c.FontLarge = FontLarge.Clone()
         c.FontMedium = FontMedium.Clone()
         c.FontSmall = FontSmall.Clone()
+        c.CarveTool = If(CarveTool?.Clone(), ToolDefinition.DefaultVBit())
         Return c
     End Function
 
@@ -794,14 +813,19 @@ Public Class CarveSettings
         If BlankWidthIn <= 0 OrElse BlankHeightIn <= 0 Then errs.Add("Blank width and height must be positive.")
         If MarginIn < 0 Then errs.Add("Margin cannot be negative.")
         If SizeLargeIn <= 0 OrElse SizeMediumIn <= 0 OrElse SizeSmallIn <= 0 Then errs.Add("All three letter sizes must be positive.")
-        If ToolDiameterIn <= 0 Then errs.Add("Tool diameter must be positive.")
-        If IncludedAngleDeg <= 0 OrElse IncludedAngleDeg >= 180 Then errs.Add("Included angle must be between 0 and 180 degrees.")
+        Dim toolProblem = ToolPickerEditor.VCarveToolProblem(CarveTool)
+        If toolProblem IsNot Nothing Then
+            errs.Add(toolProblem & " Choose one under 2. Tool.")
+        Else
+            For Each p In CarveTool.Problems()
+                errs.Add("Tool """ & CarveTool.DisplayName() & """: " & p)
+            Next
+        End If
         If DepthStep <= 0 Then errs.Add("Roughing depth step must be positive.")
         If FlatDepth <= 0 Then errs.Add("Flat depth must be positive.")
         If ClearStepover <= 0 Then errs.Add("Floor stepover must be positive.")
         If RoughAllowance < 0 Then errs.Add("Roughing allowance cannot be negative.")
         If FinishResolution <= 0 Then errs.Add("Finishing resolution must be positive.")
-        If TipFlatIn < 0 OrElse TipFlatIn >= ToolDiameterIn Then errs.Add("Tip flat must be between 0 and the tool diameter.")
         If SafeZ <= 0 Then errs.Add("Safe Z must be above the stock (positive).")
         If ClearanceZ <= 0 OrElse ClearanceZ > SafeZ Then errs.Add("Clearance Z must be positive and not above Safe Z.")
         If FeedRate <= 0 OrElse PlungeRate <= 0 Then errs.Add("Feed and plunge rates must be positive.")

@@ -50,6 +50,8 @@ Partial Class frmMain
         mnuToolpath = New ToolStripMenuItem()
         mnuToolpathGenerate = New ToolStripMenuItem()
         mnuToolpathAuto = New ToolStripMenuItem()
+        mnuToolpathSep1 = New ToolStripSeparator()
+        mnuToolLibrary = New ToolStripMenuItem()
         stsMain = New StatusStrip()
         lblStatus = New ToolStripStatusLabel()
         lblStats = New ToolStripStatusLabel()
@@ -282,7 +284,7 @@ Partial Class frmMain
         '
         ' mnuToolpath
         '
-        mnuToolpath.DropDownItems.AddRange(New ToolStripItem() {mnuToolpathGenerate, mnuToolpathAuto})
+        mnuToolpath.DropDownItems.AddRange(New ToolStripItem() {mnuToolpathGenerate, mnuToolpathAuto, mnuToolpathSep1, mnuToolLibrary})
         mnuToolpath.Name = "mnuToolpath"
         mnuToolpath.Size = New Size(64, 20)
         mnuToolpath.Text = "&Toolpath"
@@ -302,6 +304,18 @@ Partial Class frmMain
         mnuToolpathAuto.Name = "mnuToolpathAuto"
         mnuToolpathAuto.Size = New Size(200, 22)
         mnuToolpathAuto.Text = "&Auto-regenerate"
+        '
+        ' mnuToolpathSep1
+        '
+        mnuToolpathSep1.Name = "mnuToolpathSep1"
+        mnuToolpathSep1.Size = New Size(197, 6)
+        '
+        ' mnuToolLibrary
+        '
+        mnuToolLibrary.Name = "mnuToolLibrary"
+        mnuToolLibrary.ShortcutKeys = Keys.Control Or Keys.L
+        mnuToolLibrary.Size = New Size(200, 22)
+        mnuToolLibrary.Text = "Tool &Library..."
         '
         ' stsMain
         '
@@ -771,6 +785,8 @@ Partial Class frmMain
     Friend WithEvents mnuToolpath As ToolStripMenuItem
     Friend WithEvents mnuToolpathGenerate As ToolStripMenuItem
     Friend WithEvents mnuToolpathAuto As ToolStripMenuItem
+    Friend WithEvents mnuToolpathSep1 As ToolStripSeparator
+    Friend WithEvents mnuToolLibrary As ToolStripMenuItem
     Friend WithEvents stsMain As StatusStrip
     Friend WithEvents lblStatus As ToolStripStatusLabel
     Friend WithEvents lblStats As ToolStripStatusLabel

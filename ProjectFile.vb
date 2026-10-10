@@ -51,7 +51,25 @@ Public Class ProjectFile
     End Function
 
     Public Sub Save(path As String)
+        MirrorForOlderVersions()
         File.WriteAllText(path, JsonSerializer.Serialize(Me, Options))
+    End Sub
+
+    ''' <summary>
+    ''' Older CarveMaker versions read one job-wide V-bit and feeds. Fill those from the first
+    ''' V-carve toolpath (text first, then drawings) so such a version carves with the right bit.
+    ''' </summary>
+    Private Sub MirrorForOlderVersions()
+        If Settings Is Nothing Then Return
+        Dim all As New List(Of Machining)
+        If Settings.TextMachining IsNot Nothing Then all.Add(Settings.TextMachining)
+        If Objects IsNot Nothing Then all.AddRange(Objects.Where(Function(o) o?.Machining IsNot Nothing).Select(Function(o) o.Machining))
+        Dim main = If(all.FirstOrDefault(Function(m) m.Operation = CutOperation.VCarve AndAlso m.Tool IsNot Nothing), all.FirstOrDefault())
+        If main Is Nothing Then Return
+        If main.Operation = CutOperation.VCarve AndAlso main.Tool IsNot Nothing Then Settings.CarveTool = main.Tool.Clone()
+        Settings.FeedRate = main.FeedRate
+        Settings.PlungeRate = main.PlungeRate
+        Settings.SpindleRpm = CInt(Math.Round(Math.Max(0.0, Math.Min(100000.0, main.SpindleRpm))))
     End Sub
 
     ''' <summary>Loads a project, tolerating missing members (older files get defaults).</summary>
@@ -66,9 +84,11 @@ Public Class ProjectFile
         If pf.Settings.FontLarge Is Nothing Then pf.Settings.FontLarge = New FontChoice("Arial")
         If pf.Settings.FontMedium Is Nothing Then pf.Settings.FontMedium = New FontChoice("Arial")
         If pf.Settings.FontSmall Is Nothing Then pf.Settings.FontSmall = New FontChoice("Arial")
-        MigrateTool(json, pf.Settings)
         If pf.Lines Is Nothing Then pf.Lines = New List(Of ProjectLine)
         If pf.Objects Is Nothing Then pf.Objects = New List(Of DesignObject)
+        pf.Objects.RemoveAll(Function(o) o Is Nothing)
+        MigrateTool(json, pf.Settings)
+        MigrateToolpaths(json, pf)
         For Each o In pf.Objects
             If o.SvgContent Is Nothing Then o.SvgContent = ""
             If o.Name Is Nothing Then o.Name = "Drawing"
@@ -114,6 +134,58 @@ Public Class ProjectFile
             s.CarveTool = ToolDefinition.DefaultVBit()
         End If
     End Sub
+
+    ''' <summary>
+    ''' Projects saved before toolpaths had their own tool, speed and feeds used one V-bit
+    ''' (CarveTool) and one set of feeds for everything. Give each toolpath that lacks its own
+    ''' values those job-wide ones: the feeds and speed for all, the V-bit for V-carving.
+    ''' </summary>
+    Private Shared Sub MigrateToolpaths(json As String, pf As ProjectFile)
+        Dim s = pf.Settings
+        If s.TextMachining Is Nothing Then s.TextMachining = New Machining()
+        Dim textHasFeeds As Boolean = False
+        Dim objectHasFeeds As New List(Of Boolean)
+        Try
+            Using doc = JsonDocument.Parse(json, New JsonDocumentOptions With {.AllowTrailingCommas = True, .CommentHandling = JsonCommentHandling.Skip})
+                Dim settingsEl, el As JsonElement
+                If FindMember(doc.RootElement, "Settings", settingsEl) AndAlso FindMember(settingsEl, "TextMachining", el) Then
+                    textHasFeeds = HasMember(el, "FeedRate")
+                End If
+                Dim objectsEl As JsonElement
+                If FindMember(doc.RootElement, "Objects", objectsEl) AndAlso objectsEl.ValueKind = JsonValueKind.Array Then
+                    For Each o In objectsEl.EnumerateArray()
+                        Dim mEl As JsonElement
+                        objectHasFeeds.Add(FindMember(o, "Machining", mEl) AndAlso HasMember(mEl, "FeedRate"))
+                    Next
+                End If
+            End Using
+        Catch
+        End Try
+        If Not textHasFeeds Then AdoptJobWide(s.TextMachining, s)
+        For i = 0 To pf.Objects.Count - 1
+            Dim o = pf.Objects(i)
+            If o.Machining Is Nothing Then o.Machining = New Machining()
+            If i >= objectHasFeeds.Count OrElse Not objectHasFeeds(i) Then AdoptJobWide(o.Machining, s)
+        Next
+        For Each m In {s.TextMachining}.Concat(pf.Objects.Select(Function(o) o.Machining))
+            If m.Tool Is Nothing Then m.Tool = Machining.DefaultToolFor(m.Operation)
+            If String.IsNullOrWhiteSpace(m.Tool.Id) Then m.Tool.Id = ToolDefinition.NewId()
+            If m.Tool.Name Is Nothing Then m.Tool.Name = ""
+            m.Tool.Normalize()
+        Next
+    End Sub
+
+    Private Shared Sub AdoptJobWide(m As Machining, s As CarveSettings)
+        m.FeedRate = s.FeedRate
+        m.PlungeRate = s.PlungeRate
+        m.SpindleRpm = s.SpindleRpm
+        If m.Operation = CutOperation.VCarve AndAlso s.CarveTool IsNot Nothing Then m.Tool = s.CarveTool.Clone()
+    End Sub
+
+    Private Shared Function HasMember(obj As JsonElement, name As String) As Boolean
+        Dim v As JsonElement
+        Return FindMember(obj, name, v)
+    End Function
 
     Private Shared Function FindMember(obj As JsonElement, name As String, ByRef value As JsonElement) As Boolean
         If obj.ValueKind <> JsonValueKind.Object Then Return False

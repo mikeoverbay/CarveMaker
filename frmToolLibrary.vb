@@ -2,7 +2,7 @@
 '  frmToolLibrary.vb
 '  Tool Library dialog. Lists the tools grouped by type, edits the four numbers
 '  (diameter, flute length, end radius, angle) with a scale drawing, and saves
-'  the library on OK. In pick mode (the "..." button on the V-carve tool row)
+'  the library on OK. In pick mode (the "..." button on a toolpath's Tool row)
 '  it also returns the selected tool, which must pass the caller's filter.
 '  Numbers accept decimals or fractions (0.25, 1/4, 1-1/4).
 ' ============================================================================

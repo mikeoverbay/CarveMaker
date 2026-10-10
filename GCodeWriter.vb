@@ -60,12 +60,19 @@ Public Class GCodeWriter
 
     ''' <summary>Builds the program for one tool group (Nothing: every move), file index of count.</summary>
     Public Shared Function Write(tp As Toolpath, s As CarveSettings, sourceText As String, group As ToolGroup, index As Integer, count As Integer) As String
-        Dim moveList As IEnumerable(Of ToolMove)
-        If group Is Nothing Then
-            moveList = tp.Moves
+        ' Moves to write, and the spindle speed each segment starts with (changed in-program when it differs).
+        Dim segs As List(Of ToolpathSegment) = If(group Is Nothing, tp.Segments, group.Segments)
+        Dim moveList As New List(Of ToolMove)
+        Dim rpmChangeAt As New Dictionary(Of Integer, Double)
+        If segs Is Nothing OrElse segs.Count = 0 Then
+            moveList.AddRange(tp.Moves)
         Else
-            moveList = group.Segments.SelectMany(Function(sg) tp.Moves.Skip(sg.FirstMove).Take(sg.MoveCount))
+            For Each sg In segs
+                If moveList.Count > 0 Then rpmChangeAt(moveList.Count) = sg.SpindleRpm
+                moveList.AddRange(tp.Moves.Skip(sg.FirstMove).Take(sg.MoveCount))
+            Next
         End If
+        Dim startRpm As Double = If(segs IsNot Nothing AndAlso segs.Count > 0, segs(0).SpindleRpm, s.SpindleRpm)
         Dim tool As ToolDefinition = If(group?.Tool, If(tp.Segments.FirstOrDefault()?.Tool, s.CarveTool))
         Dim hasVCarve As Boolean = If(group Is Nothing, tp.Segments.Count = 0 OrElse tp.Segments.Any(Function(sg) sg.Operation = CutOperation.VCarve), group.HasVCarve)
         Dim minutes As Double = If(group Is Nothing, tp.EstimatedMinutes, group.EstimatedMinutes)
@@ -93,7 +100,9 @@ Public Class GCodeWriter
         If tool IsNot Nothing AndAlso tool.UsesAngle Then toolText &= ", " & F(tool.AngleDeg) & " deg included"
         sb.AppendLine("(Tool: " & toolText & ")")
         If hasVCarve Then
-            sb.AppendLine("(Max depth " & F(s.EffectiveFlatDepth * scale) & " " & unitName &
+            Dim vTool = If(segs?.FirstOrDefault(Function(sg) sg.Operation = CutOperation.VCarve)?.Tool, s.CarveTool)
+            Dim flatUsed = Math.Min(Math.Max(s.FlatDepth, 0.0), If(vTool Is Nothing, s.MaxToolDepthIn, vTool.UsableDepth))
+            sb.AppendLine("(Max depth " & F(flatUsed * scale) & " " & unitName &
                           ", depth step " & F(s.DepthStep * scale) & ", clearing stepover " & F(s.ClearStepover * scale) & ")")
         Else
             Dim deepest = moveList.Select(Function(mv) mv.Target.Z).DefaultIfEmpty(0).Min()
@@ -113,7 +122,7 @@ Public Class GCodeWriter
             sb.AppendLine("G0 Z" & F(s.SafeZ * scale))
         End If
         If s.CoolantOn Then sb.AppendLine("M8")
-        sb.AppendLine("S" & s.SpindleRpm.ToString(Ci) & " M3")
+        sb.AppendLine("S" & startRpm.ToString("0", Ci) & " M3")
         If s.SpindleDwellSeconds > 0 Then sb.AppendLine("G4 P" & s.SpindleDwellSeconds.ToString("0.###", Ci))
 
         ' ---- motion -------------------------------------------------------
@@ -124,7 +133,16 @@ Public Class GCodeWriter
         Dim feedIn As Double = s.FeedRate * scale
         Dim plungeIn As Double = s.PlungeRate * scale
 
-        For Each mv In moveList
+        Dim currentRpm = startRpm
+        For moveIndex = 0 To moveList.Count - 1
+            Dim mv = moveList(moveIndex)
+            Dim newRpm As Double
+            If rpmChangeAt.TryGetValue(moveIndex, newRpm) AndAlso Math.Abs(newRpm - currentRpm) > 0.5 Then
+                ' Next toolpath runs at another speed: change it while up at the safe height.
+                sb.AppendLine("S" & newRpm.ToString("0", Ci))
+                If s.SpindleDwellSeconds > 0 Then sb.AppendLine("G4 P" & s.SpindleDwellSeconds.ToString("0.###", Ci))
+                currentRpm = newRpm
+            End If
             Dim t = mv.Target
             If Not haveLast Then
                 ' First positioning move: travel in XY while fully up, then come down to the

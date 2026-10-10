@@ -208,35 +208,6 @@ Public Class frmMain
         Return If(o.Visible, "", "(hidden) ") & o.Name & op
     End Function
 
-    ''' <summary>Opens an expandable row (the machining settings) so its options are in view.</summary>
-    Private Shared Sub ExpandGridRow(pg As PropertyGrid, propertyName As String, Optional scrollToTop As Boolean = False)
-        Try
-            If pg.IsDisposed OrElse pg.SelectedObject Is Nothing Then Return
-            Dim root As GridItem = pg.SelectedGridItem
-            If root Is Nothing Then Return
-            While root.Parent IsNot Nothing
-                root = root.Parent
-            End While
-            For Each cat As GridItem In root.GridItems
-                For Each gi As GridItem In cat.GridItems
-                    If gi.PropertyDescriptor IsNot Nothing AndAlso gi.PropertyDescriptor.Name = propertyName AndAlso gi.Expandable Then gi.Expanded = True
-                Next
-            Next
-            ' Expanding can scroll the first heading out of view: start at the top.
-            If scrollToTop AndAlso root.GridItems.Count > 0 Then root.GridItems(0).Select()
-        Catch ex As ObjectDisposedException
-            ' The grid was rebuilt again meanwhile; the next selection change expands it.
-        End Try
-    End Sub
-
-    ' The grid rebuilds its rows after SelectedObjectsChanged: expand once it has settled.
-    Private Sub pgObject_SelectedObjectsChanged(sender As Object, e As EventArgs) Handles pgObject.SelectedObjectsChanged
-        If IsHandleCreated Then BeginInvoke(Sub() ExpandGridRow(pgObject, NameOf(DesignObject.Machining)))
-    End Sub
-
-    Private Sub pgText_SelectedObjectsChanged(sender As Object, e As EventArgs) Handles pgText.SelectedObjectsChanged
-        If IsHandleCreated Then BeginInvoke(Sub() ExpandGridRow(pgText, NameOf(CarveSettings.TextMachining), scrollToTop:=True))
-    End Sub
 
     ''' <summary>The Text tab grid shows the text settings, the Machine Settings window the rest (same object).</summary>
     Private Sub BindSettingsGrids()
@@ -270,7 +241,7 @@ Public Class frmMain
             lstObjects.EndUpdate()
             If selectIndex >= 0 AndAlso selectIndex < _objects.Count Then
                 lstObjects.SelectedIndex = selectIndex
-                pgObject.SelectedObject = _objects(selectIndex)
+                pgObject.SelectedObject = New DrawingView(_objects(selectIndex))
             Else
                 lstObjects.SelectedIndex = -1
                 pgObject.SelectedObject = Nothing
@@ -318,6 +289,13 @@ Public Class frmMain
             o.FitTo(maxW, maxH)
         End If
         CenterObjectOnBlank(o)
+        Dim textPath = _settings.TextMachining
+        If textPath IsNot Nothing AndAlso textPath.Operation = CutOperation.VCarve AndAlso textPath.Tool IsNot Nothing Then
+            o.Machining.Tool = textPath.Tool.Clone()
+            o.Machining.SpindleRpm = textPath.SpindleRpm
+            o.Machining.FeedRate = textPath.FeedRate
+            o.Machining.PlungeRate = textPath.PlungeRate
+        End If
         _objects.Add(o)
         RefreshObjectList(_objects.Count - 1)
         tabLeft.SelectedTab = tabObjects
@@ -338,7 +316,7 @@ Public Class frmMain
             Dim idx = _glView.SelectedObject
             If idx >= 0 AndAlso idx < _objects.Count Then
                 lstObjects.SelectedIndex = idx
-                pgObject.SelectedObject = _objects(idx)
+                pgObject.SelectedObject = New DrawingView(_objects(idx))
                 tabLeft.SelectedTab = tabObjects
             Else
                 lstObjects.SelectedIndex = -1
@@ -373,7 +351,7 @@ Public Class frmMain
         _syncingSelection = True
         Try
             Dim idx = lstObjects.SelectedIndex
-            pgObject.SelectedObject = If(idx >= 0, _objects(idx), Nothing)
+            pgObject.SelectedObject = If(idx >= 0, New DrawingView(_objects(idx)), Nothing)
             _glView.SelectedObject = idx
             tsbObjRemove.Enabled = idx >= 0
             tsbObjFit.Enabled = idx >= 0
@@ -384,9 +362,10 @@ Public Class frmMain
     End Sub
 
     Private Sub pgObject_PropertyValueChanged(s As Object, e As PropertyValueChangedEventArgs) Handles pgObject.PropertyValueChanged
-        Dim o = TryCast(pgObject.SelectedObject, DesignObject)
+        Dim o = TryCast(pgObject.SelectedObject, DrawingView)?.Drawing
         If o Is Nothing Then Return
         Dim name = If(e.ChangedItem?.PropertyDescriptor?.Name, "")
+        If name = NameOf(Machining.Tool) AndAlso SyncToolsFromLibrary() Then RefreshSettingsGrids()   ' the picker may have edited library entries
         If o.LockAspect Then
             If name = NameOf(DesignObject.Width) Then o.Height = Math.Round(o.Width / o.NaturalAspect, 4)
             If name = NameOf(DesignObject.Height) Then o.Width = Math.Round(o.Height * o.NaturalAspect, 4)
@@ -918,6 +897,9 @@ Public Class frmMain
                         o.InvalidateShape()
                     Next
                     _glView.CurveTolerance = _settings.CurveTolerance
+                Case NameOf(Machining.Tool)
+                    SyncToolsFromLibrary()        ' the picker may have edited library entries
+                    pgObject.Refresh()
                 Case NameOf(CarveSettings.SimResolution), NameOf(CarveSettings.SimMeshDetail)
                     ' Simulation-only: rebuild the heightmap now, the toolpath is unchanged.
                     ' Simulate the toolpath with the settings it was generated from, so pending tool or
@@ -1067,20 +1049,37 @@ Public Class frmMain
 
     ''' <summary>Toolpath > Tool Library: manage tools; follows edits to the project's own tool.</summary>
     Private Sub mnuToolLibrary_Click(sender As Object, e As EventArgs) Handles mnuToolLibrary.Click
-        Using dlg As New frmToolLibrary(Nothing, _settings.CarveTool)
+        Using dlg As New frmToolLibrary(Nothing, _settings.TextMachining?.Tool)
             If dlg.ShowDialog(Me) <> DialogResult.OK Then Return
         End Using
-        Dim current = _settings.CarveTool
-        If current Is Nothing Then Return
-        Dim inLibrary = ToolLibrary.Load().FindById(current.Id)
-        If inLibrary IsNot Nothing AndAlso Not inLibrary.Equals(current) Then
-            _settings.CarveTool = inLibrary.Clone()
+        If SyncToolsFromLibrary() Then
             RefreshSettingsGrids()
+            pgObject.Refresh()
             MarkDirty()
             RequestRegenerate(immediate:=True)
-            lblStatus.Text = "The V-carve tool was updated from the library: " & inLibrary.DisplayName()
         End If
     End Sub
+
+    ''' <summary>
+    ''' Toolpaths keep a copy of their tool: follow edits made to the same library entry (from
+    ''' the menu or from a toolpath's picker). Returns True when any toolpath changed.
+    ''' </summary>
+    Private Function SyncToolsFromLibrary() As Boolean
+        Dim library = ToolLibrary.Load()
+        Dim updated As New List(Of String)
+        Dim machinings As New List(Of Machining) From {_settings.TextMachining}
+        machinings.AddRange(_objects.Select(Function(o) o.Machining))
+        For Each m In machinings
+            If m?.Tool Is Nothing Then Continue For
+            Dim inLibrary = library.FindById(m.Tool.Id)
+            If inLibrary IsNot Nothing AndAlso Not inLibrary.Equals(m.Tool) Then
+                m.Tool = inLibrary.Clone()
+                If Not updated.Contains(inLibrary.DisplayName()) Then updated.Add(inLibrary.DisplayName())
+            End If
+        Next
+        If updated.Count > 0 Then lblStatus.Text = "Toolpaths updated from the library: " & String.Join(", ", updated)
+        Return updated.Count > 0
+    End Function
 
     Private Shared Function SameSettings(a As CarveSettings, b As CarveSettings) As Boolean
         If a Is Nothing OrElse b Is Nothing Then Return False
@@ -1202,7 +1201,7 @@ Public Class frmMain
             tsbSimPlay.Text = If(_glView.SimulationPlaying, "Pause", "Play")
             Dim info = _glView.SimulationInfo
             tslSimInfo.Text = info
-            tslSimInfo.ToolTipText = If(info.Length > 0, "Heightmap " & info & ". Set under Machine > Machine Settings > 5. Simulation.", "")
+            tslSimInfo.ToolTipText = If(info.Length > 0, "Heightmap " & info & ". Set under Machine > Machine Settings > 4. Simulation.", "")
         Finally
             _simUiUpdating = False
         End Try

@@ -102,6 +102,8 @@ Public Class ToolpathSegment
     Public Property Name As String = ""
     Public Property Operation As CutOperation
     Public Property Tool As ToolDefinition
+    ''' <summary>Spindle speed for this segment (S word).</summary>
+    Public Property SpindleRpm As Double = 16000
     Public Property FirstMove As Integer
     Public Property MoveCount As Integer
     Public Property EstimatedMinutes As Double
@@ -395,8 +397,8 @@ Public Class DesignObject
     <Category("Object"), DisplayName("Visible"), Description("Hidden objects are not carved.")>
     Public Property Visible As Boolean = True
 
-    <Category("Machining"), DisplayName("Toolpath"),
-     Description("How this drawing is machined: V-carve (with the V-bit under Machine Settings > 2. Tool), Pocket (cleared flat with an end mill) or Profile (the tool follows the outline, e.g. to cut it out). Expand to set the tool and depths.")>
+    ''' <summary>How this drawing is machined (shown as the Toolpath rows of the Drawings tab).</summary>
+    <Browsable(False)>
     Public Property Machining As New Machining()
 
     ''' <summary>Parsed drawing at its natural size (lower-left at 0,0); Nothing until parsed.</summary>
@@ -643,14 +645,17 @@ Public Class CarveSettings
         End Select
     End Function
 
-    <Category("3. Toolpath"), DisplayName("Text operation"),
-     Description("How the text is machined: V-carve (with the V-bit under Machine Settings > 2. Tool), Pocket (letters cleared flat with an end mill) or Profile (the tool follows the letter outlines). Expand to set the tool and depths.")>
+    ''' <summary>How the text is machined (shown as the 3. Toolpath rows of the Text tab).</summary>
+    <Browsable(False)>
     Public Property TextMachining As New Machining()
 
     ' ---------------------------------------------------------------- Tool
-    <Category("2. Tool"), DisplayName("V-carve tool"),
-     Description("The V-bit that carves the job (a copy is kept in the project). Click the ... button to choose it from the tool library, or to add and edit tools there (also Toolpath > Tool Library, Ctrl+L)."),
-     Editor(GetType(ToolPickerEditor), GetType(UITypeEditor))>
+    ''' <summary>
+    ''' The V-bit the V-carve engine uses. Each toolpath has its own tool now
+    ''' (Machining.Tool, copied in here by Machining.ApplyTo); this property stays for the
+    ''' engines and for projects saved before per-toolpath tools.
+    ''' </summary>
+    <Browsable(False)>
     Public Property CarveTool As ToolDefinition = ToolDefinition.DefaultVBit()
 
     ' Read-only views of the carving tool for the V-carve engine. Diameter and angle are
@@ -678,8 +683,8 @@ Public Class CarveSettings
         End Get
     End Property
 
-    <Category("2. Tool"), DisplayName("Max usable depth (in)"), [ReadOnly](True), JsonIgnore,
-     Description("Deepest the V-bit can carve: where it reaches its full diameter, or the end of its flutes if they are shorter.")>
+    ''' <summary>Deepest CarveTool can carve (see Machining.MaxUsableDepth for the grid).</summary>
+    <Browsable(False), JsonIgnore>
     Public ReadOnly Property MaxToolDepthIn As Double
         Get
             Return If(CarveTool Is Nothing, 0.0, Math.Round(CarveTool.UsableDepth, 6))
@@ -687,44 +692,44 @@ Public Class CarveSettings
     End Property
 
     ' ---------------------------------------------------------------- Carve
-    <Category("3. Carve"), DisplayName("Flat depth (in)"),
-     Description("Maximum carve depth. Areas wider than the V can reach at this depth are cleared flat here. Clamped to the tool's max usable depth; keep a little margin below it.")>
+    <Category("2. Carve"), DisplayName("Flat depth (in)"),
+     Description("Maximum V-carve depth. Areas wider than the V can reach at this depth are cleared flat here. Limited to each V-bit's max usable depth (shown in its toolpath rows); keep a little margin below it.")>
     Public Property FlatDepth As Double = 0.12
 
-    <Category("3. Carve"), DisplayName("Roughing depth step (in)"),
+    <Category("2. Carve"), DisplayName("Roughing depth step (in)"),
      Description("Vertical distance between the constant-depth roughing contours.")>
     Public Property DepthStep As Double = 0.02
 
-    <Category("3. Carve"), DisplayName("Roughing allowance (in)"),
+    <Category("2. Carve"), DisplayName("Roughing allowance (in)"),
      Description("Skin left by the roughing contours so they never rub the finished bevel. Removed by the centerline finishing pass.")>
     Public Property RoughAllowance As Double = 0.004
 
-    <Category("3. Carve"), DisplayName("Centerline finishing pass"),
+    <Category("2. Carve"), DisplayName("Centerline finishing pass"),
      Description("Final variable-depth pass along the center of each stroke: cuts the ridge, the sharp corners and the finished bevel exactly. Turn off only for quick previews.")>
     Public Property FinishPass As Boolean = True
 
-    <Category("3. Carve"), DisplayName("Finishing resolution (in)"),
+    <Category("2. Carve"), DisplayName("Finishing resolution (in)"),
      Description("Spacing of the boundary samples used to trace the centerline. Smaller = smoother, slower to compute.")>
     Public Property FinishResolution As Double = 0.002
 
-    <Category("3. Carve"), DisplayName("Floor stepover (in)"),
+    <Category("2. Carve"), DisplayName("Floor stepover (in)"),
      Description("Spacing between flat-depth floor clearing passes. Scallop height is about half of this on straight runs and up to the stepover at corners.")>
     Public Property ClearStepover As Double = 0.006
 
-    <Category("3. Carve"), DisplayName("Milling direction"),
+    <Category("2. Carve"), DisplayName("Milling direction"),
      Description("Direction of the closed contours relative to the material still to be removed (inside the loop). Both flanks of a V cut are engaged, so this mostly affects the roughing contours.")>
     Public Property Direction As MillingDirection = MillingDirection.Climb
 
-    <Category("3. Carve"), DisplayName("Curve tolerance (in)"),
+    <Category("2. Carve"), DisplayName("Curve tolerance (in)"),
      Description("Chord error allowed when flattening glyph curves into line segments.")>
     Public Property CurveTolerance As Double = 0.0005
 
     ' ---------------------------------------------------------------- Machine
-    <Category("4. Machine"), DisplayName("Safe Z (in)"),
+    <Category("3. Machine"), DisplayName("Safe Z (in)"),
      Description("Height above the stock top used for rapid moves between letters and at the start and end.")>
     Public Property SafeZ As Double = 0.25
 
-    <Category("4. Machine"), DisplayName("Clearance Z (in)"),
+    <Category("3. Machine"), DisplayName("Clearance Z (in)"),
      Description("Height above the stock top used for short rapid moves inside one letter.")>
     Public Property ClearanceZ As Double = 0.05
 
@@ -732,41 +737,42 @@ Public Class CarveSettings
      Description("Used only to warn when the flat depth would cut through the stock.")>
     Public Property StockThickness As Double = 0.75
 
-    <Category("4. Machine"), DisplayName("Feed rate (in/min)")>
+    ''' <summary>Feeds and speed the engines use; set per toolpath by Machining.ApplyTo (kept for old projects).</summary>
+    <Browsable(False)>
     Public Property FeedRate As Double = 40.0
 
-    <Category("4. Machine"), DisplayName("Plunge rate (in/min)")>
+    <Browsable(False)>
     Public Property PlungeRate As Double = 15.0
 
-    <Category("4. Machine"), DisplayName("Rapid rate (in/min)"),
+    <Category("3. Machine"), DisplayName("Rapid rate (in/min)"),
      Description("Used only for the cycle-time estimate.")>
     Public Property RapidRate As Double = 150.0
 
-    <Category("4. Machine"), DisplayName("Spindle RPM")>
+    <Browsable(False)>
     Public Property SpindleRpm As Integer = 16000
 
-    <Category("4. Machine"), DisplayName("Spindle dwell (s)"),
+    <Category("3. Machine"), DisplayName("Spindle dwell (s)"),
      Description("G4 pause after M3 so the spindle reaches speed before the first plunge (seconds; 0 = none). FluidNC and GRBL read P in seconds.")>
     Public Property SpindleDwellSeconds As Double = 2.0
 
-    <Category("4. Machine"), DisplayName("Retract to machine home (G53)"),
+    <Category("3. Machine"), DisplayName("Retract to machine home (G53)"),
      Description("Write 'G0 G53 Z0' at the start (before the first XY move) and before M5 at the end, so the spindle is fully up whenever it travels. Needs a homed machine.")>
     Public Property ParkZAtEnd As Boolean = True
 
-    <Category("4. Machine"), DisplayName("Dust collection M8 / M9"),
+    <Category("3. Machine"), DisplayName("Dust collection M8 / M9"),
      Description("Write M8 on its own line before the spindle starts and M9 after M5. On this machine M8 switches the dust vacuum (the M7 socket is unused); on others it is flood coolant.")>
     Public Property CoolantOn As Boolean = True
 
-    <Category("4. Machine"), DisplayName("Cut order"),
+    <Category("3. Machine"), DisplayName("Cut order"),
      Description("LineByLine: finish each line of text (top line first, left to right) before the next. Serpentine: same but alternate lines run right to left. LeftToRight: every letter by X position, which hops between lines.")>
     Public Property Order As CutOrder = CutOrder.LineByLine
 
     ' ---------------------------------------------------------------- Simulation
-    <Category("5. Simulation"), DisplayName("Precision"),
+    <Category("4. Simulation"), DisplayName("Precision"),
      Description("Cell size of the material-removal heightmap: Fine 0.003"", Medium 0.005"", Coarse 0.010"". Finer costs GPU memory (blank area / cell size squared, 4 bytes per cell).")>
     Public Property SimResolution As SimResolution = SimResolution.Medium
 
-    <Category("5. Simulation"), DisplayName("Max texture size (hardware)"), [ReadOnly](True), JsonIgnore,
+    <Category("4. Simulation"), DisplayName("Max texture size (hardware)"), [ReadOnly](True), JsonIgnore,
      Description("Largest texture edge this graphics card supports. The heightmap is coarsened automatically when the blank needs more cells than this.")>
     Public ReadOnly Property SimMaxTextureSize As Integer
         Get
@@ -777,7 +783,7 @@ Public Class CarveSettings
     ''' <summary>Filled in by the OpenGL view once the context exists.</summary>
     Public Shared Property HardwareMaxTextureSize As Integer = 0
 
-    <Category("5. Simulation"), DisplayName("Display mesh"),
+    <Category("4. Simulation"), DisplayName("Display mesh"),
      Description("How finely the carved surface is drawn. Full: one vertex per heightmap cell, up to 4 million cells (discrete graphics card). Half: up to 1 million. Low: up to 250 thousand, for laptops with integrated graphics. Only the drawing changes, not the heightmap or its accuracy; the simulation bar shows ""drawn at"" when the mesh is lighter than the heightmap.")>
     Public Property SimMeshDetail As SimMeshDetail = SimMeshDetail.Full
 
@@ -805,7 +811,7 @@ Public Class CarveSettings
         End Get
     End Property
 
-    <Category("4. Machine"), DisplayName("G-code units"),
+    <Category("3. Machine"), DisplayName("G-code units"),
      Description("Units written to the G-code file (G20 inches or G21 millimeters). The job is always designed in inches.")>
     Public Property Units As OutputUnits = OutputUnits.Inches
 
@@ -821,8 +827,7 @@ Public Class CarveSettings
     End Function
 
     ''' <summary>The flat depth actually used: never deeper than the tool can cut.</summary>
-    <Category("3. Carve"), DisplayName("Flat depth used (in)"), [ReadOnly](True), JsonIgnore,
-     Description("Flat depth after limiting it to the V-bit's max usable depth (2. Tool). This is the depth the V-carve really cuts.")>
+    <Browsable(False), JsonIgnore>
     Public ReadOnly Property EffectiveFlatDepth As Double
         Get
             Return Math.Min(Math.Max(FlatDepth, 0.0), MaxToolDepthIn)
@@ -842,14 +847,6 @@ Public Class CarveSettings
         If BlankWidthIn <= 0 OrElse BlankHeightIn <= 0 Then errs.Add("Blank width and height must be positive.")
         If MarginIn < 0 Then errs.Add("Margin cannot be negative.")
         If SizeLargeIn <= 0 OrElse SizeMediumIn <= 0 OrElse SizeSmallIn <= 0 Then errs.Add("All three letter sizes must be positive.")
-        Dim toolProblem = ToolPickerEditor.VCarveToolProblem(CarveTool)
-        If toolProblem IsNot Nothing Then
-            errs.Add("V-carving needs a V-bit: choose one under Machine > Machine Settings > 2. Tool.")
-        Else
-            For Each p In CarveTool.Problems()
-                errs.Add("Tool """ & CarveTool.DisplayName() & """: " & p)
-            Next
-        End If
         If DepthStep <= 0 Then errs.Add("Roughing depth step must be positive.")
         If FlatDepth <= 0 Then errs.Add("Flat depth must be positive.")
         If ClearStepover <= 0 Then errs.Add("Floor stepover must be positive.")
@@ -857,8 +854,6 @@ Public Class CarveSettings
         If FinishResolution <= 0 Then errs.Add("Finishing resolution must be positive.")
         If SafeZ <= 0 Then errs.Add("Safe Z must be above the stock (positive).")
         If ClearanceZ <= 0 OrElse ClearanceZ > SafeZ Then errs.Add("Clearance Z must be positive and not above Safe Z.")
-        If FeedRate <= 0 OrElse PlungeRate <= 0 Then errs.Add("Feed and plunge rates must be positive.")
-        If SpindleRpm <= 0 Then errs.Add("Spindle RPM must be positive.")
         If SpindleDwellSeconds < 0 Then errs.Add("Spindle dwell cannot be negative.")
         If CurveTolerance <= 0 Then errs.Add("Curve tolerance must be positive.")
         If LineSpacing <= 0 Then errs.Add("Line spacing must be positive.")

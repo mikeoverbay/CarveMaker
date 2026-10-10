@@ -1,7 +1,8 @@
 ' ============================================================================
 '  frmMachineSettings.vb
 '  Machine Settings window (Machine > Machine Settings, Ctrl+K): blank and
-'  stock, V-carve tool, carve, machine and simulation settings. A tool window
+'  stock, V-carve depths, machine and simulation settings (tools, speeds and
+'  feeds belong to each toolpath, on the Text and Drawings tabs). A tool window
 '  owned by the main form: it floats over it, stays open while you work, and
 '  closing it only hides it. The main form binds the grid and handles its
 '  changes, exactly like the Text tab's grid.

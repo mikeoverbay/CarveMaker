@@ -510,7 +510,7 @@ Partial Class frmMain
         splitText.Panel2.Controls.Add(pgText)
         splitText.Panel2MinSize = 120
         splitText.Size = New Size(400, 664)
-        splitText.SplitterDistance = 300
+        splitText.SplitterDistance = 200
         splitText.SplitterWidth = 6
         splitText.TabIndex = 0
         '

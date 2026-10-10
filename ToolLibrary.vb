@@ -430,7 +430,7 @@ Public Class ToolDefinitionConverter
     End Function
 End Class
 
-''' <summary>The "..." button on the V-carve tool row: opens the tool library to pick a V-bit.</summary>
+''' <summary>Tool picker restricted to V-bits (kept for callers outside the toolpath rows).</summary>
 Public Class ToolPickerEditor
     Inherits UITypeEditor
 

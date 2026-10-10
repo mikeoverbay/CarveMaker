@@ -35,9 +35,10 @@ SmartScreen may ask you to confirm the first time.)
    in the text settings to pick family, bold and italic, or put the caret on a
    line and use **Font > Choose Font for Current Line's Size...** (Ctrl+F).
 3. The Text tab holds only text settings: sizes and fonts, placement on the
-   blank, and the text toolpath. Everything else, including the blank (stock),
-   V-carve tool, carve, machine and simulation settings, is in the **Machine
-   Settings** window. Open it with **Machine > Machine Settings...** (Ctrl+K). It
+   blank, and the text's toolpath (operation, tool, spindle speed, feed and
+   plunge rate). Each drawing has the same toolpath rows on the Drawings tab.
+   Everything else, including the blank (stock), V-carve depths, machine and
+   simulation settings, is in the **Machine Settings** window. Open it with **Machine > Machine Settings...** (Ctrl+K). It
    floats over the main window and stays open while you work. Closing it only
    hides it. The toolpath regenerates automatically after every change (or press
    **F5**).
@@ -119,18 +120,24 @@ into the installer, and the Import SVG dialog opens there the first time.
 
 ## Pocket and profile toolpaths
 
-Every drawing has a **Toolpath** (Drawings tab, *Machining* category) and the
-text has a **Text operation** (Text tab, *3. Toolpath*). Each is one of:
+Every drawing has a **Toolpath** section (Drawings tab) and the text has one too
+(Text tab, *3. Toolpath*). Each starts with the same rows: **Operation**,
+**Tool** (the **...** button opens the tool library filtered to the tools that
+can do the operation), **Spindle speed**, **Feed rate** and **Plunge rate**.
+Then come the rows of the chosen operation:
 
 | Operation | What it does | Settings |
 |---|---|---|
-| V-carve (default) | Carved with the V-bit under *Machine Settings > 2. Tool*, together with every other V-carved item | *Machine Settings > 3. Carve* |
+| V-carve (default) | Carved with its V-bit; items with the same V-bit are carved together as one shape, each at its own feed (give them the same spindle speed; the first one's is used) | *Max usable depth* of the bit (read only); depths and passes under *Machine Settings > 2. Carve* |
 | Pocket | Clears the area to a flat floor with an end mill: offset rings from the centre out to the wall, level by level | tool, cut depth, pass depth, stepover % |
 | Profile | The tool follows the outline: **Outside** (cut the shape out at its true size), **Inside** (cut an opening) or **On the line** (engrave; a V-bit is allowed here) | tool, side, cut depth or *Cut through the stock*, pass depth, tabs (count, width, thickness) |
 
-The grid shows only the settings the chosen operation uses, and the **...**
-button on *Tool* opens the tool library filtered to the tools that can do it.
-Climb or conventional milling follows *Milling direction*. Through cuts go
+The grid shows only the settings the chosen operation uses. Changing the
+operation swaps in the library's standard tool for it (1/4" 90 degree V-bit, or
+1/4" flat end mill) when the current one can't do the job. When toolpaths share
+a tool but run at different spindle speeds, the program changes the speed (an
+`S` line, then the spindle dwell) between them. Climb or conventional milling
+follows *Milling direction*. Through cuts go
 0.02" below the stock thickness (*Machine Settings > 1. Blank*). Tabs leave bridges of material
 so the part stays put, and the simulation shows the cut-out see-through.
 Pocket clean-up passes cover the stripes a stepover above 50% would leave.
@@ -147,8 +154,8 @@ stock. Each program has the usual FluidNC start and end.
 
 ## Tool library
 
-**Toolpath > Tool Library** (Ctrl+L), or the **...** button on *Machine Settings > 2. Tool > V-carve
-tool*. Tools are inch only and grouped by type; each is four numbers, shown on a
+**Toolpath > Tool Library** (Ctrl+L), or the **...** button on a toolpath's
+*Tool* row. Tools are inch only and grouped by type; each is four numbers, shown on a
 scale drawing with its dimensions:
 
 | Type | Diameter | Flute length | End radius | Angle (included) |
@@ -172,7 +179,7 @@ Projects saved before the library open with an equivalent V-bit.
 
 **View > Show Simulation** (Ctrl+M) replaces the line drawing with the carved
 board. The blank becomes a float heightmap texture on the GPU (one cell =
-*Precision* under *Machine Settings > 5. Simulation*: 0.003", 0.005" or 0.010"), automatically
+*Precision* under *Machine Settings > 4. Simulation*: 0.003", 0.005" or 0.010"), automatically
 coarsened if the blank needs more cells than the graphics card allows (shown
 as *Max texture size (hardware)*). Material is removed by rendering the revolved
 tool model from above into that texture with MAX blending every half cell along
@@ -198,7 +205,7 @@ simulation on shows the finished part first; Reset and Play animate it.
 | Flat depth | Maximum depth. Clamped to the bit's usable depth `(D/2 - f/2)/tan(a)` = 0.125" for a sharp 1/4" 90 degree bit; default 0.12" keeps a margin. |
 | Roughing depth step / allowance | Coarser steps are fine because the centerline pass finishes the surface. |
 | Floor stepover | Scallop height on flat floors is about half of this on straight runs. |
-| V-carve tool | The V-bit from the tool library (a copy is stored in the project). *Max usable depth* is where it reaches full diameter, or the end of its flutes if shorter. |
+| Tool, speed and feeds | Per toolpath (text and each drawing). The tool is a copy from the library stored in the project; editing that library entry later updates the toolpaths that use it. Projects from before per-toolpath feeds open with their old feed, plunge and spindle speed in every toolpath and their old V-bit in every V-carve toolpath. A new drawing starts with the text's V-bit and feeds when the text is V-carved. |
 | Milling direction | Direction of the closed contours relative to the material still to be removed (inside the loop). |
 | Cut order | *LineByLine* (default): finish each line of text, top line first, letters left to right. *Serpentine*: alternate lines run right to left. *LeftToRight*: every letter by X, which hops between lines. |
 | Spindle dwell / Dust collection / Park | `G4 P<seconds>` after `M3` (FluidNC and GRBL take P in seconds), `G0 G53 Z0` at the start and before `M5` when *Retract to machine home* is on; the first positioning move is `G0 X Y` while fully up, then `G0 Z` on its own line, and `M8` before the spindle starts / `M9` after `M5` when *Dust collection M8 / M9* is on (M8 runs the dust vacuum on this machine). |

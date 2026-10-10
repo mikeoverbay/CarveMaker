@@ -2,7 +2,7 @@
 '  Machining.vb
 '  What happens to each item of the job (the text block, each drawing):
 '
-'    V-carve  carved with the V-bit under Machine Settings > 2. Tool, with every other
+'    V-carve  carved with its V-bit (depths: Machine Settings > 2. Carve), with every other
 '             V-carved item (the original CarveMaker engine, VCarve.vb).
 '    Pocket   the area is cleared to a flat floor with an end mill: offset
 '             rings from the centre out to the wall, level by level.
@@ -10,6 +10,7 @@
 '             Inside (cut an opening) or On the line (engrave), level by
 '             level, with optional holding tabs.
 '
+'  Every toolpath has its own tool, spindle speed, feed and plunge rate.
 '  JobBuilder runs everything in machining order: V-carve, then pockets,
 '  then profiles last (cut-outs free the part, so they go at the end), one
 '  segment per tool. Coordinates are machine inches, Z0 = top of the stock.
@@ -86,7 +87,7 @@ Public Class ProfileSideConverter
     End Sub
 End Class
 
-''' <summary>How one item (text block or drawing) is machined.</summary>
+''' <summary>How one item (text block or drawing) is machined: operation, tool, speeds and feeds.</summary>
 <TypeConverter(GetType(MachiningConverter))>
 Public Class Machining
     Private Shared ReadOnly Ci As CultureInfo = CultureInfo.InvariantCulture
@@ -95,22 +96,49 @@ Public Class Machining
     Public Const ThroughOvercut As Double = 0.02
 
     Private _operation As CutOperation = CutOperation.VCarve
+    ' The last V-bit and the last end mill this toolpath used, so switching the operation
+    ' away and back restores the user's choice instead of the standard tool.
+    Private _lastVBit As ToolDefinition
+    Private _lastMill As ToolDefinition
 
     <DisplayName("Operation"), RefreshProperties(RefreshProperties.All), TypeConverter(GetType(CutOperationConverter)),
-     Description("V-carve: carved with the V-bit under Machine Settings > 2. Tool. Pocket: the area is cleared to a flat floor with an end mill. Profile: the tool follows the outline (outside, inside or on the line), for example to cut the shape out of the board.")>
+     Description("V-carve: carved with the V-bit chosen below (depths under Machine Settings > 2. Carve). Pocket: the area is cleared to a flat floor with an end mill. Profile: the tool follows the outline (outside, inside or on the line), for example to cut the shape out of the board.")>
     Public Property Operation As CutOperation
         Get
             Return _operation
         End Get
         Set(value As CutOperation)
+            Remember(Tool)
             _operation = value
-            If value <> CutOperation.VCarve AndAlso Tool Is Nothing Then Tool = DefaultEndMill()
+            ' Keep a tool that can do the new operation: the one in use, else the last one of the
+            ' right kind this toolpath had, else the library's standard tool.
+            If Tool Is Nothing OrElse ToolProblem(Tool) IsNot Nothing Then
+                Dim previous = If(value = CutOperation.VCarve, _lastVBit, _lastMill)
+                Tool = If(previous IsNot Nothing AndAlso ToolProblem(previous) Is Nothing, previous.Clone(), DefaultToolFor(value))
+            End If
         End Set
     End Property
 
-    <DisplayName("Tool"), Editor(GetType(MachiningToolEditor), GetType(UITypeEditor)),
-     Description("Cutter for this pocket or profile. Click ... to choose it from the tool library (end mills; a V-bit can follow the line).")>
-    Public Property Tool As ToolDefinition
+    <DisplayName("Tool"), Editor(GetType(MachiningToolEditor), GetType(UITypeEditor)), RefreshProperties(RefreshProperties.All),
+     Description("Cutter for this toolpath. Click ... to choose it from the tool library: a V-bit for V-carving, an end mill for pockets and profiles (a V-bit can also follow the line).")>
+    Public Property Tool As ToolDefinition = ToolDefinition.DefaultVBit()
+
+    <DisplayName("Spindle speed (RPM)"), Description("Spindle speed for this toolpath (the S word).")>
+    Public Property SpindleRpm As Double = 16000
+
+    <DisplayName("Feed rate (in/min)"), Description("Cutting feed for this toolpath.")>
+    Public Property FeedRate As Double = 40
+
+    <DisplayName("Plunge rate (in/min)"), Description("Feed for moves down into the material.")>
+    Public Property PlungeRate As Double = 15
+
+    <DisplayName("Max usable depth (in)"), [ReadOnly](True), JsonIgnore,
+     Description("Deepest this V-bit can carve: where it reaches its full diameter, or the end of its flutes if they are shorter. The flat depth (Machine Settings > 2. Carve) is limited to this.")>
+    Public ReadOnly Property MaxUsableDepth As Double
+        Get
+            Return If(Tool Is Nothing, 0.0, Math.Round(Tool.UsableDepth, 4))
+        End Get
+    End Property
 
     <DisplayName("Profile side"), TypeConverter(GetType(ProfileSideConverter)),
      Description("Outside: the tool runs outside the outline (cuts the shape out at its true size). Inside: inside the outline (cuts an opening). On the line: the tool centre follows the outline (engraving).")>
@@ -139,9 +167,58 @@ Public Class Machining
     <DisplayName("Tab thickness (in)"), Description("Height of the tabs above the bottom of the cut.")>
     Public Property TabThickness As Double = 0.1
 
+    Private Sub Remember(t As ToolDefinition)
+        If t Is Nothing Then Return
+        If t.Type = ToolType.VBit Then
+            _lastVBit = t.Clone()
+        ElseIf t.Type = ToolType.FlatEndMill OrElse t.Type = ToolType.BallNose OrElse t.Type = ToolType.BullNose Then
+            _lastMill = t.Clone()
+        End If
+    End Sub
+
+    ''' <summary>
+    ''' The Machining a grid row edits. Toolpath rows shown flat by a FilteredView report the
+    ''' view as their instance; the view knows the real owner.
+    ''' </summary>
+    Public Shared Function FromContext(context As ITypeDescriptorContext) As Machining
+        Dim inst As Object = context?.Instance
+        Dim m = TryCast(inst, Machining)
+        If m IsNot Nothing Then Return m
+        Dim view = TryCast(inst, ICustomTypeDescriptor)
+        If view IsNot Nothing AndAlso context.PropertyDescriptor IsNot Nothing Then Return TryCast(view.GetPropertyOwner(context.PropertyDescriptor), Machining)
+        Return Nothing
+    End Function
+
     ''' <summary>The standard 1/4" flat end mill (same Id as in the library).</summary>
     Public Shared Function DefaultEndMill() As ToolDefinition
         Return ToolDefinition.Create(ToolType.FlatEndMill, 0.25, 0.75, id:="std-flat-0250")
+    End Function
+
+    ''' <summary>The library's standard tool for an operation.</summary>
+    Public Shared Function DefaultToolFor(op As CutOperation) As ToolDefinition
+        Return If(op = CutOperation.VCarve, ToolDefinition.DefaultVBit(), DefaultEndMill())
+    End Function
+
+    ''' <summary>
+    ''' The rows the grid shows for this operation, in order: what every toolpath has
+    ''' (operation, tool, speeds and feeds) and then what the operation uses.
+    ''' </summary>
+    Public Shared Function VisibleProperties(m As Machining, attributes As Attribute()) As PropertyDescriptor()
+        Dim all = TypeDescriptor.GetProperties(GetType(Machining), attributes)
+        Dim names As New List(Of String) From {
+            NameOf(Operation), NameOf(Tool), NameOf(SpindleRpm), NameOf(FeedRate), NameOf(PlungeRate)}
+        Select Case m.Operation
+            Case CutOperation.VCarve
+                names.Add(NameOf(MaxUsableDepth))
+            Case CutOperation.Pocket
+                names.AddRange({NameOf(CutDepth), NameOf(PassDepth), NameOf(StepoverPercent)})
+            Case CutOperation.Profile
+                names.AddRange({NameOf(Side), NameOf(ThroughCut)})
+                If Not m.ThroughCut Then names.Add(NameOf(CutDepth))
+                names.AddRange({NameOf(PassDepth), NameOf(TabCount)})
+                If m.TabCount > 0 Then names.AddRange({NameOf(TabWidth), NameOf(TabThickness)})
+        End Select
+        Return names.Select(Function(n) all.Find(n, False)).Where(Function(p) p IsNot Nothing).ToArray()
     End Function
 
     ''' <summary>Depth of the bottom of the cut.</summary>
@@ -155,6 +232,8 @@ Public Class Machining
         If t Is Nothing Then Return "Choose a tool."
         Dim endMill = t.Type = ToolType.FlatEndMill OrElse t.Type = ToolType.BallNose OrElse t.Type = ToolType.BullNose
         Select Case Operation
+            Case CutOperation.VCarve
+                If t.Type <> ToolType.VBit Then Return "V-carving needs a V-bit. Pick one from the V-bit group, or add one with New > V-bit."
             Case CutOperation.Pocket
                 If Not endMill Then Return "Pockets need an end mill (flat, ball or bull nose)."
             Case CutOperation.Profile
@@ -170,7 +249,6 @@ Public Class Machining
     ''' <summary>Problems that stop this item from being machined.</summary>
     Public Function Problems(stockThickness As Double) As List(Of String)
         Dim p As New List(Of String)
-        If Operation = CutOperation.VCarve Then Return p
         Dim tp = ToolProblem(Tool)
         If tp IsNot Nothing Then p.Add(tp)
         If Tool IsNot Nothing Then
@@ -178,6 +256,9 @@ Public Class Machining
                 p.Add("Tool: " & q)
             Next
         End If
+        If Not (SpindleRpm > 0 AndAlso SpindleRpm <= 100000) Then p.Add("Spindle speed must be between 1 and 100000 RPM.")
+        If Not (FeedRate > 0 AndAlso FeedRate <= 10000) OrElse Not (PlungeRate > 0 AndAlso PlungeRate <= 10000) Then p.Add("Feed and plunge rates must be between 0 and 10000 in/min.")
+        If Operation = CutOperation.VCarve Then Return p
         If Not (BottomDepth(stockThickness) > 0) Then p.Add("Cut depth must be more than 0.")
         If Not (PassDepth > 0) Then p.Add("Pass depth must be more than 0.")
         If Operation = CutOperation.Pocket AndAlso (StepoverPercent < 5 OrElse StepoverPercent > 90) Then p.Add("Stepover must be between 5% and 90%.")
@@ -189,17 +270,28 @@ Public Class Machining
         Return p
     End Function
 
-    ''' <summary>One-line description, shown on the collapsed grid row.</summary>
+    ''' <summary>A copy of the job settings carrying this toolpath's tool and feeds (what the engines read).</summary>
+    Public Function ApplyTo(s As CarveSettings) As CarveSettings
+        Dim c = s.Clone()
+        If Tool IsNot Nothing Then c.CarveTool = Tool.Clone()
+        c.FeedRate = FeedRate
+        c.PlungeRate = PlungeRate
+        c.SpindleRpm = CInt(Math.Round(Math.Max(0.0, Math.Min(100000.0, SpindleRpm))))
+        Return c
+    End Function
+
+    ''' <summary>One-line description.</summary>
     Public Function Summary() As String
+        Dim feeds = String.Format(Ci, "{0} - S{1:0} F{2:0.#}", ToolName(), SpindleRpm, FeedRate)
         Select Case Operation
             Case CutOperation.Pocket
-                Return "Pocket " & InchFormat.EditText(CutDepth) & """ deep, " & ToolName()
+                Return "Pocket " & InchFormat.EditText(CutDepth) & """ deep, " & feeds
             Case CutOperation.Profile
                 Dim side As String = If(Me.Side = ProfileSide.OnLine, "on the line", Me.Side.ToString().ToLowerInvariant())
                 Dim depth = If(ThroughCut, "through", InchFormat.EditText(CutDepth) & """ deep")
-                Return "Profile " & side & ", " & depth & If(TabCount > 0, ", " & TabCount & " tabs", "") & ", " & ToolName()
+                Return "Profile " & side & ", " & depth & If(TabCount > 0, ", " & TabCount & " tabs", "") & ", " & feeds
         End Select
-        Return "V-carve"
+        Return "V-carve, " & feeds
     End Function
 
     Private Function ToolName() As String
@@ -212,7 +304,8 @@ Public Class Machining
         sb.Append(Operation).Append("|").Append(Side).Append("|").Append(ThroughCut).Append("|").
            Append(CutDepth.ToString("R", Ci)).Append("|").Append(PassDepth.ToString("R", Ci)).Append("|").
            Append(StepoverPercent.ToString("R", Ci)).Append("|").Append(TabCount).Append("|").
-           Append(TabWidth.ToString("R", Ci)).Append("|").Append(TabThickness.ToString("R", Ci))
+           Append(TabWidth.ToString("R", Ci)).Append("|").Append(TabThickness.ToString("R", Ci)).Append("|").
+           Append(SpindleRpm.ToString("R", Ci)).Append("|").Append(FeedRate.ToString("R", Ci)).Append("|").Append(PlungeRate.ToString("R", Ci))
         If Tool IsNot Nothing Then
             sb.Append("|").Append(Tool.Type).Append("|").Append(Tool.Diameter.ToString("R", Ci)).Append("|").
                Append(Tool.Length.ToString("R", Ci)).Append("|").Append(Tool.EffectiveEndRadius.ToString("R", Ci)).Append("|").
@@ -242,7 +335,7 @@ Public Class Machining
     End Function
 End Class
 
-''' <summary>Expandable in the grid, showing only the settings the chosen operation uses.</summary>
+''' <summary>Shown as a summary when a Machining appears as a single row; its rows follow the operation.</summary>
 Public Class MachiningConverter
     Inherits ExpandableObjectConverter
 
@@ -253,24 +346,13 @@ Public Class MachiningConverter
     End Function
 
     Public Overrides Function GetProperties(context As ITypeDescriptorContext, value As Object, attributes As Attribute()) As PropertyDescriptorCollection
-        Dim all = MyBase.GetProperties(context, value, attributes)
         Dim m = TryCast(value, Machining)
-        If m Is Nothing Then Return all
-        Dim keep As New HashSet(Of String) From {NameOf(Machining.Operation)}
-        Select Case m.Operation
-            Case CutOperation.Pocket
-                keep.UnionWith({NameOf(Machining.Tool), NameOf(Machining.CutDepth), NameOf(Machining.PassDepth), NameOf(Machining.StepoverPercent)})
-            Case CutOperation.Profile
-                keep.UnionWith({NameOf(Machining.Tool), NameOf(Machining.Side), NameOf(Machining.ThroughCut), NameOf(Machining.PassDepth), NameOf(Machining.TabCount)})
-                If Not m.ThroughCut Then keep.Add(NameOf(Machining.CutDepth))
-                If m.TabCount > 0 Then keep.UnionWith({NameOf(Machining.TabWidth), NameOf(Machining.TabThickness)})
-        End Select
-        Dim shown = all.Cast(Of PropertyDescriptor)().Where(Function(p) keep.Contains(p.Name)).ToArray()
-        Return New PropertyDescriptorCollection(shown)
+        If m Is Nothing Then Return MyBase.GetProperties(context, value, attributes)
+        Return New PropertyDescriptorCollection(Machining.VisibleProperties(m, attributes))
     End Function
 End Class
 
-''' <summary>The "..." button on a pocket or profile Tool row: the tool library, filtered for that operation.</summary>
+''' <summary>The "..." button on a toolpath's Tool row: the tool library, filtered for that operation.</summary>
 Public Class MachiningToolEditor
     Inherits UITypeEditor
 
@@ -279,11 +361,16 @@ Public Class MachiningToolEditor
     End Function
 
     Public Overrides Function EditValue(context As ITypeDescriptorContext, provider As IServiceProvider, value As Object) As Object
-        Dim m = TryCast(context?.Instance, Machining)
+        Dim m = Machining.FromContext(context)
         If m Is Nothing Then Return value
         Dim current = TryCast(value, ToolDefinition)
         Dim svc = TryCast(provider?.GetService(GetType(IWindowsFormsEditorService)), IWindowsFormsEditorService)
-        Dim title = If(m.Operation = CutOperation.Pocket, "Tool Library - choose the pocketing tool", "Tool Library - choose the profile tool")
+        Dim title As String
+        Select Case m.Operation
+            Case CutOperation.Pocket : title = "Tool Library - choose the pocketing tool"
+            Case CutOperation.Profile : title = "Tool Library - choose the profile tool"
+            Case Else : title = "Tool Library - choose the V-carve tool"
+        End Select
         Using dlg As New frmToolLibrary(Function(t) m.ToolProblem(t), current, title)
             Dim result = If(svc IsNot Nothing, svc.ShowDialog(dlg), dlg.ShowDialog())
             If result = DialogResult.OK AndAlso dlg.SelectedTool IsNot Nothing Then
@@ -751,22 +838,43 @@ Public Module JobBuilder
             End If
         Next
 
-        ' 1. V-carve everything set to V-carve, as one union (letters and drawings may overlap).
+        ' 1. V-carve. Items with the same V-bit are carved as one union (letters and drawings may
+        '    overlap); each item's moves then get that item's own feed and plunge rate.
         Dim vItems = usable.Where(Function(i) i.Machining.Operation = CutOperation.VCarve).ToList()
-        If vItems.Count > 0 Then
+        Dim vGroups = GroupByTool(vItems, bySpeed:=False)
+        For gi = 0 To vGroups.Count - 1
+            For gj = gi + 1 To vGroups.Count - 1
+                Dim a As New PathsD(), b As New PathsD()
+                For Each it In vGroups(gi) : a.AddRange(it.Paths) : Next
+                For Each it In vGroups(gj) : b.AddRange(it.Paths) : Next
+                If Clipper.Intersect(a, b, FillRule.NonZero, GlyphOutline.ClipperPrecision).Count > 0 Then
+                    tp.Warnings.Add(String.Format(Ci, "{0} and {1} overlap but use different V-bits, so the overlap is carved by both and shows both outlines.",
+                                                  String.Join(", ", vGroups(gi).Select(Function(i) i.Name)), String.Join(", ", vGroups(gj).Select(Function(i) i.Name))))
+                End If
+            Next
+        Next
+        For Each g In vGroups
+            token.ThrowIfCancellationRequested()
             Dim shape As New PathsD()
-            For Each it In vItems
+            For Each it In g
                 shape.AddRange(it.Paths)
             Next
-            If vItems.Count > 1 Then shape = Clipper.Union(shape, Nothing, FillRule.NonZero, GlyphOutline.ClipperPrecision)
-            Dim centers = If(vItems.Any(Function(i) i.IsText), lineCenters, Nothing)
-            Dim vtp = TextToToolpath.CarveShape(shape, centers, s, token)
+            If g.Count > 1 Then shape = Clipper.Union(shape, Nothing, FillRule.NonZero, GlyphOutline.ClipperPrecision)
+            Dim centers = If(g.Any(Function(i) i.IsText), lineCenters, Nothing)
+            Dim m = g(0).Machining
+            Dim vtp = TextToToolpath.CarveShape(shape, centers, m.ApplyTo(s), token)
             tp.Warnings.AddRange(vtp.Warnings)
-            AppendSegment(tp, "V-carve", CutOperation.VCarve, s.CarveTool, vtp.Moves)
+            If g.Any(Function(i) Not SameFeeds(i.Machining, m)) Then ApplyItemFeeds(vtp.Moves, g)
+            If g.Any(Function(i) i.Machining.SpindleRpm <> m.SpindleRpm) Then
+                tp.Warnings.Add(String.Format(Ci, "{0} share the {1} and are carved together at S{2:0} (the first one's speed); give them the same spindle speed.",
+                                              String.Join(", ", g.Select(Function(i) i.Name)), m.Tool.DisplayName(), m.SpindleRpm))
+            End If
+            Dim name = If(vGroups.Count = 1, "V-carve", "V-carve: " & String.Join(", ", g.Select(Function(i) i.Name)))
+            AppendSegment(tp, name, CutOperation.VCarve, m.Tool, m.SpindleRpm, vtp.Moves)
             tp.Contours.AddRange(vtp.Contours)
             tp.Regions.AddRange(vtp.Regions)
             tp.RegionCount += vtp.RegionCount
-        End If
+        Next
 
         ' 2. Pockets, grouped by tool; the tool the profiles start with goes last so it carries straight on.
         Dim pocketItems = usable.Where(Function(i) i.Machining.Operation = CutOperation.Pocket).ToList()
@@ -782,25 +890,27 @@ Public Module JobBuilder
         End If
 
         Dim regionIndex = tp.RegionCount
-        For Each g In pocketGroups
-            token.ThrowIfCancellationRequested()
-            Dim moves As New List(Of ToolMove)
-            For Each it In g
-                Dim passes = MillingEngine.PocketPasses(Normalize(it.Paths), it.Machining, s, it.Name, If(it.IsText, lineCenters, Nothing), tp.Warnings)
-                MillingEngine.LinkPasses(passes, s, moves, tp.Contours, regionIndex)
-                regionIndex += 1
-                tp.RegionCount += 1
+        For Each toolGroup In pocketGroups
+            For Each g In SplitBySpeed(toolGroup)
+                token.ThrowIfCancellationRequested()
+                Dim moves As New List(Of ToolMove)
+                For Each it In g
+                    Dim passes = MillingEngine.PocketPasses(Normalize(it.Paths), it.Machining, s, it.Name, If(it.IsText, lineCenters, Nothing), tp.Warnings)
+                    MillingEngine.LinkPasses(passes, it.Machining.ApplyTo(s), moves, tp.Contours, regionIndex)
+                    regionIndex += 1
+                    tp.RegionCount += 1
+                Next
+                AppendSegment(tp, "Pocket: " & String.Join(", ", g.Select(Function(i) i.Name)), CutOperation.Pocket, g(0).Machining.Tool, g(0).Machining.SpindleRpm, moves)
             Next
-            AppendSegment(tp, "Pocket: " & String.Join(", ", g.Select(Function(i) i.Name)), CutOperation.Pocket, g(0).Machining.Tool, moves)
         Next
 
         ' 3. Profiles.
-        For Each g In profileGroups
+        For Each g In profileGroups.SelectMany(Function(tg) SplitBySpeed(tg))
             token.ThrowIfCancellationRequested()
             Dim moves As New List(Of ToolMove)
             For Each it In g
                 Dim passes = MillingEngine.ProfilePasses(Normalize(it.Paths), it.Machining, s, it.Name, tp.Warnings)
-                MillingEngine.LinkPasses(passes, s, moves, tp.Contours, regionIndex)
+                MillingEngine.LinkPasses(passes, it.Machining.ApplyTo(s), moves, tp.Contours, regionIndex)
                 regionIndex += 1
                 tp.RegionCount += 1
                 Dim bottom = it.Machining.BottomDepth(s.StockThickness)
@@ -808,7 +918,7 @@ Public Module JobBuilder
                     tp.Warnings.Add(String.Format(Ci, "{0}: the cut ({1:0.###}"") is deeper than the {2}'s flutes ({3:0.###}"").", it.Name, bottom, it.Machining.Tool.DisplayName(), it.Machining.Tool.Length))
                 End If
             Next
-            AppendSegment(tp, "Profile: " & String.Join(", ", g.Select(Function(i) i.Name)), CutOperation.Profile, g(0).Machining.Tool, moves)
+            AppendSegment(tp, "Profile: " & String.Join(", ", g.Select(Function(i) i.Name)), CutOperation.Profile, g(0).Machining.Tool, g(0).Machining.SpindleRpm, moves)
         Next
         For Each it In pocketItems
             Dim bottom = it.Machining.BottomDepth(s.StockThickness)
@@ -834,10 +944,42 @@ Public Module JobBuilder
         Return a.SameGeometry(b)
     End Function
 
-    Private Function GroupByTool(items As List(Of MachiningItem)) As List(Of List(Of MachiningItem))
+    ''' <summary>A tool group split into runs of equal spindle speed, in first-seen order.</summary>
+    Private Function SplitBySpeed(items As List(Of MachiningItem)) As List(Of List(Of MachiningItem))
+        Return GroupByTool(items, bySpeed:=True)
+    End Function
+
+    ''' <summary>
+    ''' A V-carve union carved with the first item's feeds: give every cutting move the feed of
+    ''' the item it lies in (moves over overlaps take the first item that contains them).
+    ''' </summary>
+    Private Sub ApplyItemFeeds(moves As List(Of ToolMove), items As List(Of MachiningItem))
+        Dim regions = items.Select(Function(i) Normalize(i.Paths)).ToList()
+        For Each mv In moves
+            If mv.Kind = MoveKind.Rapid Then Continue For
+            For k = 0 To items.Count - 1
+                If MillingEngine.InsideRegion(regions(k), mv.Target.X, mv.Target.Y) Then
+                    Dim m = items(k).Machining
+                    mv.Feed = If(mv.Kind = MoveKind.Plunge, m.PlungeRate, m.FeedRate)
+                    Exit For
+                End If
+            Next
+        Next
+    End Sub
+
+    ''' <summary>Same speed and feeds.</summary>
+    Private Function SameFeeds(a As Machining, b As Machining) As Boolean
+        Return a.SpindleRpm = b.SpindleRpm AndAlso a.FeedRate = b.FeedRate AndAlso a.PlungeRate = b.PlungeRate
+    End Function
+
+    ''' <summary>
+    ''' Items cut with the same tool. Groups stay together so one tool is one program; speeds
+    ''' inside a group become consecutive segments (SplitBySpeed) and the program changes S.
+    ''' </summary>
+    Private Function GroupByTool(items As List(Of MachiningItem), Optional bySpeed As Boolean = False) As List(Of List(Of MachiningItem))
         Dim groups As New List(Of List(Of MachiningItem))
         For Each it In items
-            Dim g = groups.FirstOrDefault(Function(x) SameTool(x(0).Machining.Tool, it.Machining.Tool))
+            Dim g = groups.FirstOrDefault(Function(x) SameTool(x(0).Machining.Tool, it.Machining.Tool) AndAlso (Not bySpeed OrElse x(0).Machining.SpindleRpm = it.Machining.SpindleRpm))
             If g Is Nothing Then
                 g = New List(Of MachiningItem)
                 groups.Add(g)
@@ -847,10 +989,10 @@ Public Module JobBuilder
         Return groups
     End Function
 
-    Private Sub AppendSegment(tp As Toolpath, name As String, op As CutOperation, tool As ToolDefinition, moves As List(Of ToolMove))
+    Private Sub AppendSegment(tp As Toolpath, name As String, op As CutOperation, tool As ToolDefinition, rpm As Double, moves As List(Of ToolMove))
         If moves.Count = 0 Then Return
         tp.Segments.Add(New ToolpathSegment With {
-            .Name = name, .Operation = op, .Tool = If(tool?.Clone(), ToolDefinition.DefaultVBit()),
+            .Name = name, .Operation = op, .Tool = If(tool?.Clone(), ToolDefinition.DefaultVBit()), .SpindleRpm = rpm,
             .FirstMove = tp.Moves.Count, .MoveCount = moves.Count})
         tp.Moves.AddRange(moves)
     End Sub

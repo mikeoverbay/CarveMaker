@@ -32,20 +32,20 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
 
 | File | Role |
 |---|---|
-| `Model.vb` | Pt2/Pt3, Toolpath/contours/moves, enums, `TextLine`, `DesignObject` (placed SVG), `CarveSettings` (grid categories: Text tab 1..3, Machine Settings 1..5, split in `SettingsView.vb`; `Clone`, `Validate`) |
+| `Model.vb` | Pt2/Pt3, Toolpath/contours/moves, enums, `TextLine`, `DesignObject` (placed SVG), `CarveSettings` (grid categories: Text tab 1..3, Machine Settings 1..4, split in `SettingsView.vb`; `Clone`, `Validate`) |
 | `GlyphOutline.vb` | Text to outlines: GDI+ `AddString` per line, cap-height sizing, justification across the blank, Clipper2 union |
 | `VCarve.vb` | `TextToToolpath.Generate`, `RegionShape` (distance field), `VCarveEngine` (inset roughing, bevel at flat depth, floor clearing, medial-axis centerline finish), `ToolpathLinker` (ordering, links, gouge checks, time) |
 | `GCodeWriter.vb` | FluidNC-style program: `G0 G53 Z0`, `G54`, `M8`, `S M3`, `G4 P`, first move `G0 X Y` then `G0 Z`, footer `G0 G53 Z0`, `M5`, `M9`, `M30` |
 | `ToolpathView.vb` | OpenTK GLControl: layers, camera, object selection/drag/resize, simulation playback API (`SetToolpath`, `UpdateSimulationSettings`, `SimulationInfo`) |
 | `CarveSimulation.vb` | GPU material removal: R32F heightmap FBO, instanced tool stamps with MAX blend every half cell, surface mesh (one vertex per cell up to the Display mesh budget, triangle strips, texel-centre sampling), board walls |
 | `ToolModel.vb` | Revolved mesh of any library tool (`ToolDefinition.FullProfile`: flutes + one-diameter shank stub) |
-| `ToolLibrary.vb` | `ToolType`, `ToolDefinition` (diameter, flute length, end radius, included angle; profile, validation, auto names), `ToolLibrary` (JSON in %AppData%\CarveMaker, standard inch tools), `InchFormat` (fractions), `ToolPickerEditor` (the "..." on the V-carve tool row) |
+| `ToolLibrary.vb` | `ToolType`, `ToolDefinition` (diameter, flute length, end radius, included angle; profile, validation, auto names), `ToolLibrary` (JSON in %AppData%\CarveMaker, standard inch tools), `InchFormat` (fractions), `ToolPickerEditor` (V-bit-only picker, no longer on any grid row; toolpath rows use `MachiningToolEditor` in Machining.vb) |
 | `ToolDrawing.vb` | Scale side view of a tool with dimensions; tree icons |
-| `Machining.vb` | `Machining` (per-item operation: V-carve / Pocket / Profile, tool, depths, side, through cut, tabs; grid shows only what the operation uses), `MachiningItem`, `MillingEngine` (pocket rings + residual clean-up, profile loops + tabs, `LinkPasses`), `JobBuilder.Generate` (V-carve, pockets, profiles in order, one `ToolpathSegment` per tool, `FinishStats`) |
+| `Machining.vb` | `Machining` (per-item operation: V-carve / Pocket / Profile, tool, spindle speed, feed and plunge rate (`ApplyTo` copies them into a settings clone for the engines), depths, side, through cut, tabs; `VisibleProperties` picks the rows per operation; remembers the last V-bit and end mill across operation switches), `MachiningItem`, `MillingEngine` (pocket rings + residual clean-up, profile loops + tabs, `LinkPasses`), `JobBuilder.Generate` (V-carve, pockets, profiles in order, one `ToolpathSegment` per tool, `FinishStats`) |
 | `frmToolLibrary.vb` / `.Designer.vb` | Tool Library dialog: manage mode (Toolpath > Tool Library, Ctrl+L) and pick mode (filter: V-carving needs a V-bit) |
 | `SvgImport.vb` | SVG to Clipper polygons (inches, Y up): paths/shapes, groups, nested svg, use/symbol, CSS style sheets, preserveAspectRatio, strokes with caps/joins, fill rules |
 | `ProjectFile.vb` | `.prj` JSON (settings, lines, drawings), version check |
-| `SettingsView.vb` | `SettingsView` (ICustomTypeDescriptor showing a subset of one `CarveSettings` object in a PropertyGrid; `GetPropertyOwner` returns the real object) and `SettingsGroups.TextPropertyNames` (what the Text tab shows; everything else goes to the Machine Settings window) |
+| `SettingsView.vb` | `FilteredView` (ICustomTypeDescriptor: a chosen subset of an object's properties plus its `Machining` rows flat in one category; `GetPropertyOwner` returns the real owner of each row, `Machining.FromContext` resolves it for editors), `SettingsView` (Text tab / Machine Settings) and `DrawingView` (Drawings tab) and `SettingsGroups.TextPropertyNames` (what the Text tab shows; everything else goes to the Machine Settings window) |
 | `frmMachineSettings.vb` / `.Designer.vb` | Machine Settings tool window (Machine > Machine Settings, Ctrl+K), owned by the main form, hides on close |
 | `frmMain.vb` / `.Designer.vb` | UI: Text tab (editor + `pgText` text settings), Drawings tab, binds the Machine Settings window, menus, simulation bar, regenerate pipeline (`RequestRegenerate` -> 400 ms timer -> `GenerateAsync` on a worker) |
 | `Setup\` | Installer project and `Setup.iss` |
@@ -68,8 +68,8 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
 6. **Settings layout.** The shared settings grid is gone. The Text tab has
    `pgText` under the editor (sizes and fonts, placement on the blank, text
    toolpath); the Machine Settings window (`_machineWindow.Grid`) has 1. Blank
-   (now with stock thickness and margin, which drawings use too), 2. Tool, 3. Carve (now with curve tolerance),
-   4. Machine, 5. Simulation. Both grids raise `Settings_PropertyValueChanged`;
+   (now with stock thickness and margin, which drawings use too), 2. Carve (with
+   curve tolerance), 3. Machine, 4. Simulation. Both grids raise `Settings_PropertyValueChanged`;
    `BindSettingsGrids` / `RefreshSettingsGrids` keep them on the current
    `_settings` (call after loading a project). Property names are unchanged, so
    .prj files are unaffected. The tool window forwards the main menu's shortcut
@@ -82,7 +82,16 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
    records tool + move range; the simulation keeps one tool mesh per tool and
    `GCodeWriter.ToolGroups` / `Write(tp, s, text, group, i, n)` write one
    program per tool. Offsets add a 0.0003" gap (Clipper arc chords sit inside
-   the true arc). Feeds are still global (4. Machine).
+   the true arc).
+7. **Per-toolpath tool, speed and feeds.** `Machining` has Tool (V-carve too),
+   SpindleRpm, FeedRate, PlungeRate; `Machining.ApplyTo(s)` makes a settings copy
+   with that tool and feeds, which is what the engines read (`CarveTool`,
+   `FeedRate`, `PlungeRate`, `SpindleRpm` on `CarveSettings` are hidden and only
+   kept for that and for old projects; `ProjectFile.MigrateToolpaths` copies the
+   old job-wide values into toolpaths that lack them). The Text and Drawings grids
+   show the toolpath rows flat (`FilteredView` + `Machining.VisibleProperties`).
+   V-carve items are grouped by tool + speed + feeds; segments carry SpindleRpm
+   and the writer emits `S` changes inside a program.
 4. **Tool library** (inch only). Six types from four numbers; one profile
    function drives the dialog drawing and the simulation tool.
    `CarveSettings.CarveTool` replaces the old diameter / angle / tip flat
@@ -145,7 +154,8 @@ The torture expectations (`svg-torture-transforms-expect.js`,
 
 - Ramped or helical entry for end mills (plunges are straight today).
 - V-carving inside a pocket (Z relative to the pocket floor).
-- Feeds and speeds per tool (today they are global under 4. Machine).
+- Default feeds and speeds stored per tool in the library (today a new toolpath
+  starts at 16000 RPM, 40 / 15 in/min whatever the tool).
 - Raised carving (pocket the blank around the letters), inlay (male/female).
 - Shapes (rectangles, circles, stars), text on an arc, DXF import (the mandala
   pack has DXF too).

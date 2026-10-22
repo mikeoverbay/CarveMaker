@@ -146,13 +146,17 @@ Public Class frmToolLibrary
                 txtLength.Text = InchFormat.EditText(t.Length)
                 txtRadius.Text = If(t.UsesRadius, InchFormat.EditText(t.EffectiveEndRadius), "")
                 txtAngle.Text = If(t.UsesAngle, t.AngleDeg.ToString("0.###", CultureInfo.InvariantCulture), "")
+                txtRpm.Text = t.SpindleRpm.ToString("0", CultureInfo.InvariantCulture)
+                txtFeed.Text = t.FeedRate.ToString("0.##", CultureInfo.InvariantCulture)
+                txtPlunge.Text = t.PlungeRate.ToString("0.##", CultureInfo.InvariantCulture)
             Else
                 txtName.Text = ""
                 chkAutoName.Checked = False
                 cboType.SelectedIndex = -1
                 txtDiameter.Text = "" : txtLength.Text = "" : txtRadius.Text = "" : txtAngle.Text = ""
+                txtRpm.Text = "" : txtFeed.Text = "" : txtPlunge.Text = ""
             End If
-            For Each tb In {txtDiameter, txtLength, txtRadius, txtAngle}
+            For Each tb In {txtDiameter, txtLength, txtRadius, txtAngle, txtRpm, txtFeed, txtPlunge}
                 tb.BackColor = SystemColors.Window
             Next
         Finally
@@ -242,12 +246,13 @@ Public Class frmToolLibrary
 
     ' ------------------------------------------------------------ editing
 
-    Private Sub NumberField_TextChanged(sender As Object, e As EventArgs) Handles txtDiameter.TextChanged, txtLength.TextChanged, txtRadius.TextChanged, txtAngle.TextChanged
+    Private Sub NumberField_TextChanged(sender As Object, e As EventArgs) Handles txtDiameter.TextChanged, txtLength.TextChanged, txtRadius.TextChanged, txtAngle.TextChanged, txtRpm.TextChanged, txtFeed.TextChanged, txtPlunge.TextChanged
         If _loading OrElse _current Is Nothing Then Return
         Dim tb = DirectCast(sender, TextBox)
         If Not tb.Enabled Then Return
         Dim v As Double
-        Dim ok = If(tb Is txtAngle, TryParseAngle(tb.Text, v), InchFormat.TryParse(tb.Text, v)) AndAlso v >= 0
+        Dim plain = tb Is txtAngle OrElse tb Is txtRpm OrElse tb Is txtFeed OrElse tb Is txtPlunge
+        Dim ok = If(plain, TryParseAngle(tb.Text, v), InchFormat.TryParse(tb.Text, v)) AndAlso v >= 0
         tb.BackColor = If(ok, SystemColors.Window, Color.MistyRose)
         If Not ok Then
             lblMessage.Text = "Enter a number such as 0.25 or 1/4."
@@ -264,6 +269,12 @@ Public Class frmToolLibrary
             _current.Length = v
         ElseIf tb Is txtRadius Then
             _current.EndRadius = v
+        ElseIf tb Is txtRpm Then
+            _current.SpindleRpm = v
+        ElseIf tb Is txtFeed Then
+            _current.FeedRate = v
+        ElseIf tb Is txtPlunge Then
+            _current.PlungeRate = v
         Else
             _current.AngleDeg = v
         End If
@@ -275,7 +286,7 @@ Public Class frmToolLibrary
         Return Double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, v) AndAlso Not Double.IsNaN(v) AndAlso Not Double.IsInfinity(v)
     End Function
 
-    Private Sub NumberField_Leave(sender As Object, e As EventArgs) Handles txtDiameter.Leave, txtLength.Leave, txtRadius.Leave, txtAngle.Leave
+    Private Sub NumberField_Leave(sender As Object, e As EventArgs) Handles txtDiameter.Leave, txtLength.Leave, txtRadius.Leave, txtAngle.Leave, txtRpm.Leave, txtFeed.Leave, txtPlunge.Leave
         If _current Is Nothing Then Return
         Dim tb = DirectCast(sender, TextBox)
         If Not tb.Enabled OrElse tb.BackColor <> SystemColors.Window Then Return
@@ -283,6 +294,9 @@ Public Class frmToolLibrary
         If tb Is txtLength Then SetTextQuietly(tb, InchFormat.EditText(_current.Length))
         If tb Is txtRadius Then SetTextQuietly(tb, InchFormat.EditText(_current.EffectiveEndRadius))
         If tb Is txtAngle Then SetTextQuietly(tb, _current.AngleDeg.ToString("0.###", CultureInfo.InvariantCulture))
+        If tb Is txtRpm Then SetTextQuietly(tb, _current.SpindleRpm.ToString("0", CultureInfo.InvariantCulture))
+        If tb Is txtFeed Then SetTextQuietly(tb, _current.FeedRate.ToString("0.##", CultureInfo.InvariantCulture))
+        If tb Is txtPlunge Then SetTextQuietly(tb, _current.PlungeRate.ToString("0.##", CultureInfo.InvariantCulture))
     End Sub
 
     Private Sub SetTextQuietly(tb As TextBox, text As String)

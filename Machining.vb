@@ -98,8 +98,14 @@ Public Class Machining
     Private _operation As CutOperation = CutOperation.VCarve
     ' The last V-bit and the last end mill this toolpath used, so switching the operation
     ' away and back restores the user's choice instead of the standard tool.
-    Private _lastVBit As ToolDefinition
-    Private _lastMill As ToolDefinition
+    Private _lastVBit As ToolChoice
+    Private _lastMill As ToolChoice
+
+    ''' <summary>A tool with the speeds and feeds the toolpath used with it.</summary>
+    Private Class ToolChoice
+        Public Tool As ToolDefinition
+        Public Rpm, Feed, Plunge As Double
+    End Class
 
     <DisplayName("Operation"), RefreshProperties(RefreshProperties.All), TypeConverter(GetType(CutOperationConverter)),
      Description("V-carve: carved with the V-bit chosen below (depths under Machine Settings > 2. Carve). Pocket: the area is cleared to a flat floor with an end mill. Profile: the tool follows the outline (outside, inside or on the line), for example to cut the shape out of the board.")>
@@ -112,9 +118,16 @@ Public Class Machining
             _operation = value
             ' Keep a tool that can do the new operation: the one in use, else the last one of the
             ' right kind this toolpath had, else the library's standard tool.
+            ' Its speeds and feeds come along: the ones used with it before, else the tool's defaults.
             If Tool Is Nothing OrElse ToolProblem(Tool) IsNot Nothing Then
                 Dim previous = If(value = CutOperation.VCarve, _lastVBit, _lastMill)
-                Tool = If(previous IsNot Nothing AndAlso ToolProblem(previous) Is Nothing, previous.Clone(), DefaultToolFor(value))
+                If previous IsNot Nothing AndAlso ToolProblem(previous.Tool) Is Nothing Then
+                    Tool = previous.Tool.Clone()
+                    SpindleRpm = previous.Rpm : FeedRate = previous.Feed : PlungeRate = previous.Plunge
+                Else
+                    Tool = DefaultToolFor(value)
+                    ApplyToolSpeeds(Tool)
+                End If
             End If
         End Set
     End Property
@@ -123,7 +136,7 @@ Public Class Machining
      Description("Cutter for this toolpath. Click ... to choose it from the tool library: a V-bit for V-carving, an end mill for pockets and profiles (a V-bit can also follow the line).")>
     Public Property Tool As ToolDefinition = ToolDefinition.DefaultVBit()
 
-    <DisplayName("Spindle speed (RPM)"), Description("Spindle speed for this toolpath (the S word).")>
+    <DisplayName("Spindle speed (RPM)"), Description("Spindle speed for this toolpath (the S word). Picking a tool fills in its default from the tool library.")>
     Public Property SpindleRpm As Double = 16000
 
     <DisplayName("Feed rate (in/min)"), Description("Cutting feed for this toolpath.")>
@@ -169,12 +182,27 @@ Public Class Machining
 
     Private Sub Remember(t As ToolDefinition)
         If t Is Nothing Then Return
+        Dim choice As New ToolChoice With {.Tool = t.Clone(), .Rpm = SpindleRpm, .Feed = FeedRate, .Plunge = PlungeRate}
         If t.Type = ToolType.VBit Then
-            _lastVBit = t.Clone()
+            _lastVBit = choice
         ElseIf t.Type = ToolType.FlatEndMill OrElse t.Type = ToolType.BallNose OrElse t.Type = ToolType.BullNose Then
-            _lastMill = t.Clone()
+            _lastMill = choice
         End If
     End Sub
+
+    ''' <summary>Takes a tool's default spindle speed, feed and plunge rate (used when the tool is picked).</summary>
+    Public Sub ApplyToolSpeeds(t As ToolDefinition)
+        If t Is Nothing Then Return
+        If t.SpindleRpm > 0 Then SpindleRpm = t.SpindleRpm
+        If t.FeedRate > 0 Then FeedRate = t.FeedRate
+        If t.PlungeRate > 0 Then PlungeRate = t.PlungeRate
+    End Sub
+
+    ''' <summary>True while this toolpath still runs at its tool's default speeds and feeds.</summary>
+    Public Function UsesToolSpeeds(t As ToolDefinition) As Boolean
+        If t Is Nothing Then Return False
+        Return Math.Abs(SpindleRpm - t.SpindleRpm) < 0.001 AndAlso Math.Abs(FeedRate - t.FeedRate) < 0.001 AndAlso Math.Abs(PlungeRate - t.PlungeRate) < 0.001
+    End Function
 
     ''' <summary>
     ''' The Machining a grid row edits. Toolpath rows shown flat by a FilteredView report the
@@ -375,6 +403,10 @@ Public Class MachiningToolEditor
             Dim result = If(svc IsNot Nothing, svc.ShowDialog(dlg), dlg.ShowDialog())
             If result = DialogResult.OK AndAlso dlg.SelectedTool IsNot Nothing Then
                 If current IsNot Nothing AndAlso current.Id = dlg.SelectedTool.Id AndAlso current.Equals(dlg.SelectedTool) Then Return value
+                ' A newly picked tool brings its speeds and feeds with it.
+                If current Is Nothing OrElse current.Id <> dlg.SelectedTool.Id OrElse Not current.SameGeometry(dlg.SelectedTool) OrElse m.UsesToolSpeeds(current) Then
+                    m.ApplyToolSpeeds(dlg.SelectedTool)
+                End If
                 Return dlg.SelectedTool.Clone()
             End If
         End Using

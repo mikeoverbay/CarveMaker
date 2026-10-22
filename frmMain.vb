@@ -1073,6 +1073,8 @@ Public Class frmMain
             If m?.Tool Is Nothing Then Continue For
             Dim inLibrary = library.FindById(m.Tool.Id)
             If inLibrary IsNot Nothing AndAlso Not inLibrary.Equals(m.Tool) Then
+                ' Speeds follow too, unless this toolpath was given its own.
+                If m.UsesToolSpeeds(m.Tool) Then m.ApplyToolSpeeds(inLibrary)
                 m.Tool = inLibrary.Clone()
                 If Not updated.Contains(inLibrary.DisplayName()) Then updated.Add(inLibrary.DisplayName())
             End If

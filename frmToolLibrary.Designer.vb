@@ -50,6 +50,15 @@ Partial Class frmToolLibrary
         lblAngle = New Label()
         txtAngle = New TextBox()
         lblAngleHint = New Label()
+        lblRpm = New Label()
+        txtRpm = New TextBox()
+        lblRpmHint = New Label()
+        lblFeed = New Label()
+        txtFeed = New TextBox()
+        lblFeedHint = New Label()
+        lblPlunge = New Label()
+        txtPlunge = New TextBox()
+        lblPlungeHint = New Label()
         drawTool = New ToolDrawing()
         pnlButtons = New Panel()
         lblMessage = New Label()
@@ -187,10 +196,22 @@ Partial Class frmToolLibrary
         tlpFields.Controls.Add(lblAngle, 0, 6)
         tlpFields.Controls.Add(txtAngle, 1, 6)
         tlpFields.Controls.Add(lblAngleHint, 2, 6)
+        tlpFields.Controls.Add(lblRpm, 0, 7)
+        tlpFields.Controls.Add(txtRpm, 1, 7)
+        tlpFields.Controls.Add(lblRpmHint, 2, 7)
+        tlpFields.Controls.Add(lblFeed, 0, 8)
+        tlpFields.Controls.Add(txtFeed, 1, 8)
+        tlpFields.Controls.Add(lblFeedHint, 2, 8)
+        tlpFields.Controls.Add(lblPlunge, 0, 9)
+        tlpFields.Controls.Add(txtPlunge, 1, 9)
+        tlpFields.Controls.Add(lblPlungeHint, 2, 9)
         tlpFields.Dock = DockStyle.Fill
         tlpFields.Location = New Point(3, 3)
         tlpFields.Name = "tlpFields"
-        tlpFields.RowCount = 7
+        tlpFields.RowCount = 10
+        tlpFields.RowStyles.Add(New RowStyle())
+        tlpFields.RowStyles.Add(New RowStyle())
+        tlpFields.RowStyles.Add(New RowStyle())
         tlpFields.RowStyles.Add(New RowStyle())
         tlpFields.RowStyles.Add(New RowStyle())
         tlpFields.RowStyles.Add(New RowStyle())
@@ -201,7 +222,7 @@ Partial Class frmToolLibrary
         tlpFields.SetColumnSpan(txtName, 2)
         tlpFields.SetColumnSpan(chkAutoName, 2)
         tlpFields.SetColumnSpan(cboType, 2)
-        tlpFields.Size = New Size(630, 203)
+        tlpFields.Size = New Size(630, 290)
         tlpFields.TabIndex = 0
         '
         ' lblName
@@ -324,6 +345,70 @@ Partial Class frmToolLibrary
         lblAngleHint.ForeColor = SystemColors.GrayText
         lblAngleHint.Name = "lblAngleHint"
         '
+        ' lblRpm
+        '
+        lblRpm.Anchor = AnchorStyles.Left
+        lblRpm.AutoSize = True
+        lblRpm.Name = "lblRpm"
+        lblRpm.Text = "Spindle speed (RPM)"
+        '
+        ' txtRpm
+        '
+        txtRpm.Anchor = AnchorStyles.Left Or AnchorStyles.Right
+        txtRpm.Name = "txtRpm"
+        txtRpm.Size = New Size(144, 23)
+        txtRpm.TabIndex = 7
+        '
+        ' lblRpmHint
+        '
+        lblRpmHint.Anchor = AnchorStyles.Left
+        lblRpmHint.AutoSize = True
+        lblRpmHint.ForeColor = SystemColors.GrayText
+        lblRpmHint.Name = "lblRpmHint"
+        lblRpmHint.Text = "these three fill in a toolpath when you pick this tool"
+        '
+        ' lblFeed
+        '
+        lblFeed.Anchor = AnchorStyles.Left
+        lblFeed.AutoSize = True
+        lblFeed.Name = "lblFeed"
+        lblFeed.Text = "Feed rate (in/min)"
+        '
+        ' txtFeed
+        '
+        txtFeed.Anchor = AnchorStyles.Left Or AnchorStyles.Right
+        txtFeed.Name = "txtFeed"
+        txtFeed.Size = New Size(144, 23)
+        txtFeed.TabIndex = 8
+        '
+        ' lblFeedHint
+        '
+        lblFeedHint.Anchor = AnchorStyles.Left
+        lblFeedHint.AutoSize = True
+        lblFeedHint.ForeColor = SystemColors.GrayText
+        lblFeedHint.Name = "lblFeedHint"
+        '
+        ' lblPlunge
+        '
+        lblPlunge.Anchor = AnchorStyles.Left
+        lblPlunge.AutoSize = True
+        lblPlunge.Name = "lblPlunge"
+        lblPlunge.Text = "Plunge rate (in/min)"
+        '
+        ' txtPlunge
+        '
+        txtPlunge.Anchor = AnchorStyles.Left Or AnchorStyles.Right
+        txtPlunge.Name = "txtPlunge"
+        txtPlunge.Size = New Size(144, 23)
+        txtPlunge.TabIndex = 9
+        '
+        ' lblPlungeHint
+        '
+        lblPlungeHint.Anchor = AnchorStyles.Left
+        lblPlungeHint.AutoSize = True
+        lblPlungeHint.ForeColor = SystemColors.GrayText
+        lblPlungeHint.Name = "lblPlungeHint"
+        '
         ' drawTool
         '
         drawTool.BackColor = Color.White
@@ -382,11 +467,11 @@ Partial Class frmToolLibrary
         AutoScaleDimensions = New SizeF(7.0F, 15.0F)
         AutoScaleMode = AutoScaleMode.Font
         CancelButton = btnCancel
-        ClientSize = New Size(944, 621)
+        ClientSize = New Size(944, 700)
         Controls.Add(tlpMain)
         Font = New Font("Segoe UI", 9.0F)
         MinimizeBox = False
-        MinimumSize = New Size(780, 540)
+        MinimumSize = New Size(780, 620)
         Name = "frmToolLibrary"
         ShowIcon = False
         ShowInTaskbar = False
@@ -432,6 +517,15 @@ Partial Class frmToolLibrary
     Friend WithEvents lblAngle As Label
     Friend WithEvents txtAngle As TextBox
     Friend WithEvents lblAngleHint As Label
+    Friend WithEvents lblRpm As Label
+    Friend WithEvents txtRpm As TextBox
+    Friend WithEvents lblRpmHint As Label
+    Friend WithEvents lblFeed As Label
+    Friend WithEvents txtFeed As TextBox
+    Friend WithEvents lblFeedHint As Label
+    Friend WithEvents lblPlunge As Label
+    Friend WithEvents txtPlunge As TextBox
+    Friend WithEvents lblPlungeHint As Label
     Friend WithEvents drawTool As ToolDrawing
     Friend WithEvents pnlButtons As Panel
     Friend WithEvents lblMessage As Label

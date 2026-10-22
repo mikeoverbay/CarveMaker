@@ -124,6 +124,7 @@ Public Class ProjectFile
             If String.IsNullOrWhiteSpace(s.CarveTool.Id) Then s.CarveTool.Id = ToolDefinition.NewId()
             If s.CarveTool.Name Is Nothing Then s.CarveTool.Name = ""
             s.CarveTool.Normalize()
+            s.CarveTool.FillMissingSpeeds()
             Return
         End If
         If dia > 0 AndAlso angle > 0 AndAlso angle < 180 Then
@@ -172,6 +173,7 @@ Public Class ProjectFile
             If String.IsNullOrWhiteSpace(m.Tool.Id) Then m.Tool.Id = ToolDefinition.NewId()
             If m.Tool.Name Is Nothing Then m.Tool.Name = ""
             m.Tool.Normalize()
+            m.Tool.FillMissingSpeeds()
         Next
     End Sub
 

@@ -92,6 +92,14 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
    show the toolpath rows flat (`FilteredView` + `Machining.VisibleProperties`).
    V-carve items are grouped by tool + speed + feeds; segments carry SpindleRpm
    and the writer emits `S` changes inside a program.
+8. **Speeds and feeds per library tool.** `ToolDefinition.SpindleRpm / FeedRate /
+   PlungeRate` (0 = unset; `FillMissingSpeeds` uses `SuggestedSpeeds` by type and
+   diameter for new tools, old library files and tools in old projects). Picking a
+   tool (`MachiningToolEditor`) or an operation swap applies them
+   (`Machining.ApplyToolSpeeds`); switching operation back restores the tool and
+   feeds used before (`ToolChoice`); `SyncToolsFromLibrary` carries library speed
+   edits only into toolpaths still on the tool's defaults (`UsesToolSpeeds`).
+   The `feeds` harness mode clicks the real picker through a timer.
 4. **Tool library** (inch only). Six types from four numbers; one profile
    function drives the dialog drawing and the simulation tool.
    `CarveSettings.CarveTool` replaces the old diameter / angle / tip flat
@@ -154,8 +162,6 @@ The torture expectations (`svg-torture-transforms-expect.js`,
 
 - Ramped or helical entry for end mills (plunges are straight today).
 - V-carving inside a pocket (Z relative to the pocket floor).
-- Default feeds and speeds stored per tool in the library (today a new toolpath
-  starts at 16000 RPM, 40 / 15 in/min whatever the tool).
 - Raised carving (pocket the blank around the letters), inlay (male/female).
 - Shapes (rectangles, circles, stars), text on an arc, DXF import (the mandala
   pack has DXF too).

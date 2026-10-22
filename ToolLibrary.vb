@@ -85,6 +85,46 @@ Public Class ToolDefinition
      Description("Full included angle: V-bit, drill point or the taper of a tapered ball nose; 0 when the tool has none.")>
     Public Property AngleDeg As Double = 90.0
 
+    ' Speeds and feeds a toolpath takes when this tool is picked for it (each toolpath keeps
+    ' its own copy and can change them). 0 means "not set yet": FillMissingSpeeds fills in a
+    ' starting value for wood from the tool type and diameter.
+    <DisplayName("Default spindle speed (RPM)"), [ReadOnly](True), Description("Spindle speed a toolpath takes when this tool is picked for it.")>
+    Public Property SpindleRpm As Double = 0.0
+
+    <DisplayName("Default feed rate (in/min)"), [ReadOnly](True), Description("Cutting feed a toolpath takes when this tool is picked for it.")>
+    Public Property FeedRate As Double = 0.0
+
+    <DisplayName("Default plunge rate (in/min)"), [ReadOnly](True), Description("Plunge feed a toolpath takes when this tool is picked for it.")>
+    Public Property PlungeRate As Double = 0.0
+
+    ''' <summary>
+    ''' Starting speeds and feeds for wood on a hobby router, by tool type and diameter
+    ''' (RPM, feed in/min, plunge in/min). Conservative; tune them in the library.
+    ''' </summary>
+    Public Shared Function SuggestedSpeeds(type As ToolType, diameter As Double) As (Rpm As Double, Feed As Double, Plunge As Double)
+        Select Case type
+            Case ToolType.VBit
+                Return If(diameter <= 0.3, (16000.0, 40.0, 15.0), (16000.0, 60.0, 20.0))
+            Case ToolType.TaperedBallNose
+                Return (18000.0, 40.0, 15.0)
+            Case ToolType.Drill
+                Return (10000.0, 20.0, 10.0)
+            Case Else   ' flat, ball and bull nose end mills
+                If diameter <= 0.07 Then Return (18000.0, 30.0, 10.0)
+                If diameter <= 0.13 Then Return (18000.0, 40.0, 15.0)
+                If diameter <= 0.3 Then Return (16000.0, 60.0, 20.0)
+                Return (14000.0, 80.0, 25.0)
+        End Select
+    End Function
+
+    ''' <summary>Gives unset (0) speeds and feeds their suggested starting values.</summary>
+    Public Sub FillMissingSpeeds()
+        Dim sug = SuggestedSpeeds(Type, Diameter)
+        If Not (SpindleRpm > 0) Then SpindleRpm = sug.Rpm
+        If Not (FeedRate > 0) Then FeedRate = sug.Feed
+        If Not (PlungeRate > 0) Then PlungeRate = sug.Plunge
+    End Sub
+
     Public Shared Function NewId() As String
         Return Guid.NewGuid().ToString("N")
     End Function
@@ -219,6 +259,8 @@ Public Class ToolDefinition
         If p.Count = 0 AndAlso UsesRadius AndAlso Length <= EffectiveEndRadius * (1 - If(UsesAngle, Math.Sin(HalfAngle()), 0.0)) Then
             p.Add("Flute length must reach past the rounded end.")
         End If
+        If Not (SpindleRpm > 0 AndAlso SpindleRpm <= 100000) Then p.Add("Spindle speed must be between 1 and 100000 RPM.")
+        If Not (FeedRate > 0 AndAlso FeedRate <= 10000) OrElse Not (PlungeRate > 0 AndAlso PlungeRate <= 10000) Then p.Add("Feed and plunge rates must be between 0 and 10000 in/min.")
         Return p
     End Function
 
@@ -341,6 +383,7 @@ Public Class ToolDefinition
             .Id = If(id, NewId()), .Type = type, .Diameter = diameter, .Length = length,
             .EndRadius = endRadius, .AngleDeg = angleDeg}
         t.Normalize()
+        t.FillMissingSpeeds()
         t.Name = t.AutoName()
         Return t
     End Function
@@ -391,9 +434,11 @@ Public Class ToolDefinition
         Return Math.Abs(a - b) < 0.0000001
     End Function
 
+    ''' <summary>Same geometry, name, and default speeds and feeds (the Id is not compared).</summary>
     Public Overrides Function Equals(obj As Object) As Boolean
         Dim o = TryCast(obj, ToolDefinition)
-        Return o IsNot Nothing AndAlso SameGeometry(o) AndAlso String.Equals(Name, o.Name, StringComparison.Ordinal)
+        Return o IsNot Nothing AndAlso SameGeometry(o) AndAlso String.Equals(Name, o.Name, StringComparison.Ordinal) AndAlso
+               Near(SpindleRpm, o.SpindleRpm) AndAlso Near(FeedRate, o.FeedRate) AndAlso Near(PlungeRate, o.PlungeRate)
     End Function
 
     Public Overrides Function GetHashCode() As Integer
@@ -502,6 +547,7 @@ Public Class ToolLibrary
                 End If
                 If t.Name Is Nothing Then t.Name = ""
                 t.Normalize()
+                t.FillMissingSpeeds()     ' libraries saved before tools had speeds
             Next
             Return library
         Catch ex As Exception

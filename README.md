@@ -167,6 +167,16 @@ scale drawing with its dimensions:
 | Tapered ball nose | yes | yes | tip radius | taper |
 | Drill | yes | yes | | point angle |
 
+Each tool also stores a **spindle speed, feed rate and plunge rate**. Picking the
+tool for a toolpath (the **...** button on its Tool row) fills those three in;
+you can still change them per toolpath. Changing a tool's speeds in the library
+updates the toolpaths that still use that tool's defaults, and leaves alone the
+ones you gave their own values. The standard tools start with conservative
+values for wood (for example 1/4" V-bit S16000 F40 plunge 15, 1/4" end mill
+S16000 F60 plunge 20, 1/8" end mill S18000 F40 plunge 15); tune them to your
+machine and material. Libraries saved before speeds existed get these starting
+values by tool type and size.
+
 Numbers accept decimals or fractions (`0.25`, `1/4`, `1-1/4`). Names follow the
 numbers unless you type your own. **New** adds a tool of a type, **Duplicate**
 copies one, **Delete** removes it; **Save** writes the library to

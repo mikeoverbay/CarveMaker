@@ -359,19 +359,38 @@ Public Enum CutOrder
     LeftToRight
 End Enum
 
+''' <summary>What a drawing is: an imported SVG, or a shape or text drawn on the blank.</summary>
+Public Enum DrawingKind
+    Svg
+    Rectangle
+    Ellipse
+    Polygon
+    Star
+    Area
+    Text
+End Enum
+
 ''' <summary>
-''' An imported SVG drawing placed on the blank. The SVG text is embedded so the
-''' project file is self-contained; the parsed shape is cached per instance.
+''' A drawing placed on the blank: an imported SVG (its text embedded so the project
+''' file is self-contained) or a shape or text drawn in the view. Either way the
+''' natural outline (Shape) is cached per instance and scaled into the placed box.
 ''' </summary>
 Public Class DesignObject
     <Category("Object"), DisplayName("Name")>
     Public Property Name As String = "Drawing"
+
+    <Category("Object"), DisplayName("Type"), [ReadOnly](True), Description("An imported SVG drawing, or a shape or text drawn on the blank.")>
+    Public Property Kind As DrawingKind = DrawingKind.Svg
 
     <Category("Object"), DisplayName("Source file"), [ReadOnly](True)>
     Public Property SvgFileName As String = ""
 
     <Browsable(False)>
     Public Property SvgContent As String = ""
+
+    ''' <summary>Drawn kinds: what the outline saved in SvgContent was made from (see SavedOutlineKey).</summary>
+    <Browsable(False)>
+    Public Property OutlineKey As String = ""
 
     <Category("Placement"), DisplayName("X (in)"), Description("Left edge of the drawing's bounding box in machine coordinates.")>
     Public Property X As Double = 0.0
@@ -385,10 +404,10 @@ Public Class DesignObject
     <Category("Placement"), DisplayName("Height (in)")>
     Public Property Height As Double = 1.0
 
-    <Category("Placement"), DisplayName("Rotation (deg)"), Description("Counter-clockwise rotation about the centre of the bounding box.")>
+    <Category("Placement"), DisplayName("Rotation (deg)"), Description("Counter-clockwise rotation about the centre of the bounding box. Drag the round handle above the selection to turn it.")>
     Public Property RotationDeg As Double = 0.0
 
-    <Category("Placement"), DisplayName("Lock aspect ratio"), Description("Changing width or height (or dragging a corner) keeps the drawing's proportions.")>
+    <Category("Placement"), DisplayName("Lock aspect ratio"), Description("Changing width or height keeps the drawing's proportions. When off, the side handles stretch it one way.")>
     Public Property LockAspect As Boolean = True
 
     <Category("Placement"), DisplayName("Mirror"), Description("Flip the drawing left-to-right (for stamps or reverse carving).")>
@@ -397,16 +416,70 @@ Public Class DesignObject
     <Category("Object"), DisplayName("Visible"), Description("Hidden objects are not carved.")>
     Public Property Visible As Boolean = True
 
+    ' ---- drawn shapes -------------------------------------------------------
+
+    <Category("Shape"), DisplayName("Corner radius (in)"), Description("Rounds the rectangle's corners (0 = square corners).")>
+    Public Property CornerRadius As Double = 0.0
+
+    <Category("Shape"), DisplayName("Sides"), Description("Number of sides of the polygon (3 to 64).")>
+    Public Property Sides As Integer = 6
+
+    <Category("Shape"), DisplayName("Points"), Description("Number of points of the star (3 to 64).")>
+    Public Property StarPoints As Integer = 5
+
+    <Category("Shape"), DisplayName("Inner radius (%)"), Description("Depth of the star's inner corners as a percentage of its outer radius (10 to 95).")>
+    Public Property StarInnerPercent As Double = 50.0
+
+    ''' <summary>Corners of a free-form area at its natural size (inches, Y up): x0, y0, x1, y1, ...</summary>
+    <Browsable(False)>
+    Public Property AreaPoints As New List(Of Double)
+
+    ' ---- drawn text ---------------------------------------------------------
+
+    <Category("Text"), DisplayName("Text"), Editor(GetType(System.ComponentModel.Design.MultilineStringEditor), GetType(UITypeEditor)),
+     Description("The words to carve; click ... for several lines. Double-click the text in the view to type in place.")>
+    Public Property Text As String = ""
+
+    <Category("Text"), DisplayName("Font"), TypeConverter(GetType(FontFamilyNameConverter)), Description("Installed font family.")>
+    Public Property FontName As String = "Arial"
+
+    <Category("Text"), DisplayName("Bold")>
+    Public Property Bold As Boolean = False
+
+    <Category("Text"), DisplayName("Italic")>
+    Public Property Italic As Boolean = False
+
+    <Category("Text"), DisplayName("Alignment"), Description("How the lines line up with each other.")>
+    Public Property Align As TextAlign = TextAlign.Left
+
+    <Category("Text"), DisplayName("Letter height (in)"), Description("Height of a capital letter. Dragging a corner of the text in the view changes it.")>
+    Public Property LetterHeight As Double = 1.0
+
+    <Category("Text"), DisplayName("Line spacing"), Description("Distance between lines as a multiple of the font's natural line height.")>
+    Public Property LineSpacing As Double = 1.0
+
     ''' <summary>How this drawing is machined (shown as the Toolpath rows of the Drawings tab).</summary>
     <Browsable(False)>
     Public Property Machining As New Machining()
 
-    ''' <summary>Parsed drawing at its natural size (lower-left at 0,0); Nothing until parsed.</summary>
+    ''' <summary>Natural outline (lower-left at 0,0); Nothing until built.</summary>
     <Browsable(False), JsonIgnore>
     Public Property Shape As SvgShapeSet
 
     <Browsable(False), JsonIgnore>
     Public Property ParseError As String
+
+    ' Inputs the cached Shape was built from (see ShapeKey).
+    Private _shapeKey As String
+    Private _usesSavedOutline As Boolean
+
+    ''' <summary>True when a drawn shape could not be built here and carves the outline saved with the project.</summary>
+    <Browsable(False), JsonIgnore>
+    Public ReadOnly Property UsesSavedOutline As Boolean
+        Get
+            Return _usesSavedOutline
+        End Get
+    End Property
 
     ''' <summary>Natural width / height of the drawing in inches (1 when unknown).</summary>
     <Browsable(False), JsonIgnore>
@@ -417,20 +490,146 @@ Public Class DesignObject
         End Get
     End Property
 
-    ''' <summary>Parses the embedded SVG once (or again with a different tolerance).</summary>
+    ''' <summary>True for drawings made in the view rather than imported.</summary>
+    <Browsable(False), JsonIgnore>
+    Public ReadOnly Property IsDrawn As Boolean
+        Get
+            Return Kind <> DrawingKind.Svg
+        End Get
+    End Property
+
+    ''' <summary>Which rows the Drawings tab shows for this kind of drawing.</summary>
+    Public Function ShowsProperty(propertyName As String) As Boolean
+        Select Case propertyName
+            Case NameOf(SvgFileName) : Return Kind = DrawingKind.Svg
+            Case NameOf(CornerRadius) : Return Kind = DrawingKind.Rectangle
+            Case NameOf(Sides) : Return Kind = DrawingKind.Polygon
+            Case NameOf(StarPoints), NameOf(StarInnerPercent) : Return Kind = DrawingKind.Star
+            Case NameOf(Text), NameOf(FontName), NameOf(Bold), NameOf(Italic), NameOf(Align), NameOf(LetterHeight), NameOf(LineSpacing)
+                Return Kind = DrawingKind.Text
+            Case NameOf(LockAspect) : Return Kind <> DrawingKind.Text   ' text always scales evenly
+        End Select
+        Return True
+    End Function
+
+    ''' <summary>
+    ''' Everything the natural outline depends on. Rectangles and ellipses are built at
+    ''' their placed size (true corner radius, even curve tolerance); the other kinds
+    ''' are built once and scaled into the box.
+    ''' </summary>
+    Public Function ShapeKey(curveTolerance As Double) As String
+        Dim ci = CultureInfo.InvariantCulture
+        Dim tol = curveTolerance.ToString("R", ci)
+        Select Case Kind
+            Case DrawingKind.Rectangle
+                Return String.Join("|", "rect", tol, Width.ToString("R", ci), Height.ToString("R", ci), CornerRadius.ToString("R", ci))
+            Case DrawingKind.Ellipse
+                Return String.Join("|", "ellipse", tol, Width.ToString("R", ci), Height.ToString("R", ci))
+            Case DrawingKind.Polygon
+                Return "polygon|" & Sides.ToString(ci)
+            Case DrawingKind.Star
+                Return String.Join("|", "star", StarPoints.ToString(ci), StarInnerPercent.ToString("R", ci))
+            Case DrawingKind.Area
+                Return "area|" & String.Join(",", If(AreaPoints, New List(Of Double)).Select(Function(v) v.ToString("R", ci)))
+            Case DrawingKind.Text
+                Return String.Join("|", "text", tol, If(FontName, ""), Bold, Italic, Align, LetterHeight.ToString("R", ci), LineSpacing.ToString("R", ci), TextWithLf())
+            Case Else
+                Return "svg|" & tol
+        End Select
+    End Function
+
+    ''' <summary>
+    ''' The inputs that decide a drawn shape's outline apart from its size (the saved outline
+    ''' is scaled into the box): text, font, style, alignment and spacing for text.
+    ''' </summary>
+    Public Function SavedOutlineKey() As String
+        If Kind = DrawingKind.Text Then
+            Return String.Join("|", "text", If(FontName, ""), Bold, Italic, Align, LineSpacing.ToString("R", CultureInfo.InvariantCulture), TextWithLf())
+        End If
+        Return ShapeKey(0)
+    End Function
+
+    ''' <summary>The text with every line break as LF (the grid's editor writes CRLF, the in-place editor LF).</summary>
+    Private Function TextWithLf() As String
+        Return If(Text, "").Replace(vbCrLf, vbLf).Replace(vbCr, vbLf)
+    End Function
+
+    ''' <summary>Builds (or parses) the natural outline when anything it depends on changed.</summary>
     Public Sub EnsureParsed(curveTolerance As Double)
-        If Shape IsNot Nothing OrElse ParseError IsNot Nothing Then Return
+        ' One floor for every caller (the view clamps too), so they share the cached outline.
+        Dim tol = Math.Max(0.0001, curveTolerance)
+        Dim key = ShapeKey(tol)
+        If key = _shapeKey AndAlso (Shape IsNot Nothing OrElse ParseError IsNot Nothing) Then Return
+        _shapeKey = key
+        Shape = Nothing
+        ParseError = Nothing
+        _usesSavedOutline = False
         Try
-            Shape = SvgImport.Parse(SvgContent, curveTolerance)
+            Shape = If(Kind = DrawingKind.Svg, SvgImport.Parse(SvgContent, tol), DrawingShapes.Build(Me, tol))
         Catch ex As Exception
             ParseError = ex.Message
+            ' A drawn shape that cannot be built on this PC (a font it lacks) carves the outline
+            ' saved with the project, as long as the drawing has not been changed since.
+            If IsDrawn AndAlso Not String.IsNullOrEmpty(SvgContent) AndAlso OutlineKey = SavedOutlineKey() Then
+                Try
+                    Dim saved = SvgImport.Parse(SvgContent, tol)
+                    If saved.Paths.Count > 0 Then
+                        saved.Warnings.Insert(0, ex.Message & " Carving the outline saved with the project.")
+                        Shape = saved
+                        ParseError = Nothing
+                        _usesSavedOutline = True
+                    End If
+                Catch
+                    ' Keep the original error.
+                End Try
+            End If
         End Try
     End Sub
 
-    ''' <summary>Forces a re-parse (after the tolerance changed).</summary>
+    ''' <summary>Forces a rebuild (after the tolerance changed).</summary>
     Public Sub InvalidateShape()
         Shape = Nothing
         ParseError = Nothing
+        _shapeKey = Nothing
+    End Sub
+
+    ''' <summary>Keeps shape and text values in their valid ranges.</summary>
+    ''' <summary>
+    ''' Puts back defaults for missing or impossible values (a damaged file, a NaN typed in the
+    ''' grid) without changing anything that is merely small.
+    ''' </summary>
+    Public Sub Repair()
+        If Name Is Nothing Then Name = "Drawing"
+        If SvgContent Is Nothing Then SvgContent = ""
+        If OutlineKey Is Nothing Then OutlineKey = ""
+        If Text Is Nothing Then Text = ""
+        If String.IsNullOrWhiteSpace(FontName) Then FontName = "Arial"
+        If AreaPoints Is Nothing Then AreaPoints = New List(Of Double)
+        If AreaPoints.Any(Function(v) Not Double.IsFinite(v)) Then AreaPoints.Clear()
+        If Not Double.IsFinite(X) Then X = 0
+        If Not Double.IsFinite(Y) Then Y = 0
+        If Not Double.IsFinite(Width) OrElse Width <= 0 Then Width = 1
+        If Not Double.IsFinite(Height) OrElse Height <= 0 Then Height = 1
+        If Not Double.IsFinite(RotationDeg) Then RotationDeg = 0
+        If Not Double.IsFinite(CornerRadius) Then CornerRadius = 0
+        If Not Double.IsFinite(StarInnerPercent) Then StarInnerPercent = 50
+        If Not Double.IsFinite(LetterHeight) Then LetterHeight = 1
+        If Not Double.IsFinite(LineSpacing) Then LineSpacing = 1
+    End Sub
+
+    Public Sub Normalize()
+        Repair()
+        Text = TextWithLf()
+        Sides = Math.Max(3, Math.Min(64, Sides))
+        StarPoints = Math.Max(3, Math.Min(64, StarPoints))
+        StarInnerPercent = Math.Max(10.0, Math.Min(95.0, StarInnerPercent))
+        CornerRadius = Math.Max(0.0, CornerRadius)
+        LetterHeight = Math.Max(0.02, Math.Min(100.0, LetterHeight))
+        LineSpacing = Math.Max(0.5, Math.Min(5.0, LineSpacing))
+        ' A text box is exactly its lettering, which can be smaller than the usual minimum (a dot).
+        Dim minSize = If(Kind = DrawingKind.Text, 0.0001, 0.01)
+        Width = Math.Max(minSize, Width)
+        Height = Math.Max(minSize, Height)
     End Sub
 
     ''' <summary>Sizes the object to its natural size, or to fit a box, keeping proportions.</summary>
@@ -440,20 +639,97 @@ Public Class DesignObject
         If h > maxH Then
             h = maxH : w = maxH * a
         End If
+        If Kind = DrawingKind.Text AndAlso Width > 0 Then LetterHeight = Math.Round(LetterHeight * w / Width, 4)
         Width = Math.Round(Math.Max(0.01, w), 4)
         Height = Math.Round(Math.Max(0.01, h), 4)
     End Sub
 
-    ''' <summary>Corners of the placed (rotated) bounding box, counter-clockwise from the lower-left.</summary>
-    Public Function Corners() As Pt2()
+    ''' <summary>
+    ''' Text: makes the box the size of the lettering. The side the lines hang from (left,
+    ''' middle or right by alignment) and the first line stay where they are: the first line's
+    ''' position comes from the font's metrics, so typing a letter with an ascender or descender,
+    ''' or changing the line spacing, does not move the text. previous is the outline the box was sized for (default: the
+    ''' cached one, which is still the old outline when only the text changed).
+    ''' </summary>
+    Public Sub FitTextBox(curveTolerance As Double, Optional previous As SvgShapeSet = Nothing)
+        If Kind <> DrawingKind.Text Then Return
+        Dim before = If(previous, Shape)
+        EnsureParsed(curveTolerance)
+        If Shape Is Nothing OrElse Shape.Width <= 0 OrElse Shape.Height <= 0 Then Return
+        Dim ax = If(Align = TextAlign.Left, -0.5, If(Align = TextAlign.Right, 0.5, 0.0))
+        If Mirror Then ax = -ax
+        Dim byLine = before IsNot Nothing AndAlso before.Height > 0 AndAlso Not Double.IsNaN(before.FirstLineY) AndAlso Not Double.IsNaN(Shape.FirstLineY)
+        Dim anchorY = If(byLine, before.FirstLineY * Height / before.Height - Height / 2, Height / 2)
+        Dim anchor = LocalToWorld(ax * Width, anchorY)
+        If _usesSavedOutline Then
+            ' A saved outline is not at the letter height: keep the height, take its proportions.
+            Width = Math.Round(Height * Shape.Width / Shape.Height, 4)
+        Else
+            Width = Math.Round(Shape.Width, 4)
+            Height = Math.Round(Shape.Height, 4)
+        End If
+        PlaceLocal(ax * Width, If(byLine, Shape.FirstLineY * Height / Shape.Height - Height / 2, Height / 2), anchor)
+    End Sub
+
+    ''' <summary>Scales the box by k about the top corner the text hangs from (text carving a saved outline).</summary>
+    Public Sub ScaleBoxFromTop(k As Double)
+        If k <= 0 OrElse k = 1 Then Return
+        Dim ax = If(Align = TextAlign.Left, -0.5, If(Align = TextAlign.Right, 0.5, 0.0))
+        If Mirror Then ax = -ax
+        Dim anchor = LocalToWorld(ax * Width, Height / 2)
+        Width = Math.Round(Width * k, 4)
+        Height = Math.Round(Height * k, 4)
+        PlaceLocal(ax * Width, Height / 2, anchor)
+    End Sub
+
+    ''' <summary>
+    ''' Text: scales the lettering by k (a corner drag). The box is rebuilt at the new
+    ''' letter height and the given corner (0..3, see Corners) stays where it is.
+    ''' </summary>
+    Public Sub ScaleText(k As Double, fixedCorner As Integer, curveTolerance As Double)
+        If Kind <> DrawingKind.Text OrElse k <= 0 Then Return
+        Dim anchor = Corners()(fixedCorner And 3)
+        LetterHeight = Math.Round(Math.Max(0.02, Math.Min(100.0, LetterHeight * k)), 4)
+        EnsureParsed(curveTolerance)
+        If Shape IsNot Nothing AndAlso Shape.Width > 0 AndAlso Shape.Height > 0 AndAlso Not _usesSavedOutline Then
+            Width = Math.Round(Shape.Width, 4)
+            Height = Math.Round(Shape.Height, 4)
+        Else
+            Width = Math.Round(Math.Max(0.01, Width * k), 4)
+            Height = Math.Round(Math.Max(0.01, Height * k), 4)
+        End If
+        PlaceCorner(fixedCorner, anchor)
+    End Sub
+
+    ''' <summary>Machine point of a point in the box's own frame (origin at the centre, before rotation).</summary>
+    Public Function LocalToWorld(lx As Double, ly As Double) As Pt2
         Dim cx = X + Width / 2, cy = Y + Height / 2
         Dim c = Math.Cos(RotationDeg * Math.PI / 180), s = Math.Sin(RotationDeg * Math.PI / 180)
+        Return New Pt2(cx + lx * c - ly * s, cy + lx * s + ly * c)
+    End Function
+
+    ''' <summary>Moves the box so its local point (lx, ly) lands on a machine point.</summary>
+    Public Sub PlaceLocal(lx As Double, ly As Double, target As Pt2)
+        Dim now = LocalToWorld(lx, ly)
+        X = Math.Round(X + target.X - now.X, 4)
+        Y = Math.Round(Y + target.Y - now.Y, 4)
+    End Sub
+
+    ''' <summary>Moves the box so one of its corners (0..3, see Corners) lands on a machine point.</summary>
+    Public Sub PlaceCorner(corner As Integer, target As Pt2)
+        Dim i = corner And 3
+        Dim lx = If(i = 1 OrElse i = 2, Width / 2, -Width / 2)
+        Dim ly = If(i >= 2, Height / 2, -Height / 2)
+        PlaceLocal(lx, ly, target)
+    End Sub
+
+    ''' <summary>Corners of the placed (rotated) bounding box, counter-clockwise from the lower-left.</summary>
+    Public Function Corners() As Pt2()
         Dim r(3) As Pt2
-        Dim lx = {-Width / 2, Width / 2, Width / 2, -Width / 2}
-        Dim ly = {-Height / 2, -Height / 2, Height / 2, Height / 2}
-        For i = 0 To 3
-            r(i) = New Pt2(cx + lx(i) * c - ly(i) * s, cy + lx(i) * s + ly(i) * c)
-        Next
+        r(0) = LocalToWorld(-Width / 2, -Height / 2)
+        r(1) = LocalToWorld(Width / 2, -Height / 2)
+        r(2) = LocalToWorld(Width / 2, Height / 2)
+        r(3) = LocalToWorld(-Width / 2, Height / 2)
         Return r
     End Function
 
@@ -493,6 +769,7 @@ Public Class DesignObject
     Public Function Clone() As DesignObject
         Dim o = DirectCast(MemberwiseClone(), DesignObject)
         o.Machining = If(Machining?.Clone(), New Machining())
+        o.AreaPoints = New List(Of Double)(If(AreaPoints, New List(Of Double)))
         Return o
     End Function
 

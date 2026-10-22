@@ -3,7 +3,7 @@
 '  What each property grid shows, without copying any data:
 '   - Text tab:          the text settings plus the text's toolpath rows
 '   - Machine Settings:  every other job setting
-'   - Drawings tab:      the selected drawing plus its toolpath rows
+'   - Drawings tab:      the selected drawing (rows for its kind) plus its toolpath rows
 '  A FilteredView hands a PropertyGrid a chosen list of the real property
 '  descriptors and names the real object as their owner, so edits land on the
 '  shared objects and the form's change handlers see the usual property names.
@@ -116,14 +116,14 @@ Public Class SettingsView
     End Property
 End Class
 
-''' <summary>A view of one drawing: its object and placement rows plus its toolpath rows.</summary>
+''' <summary>A view of one drawing: its object, placement, shape or text rows (by kind) plus its toolpath rows.</summary>
 Public Class DrawingView
     Inherits FilteredView
 
     Private ReadOnly _drawing As DesignObject
 
     Public Sub New(drawing As DesignObject)
-        MyBase.New(drawing, Function(p) p.Name <> NameOf(DesignObject.Machining), Function() drawing.Machining, "Toolpath")
+        MyBase.New(drawing, Function(p) p.Name <> NameOf(DesignObject.Machining) AndAlso drawing.ShowsProperty(p.Name), Function() drawing.Machining, "Toolpath")
         _drawing = drawing
     End Sub
 

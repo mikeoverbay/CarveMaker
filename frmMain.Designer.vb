@@ -54,6 +54,59 @@ Partial Class frmMain
         mnuToolpathAuto = New ToolStripMenuItem()
         mnuToolpathSep1 = New ToolStripSeparator()
         mnuToolLibrary = New ToolStripMenuItem()
+        mnuDraw = New ToolStripMenuItem()
+        mnuStyle = New ToolStripMenuItem()
+        mnuDrawSelect = New ToolStripMenuItem()
+        mnuDrawSep0 = New ToolStripSeparator()
+        mnuDrawRectangle = New ToolStripMenuItem()
+        mnuDrawEllipse = New ToolStripMenuItem()
+        mnuDrawPolygon = New ToolStripMenuItem()
+        mnuDrawStar = New ToolStripMenuItem()
+        mnuDrawArea = New ToolStripMenuItem()
+        mnuDrawText = New ToolStripMenuItem()
+        mnuDrawSep1 = New ToolStripSeparator()
+        mnuDrawEditText = New ToolStripMenuItem()
+        mnuDrawSep2 = New ToolStripSeparator()
+        mnuDrawRotateLeft = New ToolStripMenuItem()
+        mnuDrawRotateRight = New ToolStripMenuItem()
+        mnuDrawMirror = New ToolStripMenuItem()
+        mnuDrawFront = New ToolStripMenuItem()
+        mnuDrawBack = New ToolStripMenuItem()
+        mnuDrawSep3 = New ToolStripSeparator()
+        mnuDrawDelete = New ToolStripMenuItem()
+        mnuStyleFont = New ToolStripMenuItem()
+        mnuStyleBold = New ToolStripMenuItem()
+        mnuStyleItalic = New ToolStripMenuItem()
+        mnuStyleSep1 = New ToolStripSeparator()
+        mnuStyleAlignLeft = New ToolStripMenuItem()
+        mnuStyleAlignCenter = New ToolStripMenuItem()
+        mnuStyleAlignRight = New ToolStripMenuItem()
+        tsDraw = New ToolStrip()
+        tsbToolSelect = New ToolStripButton()
+        tsbToolRectangle = New ToolStripButton()
+        tsbToolEllipse = New ToolStripButton()
+        tsbToolPolygon = New ToolStripButton()
+        tsbToolStar = New ToolStripButton()
+        tsbToolArea = New ToolStripButton()
+        tsbToolText = New ToolStripButton()
+        tssDraw1 = New ToolStripSeparator()
+        tslDrawFont = New ToolStripLabel()
+        tscDrawFont = New ToolStripComboBox()
+        tsbDrawBold = New ToolStripButton()
+        tsbDrawItalic = New ToolStripButton()
+        tssDraw2 = New ToolStripSeparator()
+        tsbDrawAlignLeft = New ToolStripButton()
+        tsbDrawAlignCenter = New ToolStripButton()
+        tsbDrawAlignRight = New ToolStripButton()
+        mnuDrawSep4 = New ToolStripSeparator()
+        mnuDrawSnapGrid = New ToolStripMenuItem()
+        mnuDrawGridSpacing = New ToolStripMenuItem()
+        mnuDrawRotationSnap = New ToolStripMenuItem()
+        tssDraw3 = New ToolStripSeparator()
+        tsbSnapGrid = New ToolStripButton()
+        tscSnapGrid = New ToolStripComboBox()
+        tslSnapRot = New ToolStripLabel()
+        tscSnapRot = New ToolStripComboBox()
         stsMain = New StatusStrip()
         lblStatus = New ToolStripStatusLabel()
         lblStats = New ToolStripStatusLabel()
@@ -110,6 +163,7 @@ Partial Class frmMain
         pnlSim.SuspendLayout()
         CType(tbSim, System.ComponentModel.ISupportInitialize).BeginInit()
         tsSim.SuspendLayout()
+        tsDraw.SuspendLayout()
         splitMain.SuspendLayout()
         tlpLeft.SuspendLayout()
         pnlEditor.SuspendLayout()
@@ -126,7 +180,7 @@ Partial Class frmMain
         '
         ' mnuMain
         '
-        mnuMain.Items.AddRange(New ToolStripItem() {mnuFile, mnuFont, mnuView, mnuToolpath, mnuMachine})
+        mnuMain.Items.AddRange(New ToolStripItem() {mnuFile, mnuFont, mnuDraw, mnuStyle, mnuView, mnuToolpath, mnuMachine})
         mnuMain.Location = New Point(0, 0)
         mnuMain.Name = "mnuMain"
         mnuMain.Size = New Size(1200, 24)
@@ -338,6 +392,356 @@ Partial Class frmMain
         mnuToolLibrary.Size = New Size(200, 22)
         mnuToolLibrary.Text = "Tool &Library..."
         '
+        ' mnuDraw
+        '
+        mnuDraw.DropDownItems.AddRange(New ToolStripItem() {mnuDrawSelect, mnuDrawSep0, mnuDrawRectangle, mnuDrawEllipse, mnuDrawPolygon, mnuDrawStar, mnuDrawArea, mnuDrawText, mnuDrawSep1, mnuDrawEditText, mnuDrawSep2, mnuDrawRotateLeft, mnuDrawRotateRight, mnuDrawMirror, mnuDrawFront, mnuDrawBack, mnuDrawSep4, mnuDrawSnapGrid, mnuDrawGridSpacing, mnuDrawRotationSnap, mnuDrawSep3, mnuDrawDelete})
+        mnuDraw.Name = "mnuDraw"
+        mnuDraw.Size = New Size(46, 20)
+        mnuDraw.Text = "&Draw"
+        '
+        ' mnuDrawSelect
+        '
+        mnuDrawSelect.Name = "mnuDrawSelect"
+        mnuDrawSelect.ShortcutKeyDisplayString = "V"
+        mnuDrawSelect.Size = New Size(220, 22)
+        mnuDrawSelect.Text = "&Select"
+        '
+        ' mnuDrawSep0
+        '
+        mnuDrawSep0.Name = "mnuDrawSep0"
+        mnuDrawSep0.Size = New Size(217, 6)
+        '
+        ' mnuDrawRectangle
+        '
+        mnuDrawRectangle.Name = "mnuDrawRectangle"
+        mnuDrawRectangle.ShortcutKeyDisplayString = "R"
+        mnuDrawRectangle.Size = New Size(220, 22)
+        mnuDrawRectangle.Text = "&Rectangle"
+        '
+        ' mnuDrawEllipse
+        '
+        mnuDrawEllipse.Name = "mnuDrawEllipse"
+        mnuDrawEllipse.ShortcutKeyDisplayString = "E"
+        mnuDrawEllipse.Size = New Size(220, 22)
+        mnuDrawEllipse.Text = "&Ellipse"
+        '
+        ' mnuDrawPolygon
+        '
+        mnuDrawPolygon.Name = "mnuDrawPolygon"
+        mnuDrawPolygon.ShortcutKeyDisplayString = "P"
+        mnuDrawPolygon.Size = New Size(220, 22)
+        mnuDrawPolygon.Text = "&Polygon"
+        '
+        ' mnuDrawStar
+        '
+        mnuDrawStar.Name = "mnuDrawStar"
+        mnuDrawStar.ShortcutKeyDisplayString = "S"
+        mnuDrawStar.Size = New Size(220, 22)
+        mnuDrawStar.Text = "S&tar"
+        '
+        ' mnuDrawArea
+        '
+        mnuDrawArea.Name = "mnuDrawArea"
+        mnuDrawArea.ShortcutKeyDisplayString = "A"
+        mnuDrawArea.Size = New Size(220, 22)
+        mnuDrawArea.Text = "Free-form &Area"
+        '
+        ' mnuDrawText
+        '
+        mnuDrawText.Name = "mnuDrawText"
+        mnuDrawText.ShortcutKeyDisplayString = "T"
+        mnuDrawText.Size = New Size(220, 22)
+        mnuDrawText.Text = "Te&xt"
+        '
+        ' mnuDrawSep1
+        '
+        mnuDrawSep1.Name = "mnuDrawSep1"
+        mnuDrawSep1.Size = New Size(217, 6)
+        '
+        ' mnuDrawEditText
+        '
+        mnuDrawEditText.Name = "mnuDrawEditText"
+        mnuDrawEditText.ShortcutKeyDisplayString = "Double-click"
+        mnuDrawEditText.Size = New Size(220, 22)
+        mnuDrawEditText.Text = "Ed&it Text"
+        '
+        ' mnuDrawSep2
+        '
+        mnuDrawSep2.Name = "mnuDrawSep2"
+        mnuDrawSep2.Size = New Size(217, 6)
+        '
+        ' mnuDrawRotateLeft
+        '
+        mnuDrawRotateLeft.Name = "mnuDrawRotateLeft"
+        mnuDrawRotateLeft.Size = New Size(220, 22)
+        mnuDrawRotateLeft.Text = "Rotate 90° &Left"
+        '
+        ' mnuDrawRotateRight
+        '
+        mnuDrawRotateRight.Name = "mnuDrawRotateRight"
+        mnuDrawRotateRight.Size = New Size(220, 22)
+        mnuDrawRotateRight.Text = "Rotate 90° Ri&ght"
+        '
+        ' mnuDrawMirror
+        '
+        mnuDrawMirror.Name = "mnuDrawMirror"
+        mnuDrawMirror.Size = New Size(220, 22)
+        mnuDrawMirror.Text = "&Mirror"
+        '
+        ' mnuDrawFront
+        '
+        mnuDrawFront.Name = "mnuDrawFront"
+        mnuDrawFront.Size = New Size(220, 22)
+        mnuDrawFront.Text = "Bring to &Front"
+        '
+        ' mnuDrawBack
+        '
+        mnuDrawBack.Name = "mnuDrawBack"
+        mnuDrawBack.Size = New Size(220, 22)
+        mnuDrawBack.Text = "Send to &Back"
+        '
+        ' mnuDrawSep3
+        '
+        mnuDrawSep3.Name = "mnuDrawSep3"
+        mnuDrawSep3.Size = New Size(217, 6)
+        '
+        ' mnuDrawDelete
+        '
+        mnuDrawDelete.Name = "mnuDrawDelete"
+        mnuDrawDelete.ShortcutKeyDisplayString = "Del"
+        mnuDrawDelete.Size = New Size(220, 22)
+        mnuDrawDelete.Text = "&Delete"
+        '
+        ' mnuStyle
+        '
+        mnuStyle.DropDownItems.AddRange(New ToolStripItem() {mnuStyleFont, mnuStyleBold, mnuStyleItalic, mnuStyleSep1, mnuStyleAlignLeft, mnuStyleAlignCenter, mnuStyleAlignRight})
+        mnuStyle.Name = "mnuStyle"
+        mnuStyle.Size = New Size(44, 20)
+        mnuStyle.Text = "&Style"
+        '
+        ' mnuStyleFont
+        '
+        mnuStyleFont.Name = "mnuStyleFont"
+        mnuStyleFont.Size = New Size(220, 22)
+        mnuStyleFont.Text = "&Font..."
+        '
+        ' mnuStyleBold
+        '
+        mnuStyleBold.Name = "mnuStyleBold"
+        mnuStyleBold.Size = New Size(220, 22)
+        mnuStyleBold.Text = "&Bold"
+        '
+        ' mnuStyleItalic
+        '
+        mnuStyleItalic.Name = "mnuStyleItalic"
+        mnuStyleItalic.Size = New Size(220, 22)
+        mnuStyleItalic.Text = "&Italic"
+        '
+        ' mnuStyleSep1
+        '
+        mnuStyleSep1.Name = "mnuStyleSep1"
+        mnuStyleSep1.Size = New Size(217, 6)
+        '
+        ' mnuStyleAlignLeft
+        '
+        mnuStyleAlignLeft.Name = "mnuStyleAlignLeft"
+        mnuStyleAlignLeft.Size = New Size(220, 22)
+        mnuStyleAlignLeft.Text = "Align &Left"
+        '
+        ' mnuStyleAlignCenter
+        '
+        mnuStyleAlignCenter.Name = "mnuStyleAlignCenter"
+        mnuStyleAlignCenter.Size = New Size(220, 22)
+        mnuStyleAlignCenter.Text = "Align &Center"
+        '
+        ' mnuStyleAlignRight
+        '
+        mnuStyleAlignRight.Name = "mnuStyleAlignRight"
+        mnuStyleAlignRight.Size = New Size(220, 22)
+        mnuStyleAlignRight.Text = "Align &Right"
+        '
+        ' tsDraw
+        '
+        tsDraw.BackColor = SystemColors.Control
+        tsDraw.GripStyle = ToolStripGripStyle.Hidden
+        tsDraw.Items.AddRange(New ToolStripItem() {tsbToolSelect, tsbToolRectangle, tsbToolEllipse, tsbToolPolygon, tsbToolStar, tsbToolArea, tsbToolText, tssDraw1, tslDrawFont, tscDrawFont, tsbDrawBold, tsbDrawItalic, tssDraw2, tsbDrawAlignLeft, tsbDrawAlignCenter, tsbDrawAlignRight, tssDraw3, tsbSnapGrid, tscSnapGrid, tslSnapRot, tscSnapRot})
+        tsDraw.Location = New Point(0, 0)
+        tsDraw.Name = "tsDraw"
+        tsDraw.RenderMode = ToolStripRenderMode.System
+        tsDraw.Size = New Size(774, 25)
+        tsDraw.TabIndex = 2
+        '
+        ' tsbToolSelect
+        '
+        tsbToolSelect.DisplayStyle = ToolStripItemDisplayStyle.Image
+        tsbToolSelect.Name = "tsbToolSelect"
+        tsbToolSelect.Size = New Size(23, 22)
+        tsbToolSelect.ToolTipText = "Select, move, scale and rotate (V)"
+        '
+        ' tsbToolRectangle
+        '
+        tsbToolRectangle.DisplayStyle = ToolStripItemDisplayStyle.Image
+        tsbToolRectangle.Name = "tsbToolRectangle"
+        tsbToolRectangle.Size = New Size(23, 22)
+        tsbToolRectangle.ToolTipText = "Draw a rectangle (R). Shift: square, Ctrl: from the centre"
+        '
+        ' tsbToolEllipse
+        '
+        tsbToolEllipse.DisplayStyle = ToolStripItemDisplayStyle.Image
+        tsbToolEllipse.Name = "tsbToolEllipse"
+        tsbToolEllipse.Size = New Size(23, 22)
+        tsbToolEllipse.ToolTipText = "Draw an ellipse (E). Shift: circle, Ctrl: from the centre"
+        '
+        ' tsbToolPolygon
+        '
+        tsbToolPolygon.DisplayStyle = ToolStripItemDisplayStyle.Image
+        tsbToolPolygon.Name = "tsbToolPolygon"
+        tsbToolPolygon.Size = New Size(23, 22)
+        tsbToolPolygon.ToolTipText = "Draw a polygon (P). Shift: regular, Ctrl: from the centre"
+        '
+        ' tsbToolStar
+        '
+        tsbToolStar.DisplayStyle = ToolStripItemDisplayStyle.Image
+        tsbToolStar.Name = "tsbToolStar"
+        tsbToolStar.Size = New Size(23, 22)
+        tsbToolStar.ToolTipText = "Draw a star (S). Shift: regular, Ctrl: from the centre"
+        '
+        ' tsbToolArea
+        '
+        tsbToolArea.DisplayStyle = ToolStripItemDisplayStyle.Image
+        tsbToolArea.Name = "tsbToolArea"
+        tsbToolArea.Size = New Size(23, 22)
+        tsbToolArea.ToolTipText = "Draw a free-form area (A): click the corners; click the first corner, double-click or press Enter to close"
+        '
+        ' tsbToolText
+        '
+        tsbToolText.DisplayStyle = ToolStripItemDisplayStyle.Image
+        tsbToolText.Name = "tsbToolText"
+        tsbToolText.Size = New Size(23, 22)
+        tsbToolText.ToolTipText = "Draw text (T): drag a box as tall as a capital letter, then type"
+        '
+        ' tssDraw1
+        '
+        tssDraw1.Name = "tssDraw1"
+        tssDraw1.Size = New Size(6, 25)
+        '
+        ' tslDrawFont
+        '
+        tslDrawFont.Name = "tslDrawFont"
+        tslDrawFont.Size = New Size(34, 22)
+        tslDrawFont.Text = "Font:"
+        '
+        ' tscDrawFont
+        '
+        tscDrawFont.AutoCompleteMode = AutoCompleteMode.SuggestAppend
+        tscDrawFont.AutoCompleteSource = AutoCompleteSource.ListItems
+        tscDrawFont.DropDownWidth = 220
+        tscDrawFont.MaxDropDownItems = 20
+        tscDrawFont.Name = "tscDrawFont"
+        tscDrawFont.Size = New Size(150, 25)
+        tscDrawFont.ToolTipText = "Font of the selected text drawing (and of new text)"
+        '
+        ' tsbDrawBold
+        '
+        tsbDrawBold.DisplayStyle = ToolStripItemDisplayStyle.Text
+        tsbDrawBold.Font = New Font("Segoe UI", 9.0F, FontStyle.Bold)
+        tsbDrawBold.Name = "tsbDrawBold"
+        tsbDrawBold.Size = New Size(23, 22)
+        tsbDrawBold.Text = "B"
+        tsbDrawBold.ToolTipText = "Bold"
+        '
+        ' tsbDrawItalic
+        '
+        tsbDrawItalic.DisplayStyle = ToolStripItemDisplayStyle.Text
+        tsbDrawItalic.Font = New Font("Segoe UI", 9.0F, FontStyle.Italic)
+        tsbDrawItalic.Name = "tsbDrawItalic"
+        tsbDrawItalic.Size = New Size(23, 22)
+        tsbDrawItalic.Text = "I"
+        tsbDrawItalic.ToolTipText = "Italic"
+        '
+        ' tssDraw2
+        '
+        tssDraw2.Name = "tssDraw2"
+        tssDraw2.Size = New Size(6, 25)
+        '
+        ' tsbDrawAlignLeft
+        '
+        tsbDrawAlignLeft.DisplayStyle = ToolStripItemDisplayStyle.Image
+        tsbDrawAlignLeft.Name = "tsbDrawAlignLeft"
+        tsbDrawAlignLeft.Size = New Size(23, 22)
+        tsbDrawAlignLeft.ToolTipText = "Align the lines left"
+        '
+        ' tsbDrawAlignCenter
+        '
+        tsbDrawAlignCenter.DisplayStyle = ToolStripItemDisplayStyle.Image
+        tsbDrawAlignCenter.Name = "tsbDrawAlignCenter"
+        tsbDrawAlignCenter.Size = New Size(23, 22)
+        tsbDrawAlignCenter.ToolTipText = "Centre the lines"
+        '
+        ' tsbDrawAlignRight
+        '
+        tsbDrawAlignRight.DisplayStyle = ToolStripItemDisplayStyle.Image
+        tsbDrawAlignRight.Name = "tsbDrawAlignRight"
+        tsbDrawAlignRight.Size = New Size(23, 22)
+        tsbDrawAlignRight.ToolTipText = "Align the lines right"
+        '
+        ' mnuDrawSep4
+        '
+        mnuDrawSep4.Name = "mnuDrawSep4"
+        mnuDrawSep4.Size = New Size(217, 6)
+        '
+        ' mnuDrawSnapGrid
+        '
+        mnuDrawSnapGrid.Name = "mnuDrawSnapGrid"
+        mnuDrawSnapGrid.ShortcutKeyDisplayString = "Alt: ignore"
+        mnuDrawSnapGrid.Size = New Size(220, 22)
+        mnuDrawSnapGrid.Text = "S&nap to Grid"
+        '
+        ' mnuDrawGridSpacing
+        '
+        mnuDrawGridSpacing.Name = "mnuDrawGridSpacing"
+        mnuDrawGridSpacing.Size = New Size(220, 22)
+        mnuDrawGridSpacing.Text = "Grid Spa&cing"
+        '
+        ' mnuDrawRotationSnap
+        '
+        mnuDrawRotationSnap.Name = "mnuDrawRotationSnap"
+        mnuDrawRotationSnap.Size = New Size(220, 22)
+        mnuDrawRotationSnap.Text = "R&otation Snap"
+        '
+        ' tssDraw3
+        '
+        tssDraw3.Name = "tssDraw3"
+        tssDraw3.Size = New Size(6, 25)
+        '
+        ' tsbSnapGrid
+        '
+        tsbSnapGrid.CheckOnClick = True
+        tsbSnapGrid.DisplayStyle = ToolStripItemDisplayStyle.Image
+        tsbSnapGrid.Name = "tsbSnapGrid"
+        tsbSnapGrid.Size = New Size(23, 22)
+        tsbSnapGrid.ToolTipText = "Snap to grid: moving, resizing and drawing land on the grid (hold Alt while dragging to ignore it)"
+        '
+        ' tscSnapGrid
+        '
+        tscSnapGrid.DropDownStyle = ComboBoxStyle.DropDownList
+        tscSnapGrid.Name = "tscSnapGrid"
+        tscSnapGrid.Size = New Size(60, 25)
+        tscSnapGrid.ToolTipText = "Grid spacing for snapping"
+        '
+        ' tslSnapRot
+        '
+        tslSnapRot.Name = "tslSnapRot"
+        tslSnapRot.Size = New Size(44, 22)
+        tslSnapRot.Text = "Rotate:"
+        '
+        ' tscSnapRot
+        '
+        tscSnapRot.DropDownStyle = ComboBoxStyle.DropDownList
+        tscSnapRot.Name = "tscSnapRot"
+        tscSnapRot.Size = New Size(56, 25)
+        tscSnapRot.ToolTipText = "Rotation snap: the round knob turns in steps of this angle (hold Shift to turn freely)"
+        '
         ' stsMain
         '
         stsMain.Items.AddRange(New ToolStripItem() {lblStatus, lblStats})
@@ -426,7 +830,7 @@ Partial Class frmMain
         tabObjects.Padding = New Padding(3)
         tabObjects.Size = New Size(406, 261)
         tabObjects.TabIndex = 1
-        tabObjects.Text = "Drawings (SVG)"
+        tabObjects.Text = "Drawings"
         tabObjects.UseVisualStyleBackColor = True
         ' 
         ' tsObjects
@@ -628,6 +1032,7 @@ Partial Class frmMain
         '
         pnlView.BackColor = Color.FromArgb(CType(CType(30, Byte), Integer), CType(CType(30, Byte), Integer), CType(CType(34, Byte), Integer))
         pnlView.Controls.Add(pnlSim)
+        pnlView.Controls.Add(tsDraw)
         pnlView.Dock = DockStyle.Fill
         pnlView.Location = New Point(0, 0)
         pnlView.Name = "pnlView"
@@ -780,6 +1185,8 @@ Partial Class frmMain
         CType(tbSim, System.ComponentModel.ISupportInitialize).EndInit()
         tsSim.ResumeLayout(False)
         tsSim.PerformLayout()
+        tsDraw.ResumeLayout(False)
+        tsDraw.PerformLayout()
         splitMain.Panel2.ResumeLayout(False)
         CType(splitMain, System.ComponentModel.ISupportInitialize).EndInit()
         splitMain.ResumeLayout(False)
@@ -880,5 +1287,58 @@ Partial Class frmMain
     Friend WithEvents dlgOpenProject As OpenFileDialog
     Friend WithEvents dlgSaveProject As SaveFileDialog
     Friend WithEvents dlgSvg As OpenFileDialog
+    Friend WithEvents mnuDrawSep4 As ToolStripSeparator
+    Friend WithEvents mnuDrawSnapGrid As ToolStripMenuItem
+    Friend WithEvents mnuDrawGridSpacing As ToolStripMenuItem
+    Friend WithEvents mnuDrawRotationSnap As ToolStripMenuItem
+    Friend WithEvents tssDraw3 As ToolStripSeparator
+    Friend WithEvents tsbSnapGrid As ToolStripButton
+    Friend WithEvents tscSnapGrid As ToolStripComboBox
+    Friend WithEvents tslSnapRot As ToolStripLabel
+    Friend WithEvents tscSnapRot As ToolStripComboBox
+    Friend WithEvents mnuDraw As ToolStripMenuItem
+    Friend WithEvents mnuStyle As ToolStripMenuItem
+    Friend WithEvents mnuDrawSelect As ToolStripMenuItem
+    Friend WithEvents mnuDrawSep0 As ToolStripSeparator
+    Friend WithEvents mnuDrawRectangle As ToolStripMenuItem
+    Friend WithEvents mnuDrawEllipse As ToolStripMenuItem
+    Friend WithEvents mnuDrawPolygon As ToolStripMenuItem
+    Friend WithEvents mnuDrawStar As ToolStripMenuItem
+    Friend WithEvents mnuDrawArea As ToolStripMenuItem
+    Friend WithEvents mnuDrawText As ToolStripMenuItem
+    Friend WithEvents mnuDrawSep1 As ToolStripSeparator
+    Friend WithEvents mnuDrawEditText As ToolStripMenuItem
+    Friend WithEvents mnuDrawSep2 As ToolStripSeparator
+    Friend WithEvents mnuDrawRotateLeft As ToolStripMenuItem
+    Friend WithEvents mnuDrawRotateRight As ToolStripMenuItem
+    Friend WithEvents mnuDrawMirror As ToolStripMenuItem
+    Friend WithEvents mnuDrawFront As ToolStripMenuItem
+    Friend WithEvents mnuDrawBack As ToolStripMenuItem
+    Friend WithEvents mnuDrawSep3 As ToolStripSeparator
+    Friend WithEvents mnuDrawDelete As ToolStripMenuItem
+    Friend WithEvents mnuStyleFont As ToolStripMenuItem
+    Friend WithEvents mnuStyleBold As ToolStripMenuItem
+    Friend WithEvents mnuStyleItalic As ToolStripMenuItem
+    Friend WithEvents mnuStyleSep1 As ToolStripSeparator
+    Friend WithEvents mnuStyleAlignLeft As ToolStripMenuItem
+    Friend WithEvents mnuStyleAlignCenter As ToolStripMenuItem
+    Friend WithEvents mnuStyleAlignRight As ToolStripMenuItem
+    Friend WithEvents tsDraw As ToolStrip
+    Friend WithEvents tsbToolSelect As ToolStripButton
+    Friend WithEvents tsbToolRectangle As ToolStripButton
+    Friend WithEvents tsbToolEllipse As ToolStripButton
+    Friend WithEvents tsbToolPolygon As ToolStripButton
+    Friend WithEvents tsbToolStar As ToolStripButton
+    Friend WithEvents tsbToolArea As ToolStripButton
+    Friend WithEvents tsbToolText As ToolStripButton
+    Friend WithEvents tssDraw1 As ToolStripSeparator
+    Friend WithEvents tslDrawFont As ToolStripLabel
+    Friend WithEvents tscDrawFont As ToolStripComboBox
+    Friend WithEvents tsbDrawBold As ToolStripButton
+    Friend WithEvents tsbDrawItalic As ToolStripButton
+    Friend WithEvents tssDraw2 As ToolStripSeparator
+    Friend WithEvents tsbDrawAlignLeft As ToolStripButton
+    Friend WithEvents tsbDrawAlignCenter As ToolStripButton
+    Friend WithEvents tsbDrawAlignRight As ToolStripButton
 
 End Class

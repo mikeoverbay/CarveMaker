@@ -7,6 +7,7 @@
 '  Editor model: every line of the RichTextBox carries one of three size
 '  "slots" (shown at 24 / 16 / 11 pt) and a paragraph alignment. The slot maps
 '  to an inch size in the settings; the alignment is used as-is.
+'  Drawing tools, text drawings and arrange commands: frmMain.Drawing.vb.
 ' ============================================================================
 
 Imports System.Globalization
@@ -93,6 +94,7 @@ Public Class frmMain
         AddHandler _glView.ObjectEdited, AddressOf OnViewObjectEdited
         AddHandler _glView.TextMoved, AddressOf OnViewTextMoved
         _glView.Objects = _objects
+        SetupDrawing()
         _glView.CurveTolerance = _settings.CurveTolerance
         tscSimSpeed.SelectedIndex = 3      ' 10x
 
@@ -155,6 +157,9 @@ Public Class frmMain
     End Sub
 
     Private Sub MarkDirty()
+        ' A change made while a text drawing is being typed (toolbar, menu, another window) must
+        ' survive cancelling that edit (see EndTextEdit).
+        If _editingObject IsNot Nothing AndAlso Not _typingInEditor Then _otherChangeDuringEdit = True
         If _dirty Then Return
         _dirty = True
         UpdateTitle()
@@ -162,6 +167,7 @@ Public Class frmMain
 
     ''' <summary>Asks to save unsaved changes. Returns False when the user cancels.</summary>
     Private Function ConfirmDiscardChanges() As Boolean
+        EndTextEdit(commit:=True, focusView:=False)
         If Not _dirty Then Return True
         Dim r = MessageBox.Show(Me, "Save changes to the project?", "CarveMaker",
                                 MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question)
@@ -198,6 +204,7 @@ Public Class frmMain
             sb.Append(o.Name).Append("|").Append(o.X.ToString("R", ci)).Append("|").Append(o.Y.ToString("R", ci)).Append("|").
                Append(o.Width.ToString("R", ci)).Append("|").Append(o.Height.ToString("R", ci)).Append("|").Append(o.RotationDeg.ToString("R", ci)).
                Append("|").Append(o.Mirror).Append("|").Append(o.Visible).Append("|").Append(If(o.SvgContent, "").Length).
+               Append("|").Append(o.Kind).Append("|").Append(o.ShapeKey(0)).
                Append("|").Append(If(o.Machining?.Key(), "")).Append(ControlChars.Lf)
         Next
         Return sb.ToString()
@@ -255,6 +262,7 @@ Public Class frmMain
         tsbObjRemove.Enabled = has
         tsbObjFit.Enabled = has
         tsbObjCenter.Enabled = has
+        UpdateDrawUi()
     End Sub
 
     ''' <summary>The drawings currently placed on the blank (read-only view for tests and tools).</summary>
@@ -266,6 +274,7 @@ Public Class frmMain
 
     ''' <summary>Imports an SVG file as a new drawing centred on the blank.</summary>
     Public Sub ImportSvgFile(path As String)
+        EndTextEdit(commit:=True, focusView:=False)
         Dim o As New DesignObject With {
             .Name = IO.Path.GetFileNameWithoutExtension(path),
             .SvgFileName = IO.Path.GetFileName(path),
@@ -289,13 +298,7 @@ Public Class frmMain
             o.FitTo(maxW, maxH)
         End If
         CenterObjectOnBlank(o)
-        Dim textPath = _settings.TextMachining
-        If textPath IsNot Nothing AndAlso textPath.Operation = CutOperation.VCarve AndAlso textPath.Tool IsNot Nothing Then
-            o.Machining.Tool = textPath.Tool.Clone()
-            o.Machining.SpindleRpm = textPath.SpindleRpm
-            o.Machining.FeedRate = textPath.FeedRate
-            o.Machining.PlungeRate = textPath.PlungeRate
-        End If
+        SeedMachining(o)
         _objects.Add(o)
         RefreshObjectList(_objects.Count - 1)
         tabLeft.SelectedTab = tabObjects
@@ -311,6 +314,7 @@ Public Class frmMain
 
     Private Sub OnViewSelectionChanged(sender As Object, e As EventArgs)
         If _syncingSelection Then Return
+        If _editingObject IsNot Nothing AndAlso SelectedDrawing() IsNot _editingObject Then EndTextEdit(commit:=True, focusView:=False)
         _syncingSelection = True
         Try
             Dim idx = _glView.SelectedObject
@@ -330,6 +334,7 @@ Public Class frmMain
         Finally
             _syncingSelection = False
         End Try
+        UpdateDrawUi()
     End Sub
 
     Private Sub OnViewObjectEdited(sender As Object, e As ToolpathView.ObjectEditedEventArgs)
@@ -348,6 +353,10 @@ Public Class frmMain
 
     Private Sub lstObjects_SelectedIndexChanged(sender As Object, e As EventArgs) Handles lstObjects.SelectedIndexChanged
         If _syncingSelection Then Return
+        If _editingObject IsNot Nothing Then
+            Dim li = lstObjects.SelectedIndex
+            If li < 0 OrElse li >= _objects.Count OrElse _objects(li) IsNot _editingObject Then EndTextEdit(commit:=True, focusView:=False)
+        End If
         _syncingSelection = True
         Try
             Dim idx = lstObjects.SelectedIndex
@@ -359,6 +368,7 @@ Public Class frmMain
         Finally
             _syncingSelection = False
         End Try
+        UpdateDrawUi()
     End Sub
 
     Private Sub pgObject_PropertyValueChanged(s As Object, e As PropertyValueChangedEventArgs) Handles pgObject.PropertyValueChanged
@@ -366,12 +376,42 @@ Public Class frmMain
         If o Is Nothing Then Return
         Dim name = If(e.ChangedItem?.PropertyDescriptor?.Name, "")
         If name = NameOf(Machining.Tool) AndAlso SyncToolsFromLibrary() Then RefreshSettingsGrids()   ' the picker may have edited library entries
-        If o.LockAspect Then
-            If name = NameOf(DesignObject.Width) Then o.Height = Math.Round(o.Width / o.NaturalAspect, 4)
-            If name = NameOf(DesignObject.Height) Then o.Width = Math.Round(o.Height * o.NaturalAspect, 4)
+        Dim shapeBefore = o.Shape        ' the outline the box was sized for (not rebuilt yet)
+        Dim isSize = name = NameOf(DesignObject.Width) OrElse name = NameOf(DesignObject.Height)
+        Dim oldSize = If(isSize AndAlso TypeOf e.OldValue Is Double, CDbl(e.OldValue), 0.0)
+        If o.Kind = DrawingKind.Text Then
+            ' Text scales evenly: a new width or height is a new letter height; the box follows the lettering.
+            Dim k = 1.0
+            If isSize AndAlso oldSize > 0 Then
+                Dim newSize = If(name = NameOf(DesignObject.Width), o.Width, o.Height)
+                If name = NameOf(DesignObject.Width) Then o.Width = oldSize Else o.Height = oldSize
+                If newSize > 0 Then k = newSize / oldSize
+            End If
+            o.LetterHeight = Math.Round(o.LetterHeight * k, 4)
+            o.Normalize()
+            ' Rebuild first: the edit may switch between the font and the outline saved with the project.
+            o.EnsureParsed(_settings.CurveTolerance)
+            If o.UsesSavedOutline Then
+                ' The saved outline is only scaled into the box: size and letter height edits scale the box.
+                If name = NameOf(DesignObject.LetterHeight) AndAlso TypeOf e.OldValue Is Double AndAlso CDbl(e.OldValue) > 0 Then k = o.LetterHeight / CDbl(e.OldValue)
+                o.ScaleBoxFromTop(k)
+            End If
+            o.FitTextBox(_settings.CurveTolerance, shapeBefore)
+        ElseIf o.LockAspect AndAlso isSize Then
+            If o.Kind = DrawingKind.Svg OrElse oldSize <= 0 Then
+                If name = NameOf(DesignObject.Width) Then o.Height = Math.Round(o.Width / o.NaturalAspect, 4)
+                If name = NameOf(DesignObject.Height) Then o.Width = Math.Round(o.Height * o.NaturalAspect, 4)
+            ElseIf name = NameOf(DesignObject.Width) Then
+                o.Height = Math.Round(o.Height * o.Width / oldSize, 4)
+            Else
+                o.Width = Math.Round(o.Width * o.Height / oldSize, 4)
+            End If
+        ElseIf name = NameOf(DesignObject.Sides) OrElse name = NameOf(DesignObject.StarPoints) OrElse name = NameOf(DesignObject.StarInnerPercent) Then
+            KeepRegular(o, name, e.OldValue)
         End If
-        o.Width = Math.Max(0.01, o.Width)
-        o.Height = Math.Max(0.01, o.Height)
+        o.Normalize()
+        If o.Kind <> DrawingKind.Svg Then o.EnsureParsed(_settings.CurveTolerance)
+        If o.ParseError IsNot Nothing Then lblStatus.Text = o.Name & ": " & o.ParseError
         pgObject.Refresh()
         ' Keep the list row (name, hidden, operation) in step with the drawing.
         Dim i = lstObjects.SelectedIndex
@@ -384,6 +424,7 @@ Public Class frmMain
             End Try
         End If
         _glView.Objects = _objects
+        UpdateDrawUi()
         MarkDirty()
         RequestRegenerate(immediate:=True)
     End Sub
@@ -403,12 +444,7 @@ Public Class frmMain
     End Sub
 
     Private Sub tsbObjRemove_Click(sender As Object, e As EventArgs) Handles tsbObjRemove.Click
-        Dim idx = lstObjects.SelectedIndex
-        If idx < 0 OrElse idx >= _objects.Count Then Return
-        _objects.RemoveAt(idx)
-        RefreshObjectList(Math.Min(idx, _objects.Count - 1))
-        MarkDirty()
-        RequestRegenerate(immediate:=True)
+        RemoveDrawingAt(lstObjects.SelectedIndex, selectNext:=True)
     End Sub
 
     Private Sub tsbObjFit_Click(sender As Object, e As EventArgs) Handles tsbObjFit.Click
@@ -417,7 +453,12 @@ Public Class frmMain
         Dim o = _objects(idx)
         o.EnsureParsed(_settings.CurveTolerance)
         o.FitTo(Math.Max(0.1, _settings.BlankWidthIn - 2 * _settings.MarginIn), Math.Max(0.1, _settings.BlankHeightIn - 2 * _settings.MarginIn))
+        If o.Kind = DrawingKind.Text Then
+            o.Normalize()
+            o.FitTextBox(_settings.CurveTolerance)
+        End If
         CenterObjectOnBlank(o)
+        If _editingObject IsNot Nothing Then PositionTextEditor()
         pgObject.Refresh()
         _glView.Objects = _objects
         MarkDirty()
@@ -430,12 +471,14 @@ Public Class frmMain
         CenterObjectOnBlank(_objects(idx))
         pgObject.Refresh()
         _glView.Objects = _objects
+        If _editingObject IsNot Nothing Then PositionTextEditor()
         MarkDirty()
         RequestRegenerate(immediate:=True)
     End Sub
 
     ''' <summary>Saves to the current path, or prompts for one. Returns True when saved.</summary>
     Private Function SaveProject(saveAs As Boolean) As Boolean
+        EndTextEdit(commit:=True, focusView:=False)
         Dim target As String = _projectPath
         If saveAs OrElse String.IsNullOrEmpty(target) Then
             dlgSaveProject.FileName = If(String.IsNullOrEmpty(_projectPath), SuggestFileName(rtbText.Text) & ProjectFile.Extension, Path.GetFileName(_projectPath))
@@ -458,6 +501,12 @@ Public Class frmMain
 
     ''' <summary>Replaces settings and editor content with a loaded project.</summary>
     Private Sub LoadProjectIntoUi(pf As ProjectFile)
+        If _editingObject IsNot Nothing Then
+            _editingObject = Nothing
+            _textEditor.Visible = False
+        End If
+        _glView.ActiveTool = DrawTool.Select
+        _statusNote = Nothing
         _genCts?.Cancel()
         _genVersion += 1
         _settings = pf.Settings
@@ -466,6 +515,8 @@ Public Class frmMain
         _objects = New List(Of DesignObject)(pf.Objects.Select(Function(o) o.Clone()))
         For Each o In _objects
             o.InvalidateShape()
+            ' Lettering is measured with this PC's fonts: the box follows it.
+            If o.Kind = DrawingKind.Text Then o.FitTextBox(_settings.CurveTolerance)
         Next
         _glView.CurveTolerance = _settings.CurveTolerance
         RefreshObjectList(-1)
@@ -757,6 +808,7 @@ Public Class frmMain
         Dim lines As List(Of TextLine) = ReadEditorLines()
         Dim snapshot As CarveSettings = _settings.Clone()
         Dim items As List(Of MachiningItem) = PlacedItems()
+        Dim itemNotes As List(Of String) = DrawingNotes()
         Dim contentKey As String = TextLine.KeyOf(lines) & ObjectsKey()
 
         Dim problems = snapshot.Validate()
@@ -767,6 +819,7 @@ Public Class frmMain
             _running = False
             UseWaitCursor = False
             lblStatus.Text = "Settings: " & String.Join(" ", problems)
+            _statusNote = Nothing
             Return
         End If
 
@@ -790,6 +843,7 @@ Public Class frmMain
                         Dim ex As Exception = t.Exception
                         If TypeOf ex Is AggregateException Then ex = DirectCast(ex, AggregateException).GetBaseException()
                         lblStatus.Text = "Error: " & ex.Message
+                        _statusNote = Nothing
                         Return
                     End If
                     _toolpath = t.Result
@@ -799,13 +853,19 @@ Public Class frmMain
                     _lastSettings = snapshot
                     _glView.SetToolpath(_toolpath, snapshot)
                     UpdateStats(_toolpath)
-                    If _toolpath.Warnings.Count > 0 Then
-                        lblStatus.Text = String.Join("  |  ", _toolpath.Warnings)
+                    Dim notes = itemNotes.Concat(_toolpath.Warnings).ToList()
+                    If notes.Count > 0 Then
+                        lblStatus.Text = String.Join("  |  ", notes)
                     ElseIf _toolpath.IsEmpty Then
                         lblStatus.Text = "Nothing to cut - type some text."
+                    ElseIf _editingObject IsNot Nothing Then
+                        lblStatus.Text = TypingHint
+                    ElseIf _statusNote IsNot Nothing Then
+                        lblStatus.Text = _statusNote
                     Else
                         lblStatus.Text = "Ready"
                     End If
+                    _statusNote = Nothing
                 End Sub,
                 CancellationToken.None,
                 TaskContinuationOptions.None,

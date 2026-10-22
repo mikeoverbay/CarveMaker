@@ -1,4 +1,4 @@
-# CarveMaker handoff (updated 2026-10-10: tool library, pocket and profile, settings layout)
+# CarveMaker handoff (updated 2026-10-22: drawing tools, text drawings, GPU picking)
 
 Written so any session (or person) can pick the project up without the chat
 history. Read this, then `README.md` for the user-facing description.
@@ -32,11 +32,12 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
 
 | File | Role |
 |---|---|
-| `Model.vb` | Pt2/Pt3, Toolpath/contours/moves, enums, `TextLine`, `DesignObject` (placed SVG), `CarveSettings` (grid categories: Text tab 1..3, Machine Settings 1..4, split in `SettingsView.vb`; `Clone`, `Validate`) |
+| `Model.vb` | Pt2/Pt3, Toolpath/contours/moves, enums, `TextLine`, `DrawingKind`, `DesignObject` (a placed drawing: imported SVG or drawn shape / area / text; natural outline cached by `ShapeKey`, `FitTextBox`, `ScaleText`, `PlaceCorner`, `ShowsProperty` per kind), `CarveSettings` (grid categories: Text tab 1..3, Machine Settings 1..4, split in `SettingsView.vb`; `Clone`, `Validate`) |
 | `GlyphOutline.vb` | Text to outlines: GDI+ `AddString` per line, cap-height sizing, justification across the blank, Clipper2 union |
 | `VCarve.vb` | `TextToToolpath.Generate`, `RegionShape` (distance field), `VCarveEngine` (inset roughing, bevel at flat depth, floor clearing, medial-axis centerline finish), `ToolpathLinker` (ordering, links, gouge checks, time) |
 | `GCodeWriter.vb` | FluidNC-style program: `G0 G53 Z0`, `G54`, `M8`, `S M3`, `G4 P`, first move `G0 X Y` then `G0 Z`, footer `G0 G53 Z0`, `M5`, `M9`, `M30` |
-| `ToolpathView.vb` | OpenTK GLControl: layers, camera, object selection/drag/resize, simulation playback API (`SetToolpath`, `UpdateSimulationSettings`, `SimulationInfo`) |
+| `ToolpathView.vb` | OpenTK GLControl: layers, camera, back-buffer picking (`PickAt`, ID colours + stencil fill in a 16x16 FBO), handles (uniform corners, one-way sides, rotation knob), draw tools (`ActiveTool`, `ShapeDrawn` event), simulation playback API (`SetToolpath`, `UpdateSimulationSettings`, `SimulationInfo`) |
+| `DrawingShapes.vb` | Natural outlines of drawn kinds (rounded rectangle, ellipse, polygon, star, free-form area, text via `GlyphOutline` on a huge temporary blank), normalized like an SVG import; `ToSvg` |
 | `CarveSimulation.vb` | GPU material removal: R32F heightmap FBO, instanced tool stamps with MAX blend every half cell, surface mesh (one vertex per cell up to the Display mesh budget, triangle strips, texel-centre sampling), board walls |
 | `ToolModel.vb` | Revolved mesh of any library tool (`ToolDefinition.FullProfile`: flutes + one-diameter shank stub) |
 | `ToolLibrary.vb` | `ToolType`, `ToolDefinition` (diameter, flute length, end radius, included angle; profile, validation, auto names), `ToolLibrary` (JSON in %AppData%\CarveMaker, standard inch tools), `InchFormat` (fractions), `ToolPickerEditor` (V-bit-only picker, no longer on any grid row; toolpath rows use `MachiningToolEditor` in Machining.vb) |
@@ -48,6 +49,8 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
 | `SettingsView.vb` | `FilteredView` (ICustomTypeDescriptor: a chosen subset of an object's properties plus its `Machining` rows flat in one category; `GetPropertyOwner` returns the real owner of each row, `Machining.FromContext` resolves it for editors), `SettingsView` (Text tab / Machine Settings) and `DrawingView` (Drawings tab) and `SettingsGroups.TextPropertyNames` (what the Text tab shows; everything else goes to the Machine Settings window) |
 | `frmMachineSettings.vb` / `.Designer.vb` | Machine Settings tool window (Machine > Machine Settings, Ctrl+K), owned by the main form, hides on close |
 | `frmMain.vb` / `.Designer.vb` | UI: Text tab (editor + `pgText` text settings), Drawings tab, binds the Machine Settings window, menus, simulation bar, regenerate pipeline (`RequestRegenerate` -> 400 ms timer -> `GenerateAsync` on a worker) |
+| `Preferences.vb` | `UserPreferences`: per-user snap settings (JSON in %AppData%\CarveMaker), offered spacings and rotation steps |
+| `frmMain.Drawing.vb` | Partial frmMain: Draw and Style menus, snap controls, draw toolbar (`tsDraw` over the view, icons drawn in code), drawings from `ShapeDrawn`, the in-place text editor (`BeginTextEdit` / `EndTextEdit`), text style, arrange commands, `RemoveDrawingAt` |
 | `Setup\` | Installer project and `Setup.iss` |
 | `Samples\` | Six sample SVGs shipped next to the exe |
 
@@ -109,6 +112,29 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
    flat is gone from the UI (the user asked for exactly four numbers);
    `TipFlatIn` returns 0 and the engine still supports a flat.
 
+9. **Drawing on the blank.** Draw tools in the view (rectangle, ellipse,
+   polygon, star, free-form area, text) make `DesignObject`s with a `Kind`;
+   everything downstream (machining rows, JobBuilder, G-code, simulation) is
+   unchanged because a drawing is still `PlacedPaths`. Rectangles and ellipses
+   are built at their placed size (true corner radius, even tolerance); polygon,
+   star, area and text are built once and scaled into the box. Text drawings
+   size by `LetterHeight` (cap height): corner drags and width/height edits
+   change it and `FitTextBox` makes the box match the lettering. Picking is a
+   GPU ID buffer (exact outlines and holes, topmost wins, 4 px slack; text by
+   box) with a bounding-box fallback. Corners always scale evenly; side handles
+   stretch when the aspect lock is off. Mouse-up takes the result at the release
+   point. Projects store a drawn shape's outline as SVG in `SvgContent` too, so
+   older versions carve it. `draw` harness mode covers it.
+10. **Snapping.** `UserPreferences` (Preferences.vb, %AppData%\CarveMaker\Preferences.json;
+   `FilePath` is settable for tests) holds grid snap on/off, spacing and the rotation
+   step. The view applies them (`SnapToGrid`, `GridSpacing`, `RotationSnapDeg`):
+   `SnapMove` (per-axis nearest of box corners + centre), `SnapPoint` for creation,
+   areas and side handles, corner handles choose the scale that puts the corner on a
+   grid line (`ComputeResize`), rotation rounds to the step (Shift free) with a 20 px
+   dead zone around the centre. Alt suspends grid snapping; the view swallows the Alt
+   release (`WndProc`, WM_SYSKEYUP) after a drag so the main menu does not open.
+   `BuildGridLayer` draws the minor grid while snapping is on.
+
 ## Test harness (not in the repo)
 
 Durable copy: `C:\Users\theco\.claude\projects\C--Text-to-CNC-path\harness\`
@@ -129,6 +155,7 @@ torture SVG folders and their expectation scripts). Build with
 | `simres` | Changes Precision and Display mesh through the real PropertyGrid path, reads heightmap/mesh sizes, pixel-diffs screenshots, times frames |
 | `layout` | Settings layout: text grid inside the Text tab and hidden on the Drawings tab, Machine Settings categories, every setting in exactly one grid, edits from either grid regenerate and mark the project changed, window hides/reopens, project load rebinds both grids, screenshots |
 | `mill` | Pocket and profile: wall gouge and floor coverage, island clearance, 90% stepover clean-up, profile offsets and direction, through cut + tabs, refused tools, job order and tool groups, per-tool G-code, project round trip, and the form + multi-tool simulation on screen. `mill nogui` skips the screen part |
+| `draw` | Drawing: outlines of every kind (areas, tolerance, aspect), text sizing and alignment, grid rows per kind, SVG export and project round trip, carving; on screen: draw tools by mouse messages, GPU picking (holes, overlaps, edge slack), side/corner/rotation handles, text tool + typing + corner sizing, style toolbar and menu, double-click edit + Esc, area tool, Esc and Delete. `draw nogui` skips the screen part |
 | `tools` | Tool library: profiles and meshes of all standard tools, inch parsing, validation, settings/project migration, library file, the dialog (edits, type switch, save, pick mode) and the simulation tool, with screenshots. `tools nogui` skips the screen part |
 
 The torture expectations (`svg-torture-transforms-expect.js`,
@@ -153,6 +180,15 @@ The torture expectations (`svg-torture-transforms-expect.js`,
 - GUI harness modes: clear `frmMain._dirty` before `f.Close()` or the save prompt blocks the run; run GUI modes one at a time (they share the desktop and SendKeys); never `taskkill smoke.exe` while a background harness run is going.
 - Bash tool mangles backslashes in heredocs; write edit scripts with the Write
   tool and run them with `node`.
+- VB precedence: `\` (integer division) binds looser than `*`, so
+  `(n + 3) \ 4 * 4` is `(n + 3) \ 16`. VB is case-insensitive: a local `f`
+  hides a function `F`.
+- Harness mouse drags are window messages; the real mouse moving over the window
+  sends its own moves, so the view takes drag results from the button-up point.
+  Keep GUI test forms `TopMost` so SendKeys shortcuts reach them. Clicking or
+  switching windows while a GUI mode runs takes the mouse capture away, which
+  (by design) cancels the drag in progress: rerun a single failed drag check
+  before hunting a bug.
 - PropertyGrid edits write straight into `_settings`; toolpath-relevant ones go
   through `RequestRegenerate`, simulation-only ones (`SimResolution`,
   `SimMeshDetail`) through `UpdateSimulationSettings` and must also be copied
@@ -163,8 +199,8 @@ The torture expectations (`svg-torture-transforms-expect.js`,
 - Ramped or helical entry for end mills (plunges are straight today).
 - V-carving inside a pocket (Z relative to the pocket floor).
 - Raised carving (pocket the blank around the letters), inlay (male/female).
-- Shapes (rectangles, circles, stars), text on an arc, DXF import (the mandala
-  pack has DXF too).
+- Text on an arc, DXF import (the mandala pack has DXF too), multi-select and
+  undo for drawings, node editing of free-form areas.
 - Post-processor selection (GRBL, Mach, LinuxCNC flavours).
 - Simulation: size the mesh from on-screen pixels with a `gl_VertexID` grid (no
   VBO/EBO rebuild on every regeneration; today ~20 ms at Fine per regen).

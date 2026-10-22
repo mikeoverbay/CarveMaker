@@ -45,6 +45,17 @@ Public Module GlyphOutline
     ''' </summary>
     Public Function BuildShape(lines As IList(Of TextLine), s As CarveSettings, warnings As List(Of String),
                                ByRef lineCenters As List(Of Double)) As PathsD
+        Dim unused As Double
+        Return BuildShape(lines, s, warnings, lineCenters, unused)
+    End Function
+
+    ''' <summary>
+    ''' As above, and also returns the machine Y of the top of the first line's layout cell
+    ''' (font metrics only: the same whatever the letters, the line spacing or later lines).
+    ''' </summary>
+    Public Function BuildShape(lines As IList(Of TextLine), s As CarveSettings, warnings As List(Of String),
+                               ByRef lineCenters As List(Of Double), ByRef firstLineTop As Double) As PathsD
+        firstLineTop = Double.NaN
         Dim result As New PathsD()
         lineCenters = New List(Of Double)
         If lines Is Nothing OrElse lines.Count = 0 Then Return result
@@ -162,6 +173,8 @@ Public Module GlyphOutline
             For Each c In centersDown
                 lineCenters.Add(-c + dy)
             Next
+            ' The first line starts at layout y 0 (y down), i.e. machine y dy.
+            firstLineTop = dy
 
             ' Tell the user when the text does not fit on the blank.
             b = Clipper.GetBounds(result)

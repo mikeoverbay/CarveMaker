@@ -6,7 +6,8 @@ installed font into a **V-carve toolpath** for a V-bit (default 1/4" diameter,
 
 ```
 +------------------------------+----------------------------------------+
-| [Text] [Drawings (SVG)]      |                     +----------------+ |
+| [Text] [Drawings]            | draw tools | font B I | align           |
+|                              |                     +----------------+ |
 | Size: Large Medium Small     |   OpenGL toolpath   |Machine Settings| |
 | Align: Left Center Right     |   view (pan: left   | (Ctrl+K, tool  | |
 | [ rich text editor ]         |   drag, orbit:      |  window: blank,| |
@@ -93,7 +94,7 @@ uncut material and under 0.001" over-cut.
 
 ## SVG drawings
 
-**Drawings (SVG)** tab, or **File > Import SVG Drawing...**: logos, clipart and
+**Drawings** tab, or **File > Import SVG Drawing...**: logos, clipart and
 shapes are carved with the same engine as the text. The importer handles
 `<path>` (every command, relative and absolute, arcs), `rect` / `circle` /
 `ellipse` / `line` / `polyline` / `polygon`, groups and nested `<svg>` with
@@ -109,14 +110,82 @@ every painted shape is carved. Overlapping shapes merge.
 
 Each imported drawing is an object with X/Y, width/height (aspect locked by
 default), rotation, mirror and visibility, editable in the tab or directly in
-the view: click to select, drag to move, drag a corner handle to resize, arrow
-keys nudge by 0.01" (0.1" with Shift). The text block can be dragged the same
-way (it updates *Text offset X/Y*). Drawings are embedded in the `.prj` file.
+the view (see *Drawing on the blank* below for the handles). The text block can
+be dragged the same way (it updates *Text offset X/Y*). Drawings are embedded in
+the `.prj` file.
 
 Sample files live in the `Samples` solution folder (basic shapes, Bézier
 curves, Inkscape-style groups and `<use>`, stroke line art, a mm plate without
 viewBox, and a path syntax torture test). They are copied next to the exe and
 into the installer, and the Import SVG dialog opens there the first time.
+
+## Drawing on the blank
+
+The toolbar over the view and the **Draw** menu draw shapes and text straight
+onto the blank. Each one becomes a drawing in the Drawings list with its own
+toolpath (V-carve, pocket or profile), just like an imported SVG.
+
+| Tool | Key | How |
+|---|---|---|
+| Select | V, Esc | click to pick, drag to move |
+| Rectangle | R | drag a box; *Corner radius* rounds it |
+| Ellipse | E | drag a box |
+| Polygon | P | drag a box; *Sides* (3 to 64) |
+| Star | S | drag a box; *Points* and *Inner radius (%)* |
+| Free-form area | A | click the corners (three or more); click the first corner, double-click or press Enter to close; Backspace or Delete removes the last corner |
+| Text | T | drag a box as tall as a capital letter (or click), then type |
+
+While dragging out a shape, **Shift** keeps its own proportions (square,
+circle, regular polygon) and **Ctrl** draws from the centre; **Esc** cancels. A
+plain click makes a 1" shape. The keys work when the view has the focus.
+
+**Handles** of the selected drawing: the corner squares scale it evenly about
+the opposite corner, the side squares stretch it one way (shown when *Lock
+aspect ratio* is off; drawn shapes start unlocked), and the round knob above
+the top edge rotates it about its centre in steps of the rotation snap
+(**Shift** turns it freely).
+Arrow keys nudge by 0.01" (0.1" with Shift), **Delete** removes the drawing.
+**Draw** also has Rotate 90 degrees left/right, Mirror, Bring to Front and Send
+to Back.
+
+**Snapping** (toolbar over the view, or **Draw > Snap to Grid / Grid Spacing /
+Rotation Snap**):
+
+- *Snap to grid* (off by default; picking a spacing turns it on): 1", 1/2",
+  1/4", 1/8", 1/16", 1/32", 0.1" or 0.05". A finer grid is drawn at that
+  spacing. Moving a drawing (or the main text) lines up whichever of its box
+  corners or centre is nearest a grid line, separately in X and Y; a side
+  handle puts that side on the grid, a corner handle scales until the corner
+  reaches a grid line; new shapes, text starting points and area corners land
+  on grid points. Hold **Alt** while dragging to place something freely.
+- *Rotation snap* (15 degrees by default; Off, 1, 5, 15, 30, 45 or 90): the knob
+  turns in those steps, and close to the centre it holds still instead of
+  spinning. Hold **Shift** to turn freely.
+
+Both are remembered for the next start (`%AppData%\CarveMaker\Preferences.json`);
+they are not part of the project.
+
+**Text drawings**: after drawing the box an editor opens under the text: type
+(Enter starts a new line), then **Ctrl+Enter** or click elsewhere; **Esc**
+cancels. Double-click a text drawing (or **Draw > Edit Text**) to change it.
+Its size is the *Letter height* (height of a capital letter): dragging a corner
+of the text resizes the lettering and updates the letter height. The **Style**
+menu and the toolbar set the font, **bold**, *italic* and the alignment of the
+lines; with no text selected they set the style for the next text. Text
+drawings are separate from the main text on the Text tab.
+
+**Picking**: clicks are resolved on the GPU from an offscreen ID buffer, so a
+click selects the shape that is actually under the mouse: holes and the empty
+corners of round shapes pick nothing, the topmost of overlapping drawings wins,
+and thin strokes are caught within 4 pixels. Text drawings and the main text are
+picked anywhere in their box. Without a working OpenGL view picking falls back
+to bounding boxes.
+
+A project file also stores each drawn shape's outline as SVG. Older CarveMaker
+versions, which only know imported drawings, carve that outline; and a text
+drawing opened on a PC without its font carves the stored outline too (the
+status bar says so) until its words, font or style are changed. A drawing
+that cannot be carved at all is named in the status bar.
 
 ## Pocket and profile toolpaths
 

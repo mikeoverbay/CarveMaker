@@ -30,6 +30,8 @@ Public Class SvgShapeSet
     Public Property Warnings As New List(Of String)
     ''' <summary>Number of elements that contributed geometry.</summary>
     Public Property ElementCount As Integer
+    ''' <summary>Drawn text only: Y of the top of the first line's layout cell (font metrics, not the ink); NaN otherwise.</summary>
+    Public Property FirstLineY As Double = Double.NaN
 End Class
 
 ''' <summary>2x3 affine matrix (SVG convention: a c e / b d f).</summary>

@@ -34,7 +34,7 @@ Public Class ProjectFile
     Public Property Version As Integer = CurrentVersion
     Public Property Settings As CarveSettings = New CarveSettings()
     Public Property Lines As New List(Of ProjectLine)
-    ''' <summary>Imported drawings placed on the blank (SVG text embedded).</summary>
+    ''' <summary>Drawings placed on the blank: imported SVGs (text embedded) and drawn shapes and text.</summary>
     Public Property Objects As New List(Of DesignObject)
 
     Private Shared ReadOnly Options As JsonSerializerOptions = CreateOptions()
@@ -58,9 +58,24 @@ Public Class ProjectFile
     ''' <summary>
     ''' Older CarveMaker versions read one job-wide V-bit and feeds. Fill those from the first
     ''' V-carve toolpath (text first, then drawings) so such a version carves with the right bit.
+    ''' They also know only imported drawings: drawn shapes and text carry their outline as SVG.
     ''' </summary>
     Private Sub MirrorForOlderVersions()
         If Settings Is Nothing Then Return
+        If Objects IsNot Nothing Then
+            For Each o In Objects.Where(Function(d) d IsNot Nothing AndAlso d.IsDrawn)
+                o.EnsureParsed(Settings.CurveTolerance)
+                If o.Shape IsNot Nothing AndAlso o.Shape.Paths.Count > 0 Then
+                    o.SvgContent = DrawingShapes.ToSvg(o.Shape)
+                    o.OutlineKey = o.SavedOutlineKey()
+                ElseIf o.ParseError Is Nothing OrElse o.OutlineKey <> o.SavedOutlineKey() Then
+                    ' Nothing to carve (empty text), or a saved outline of text that has since changed.
+                    o.SvgContent = ""
+                    o.OutlineKey = ""
+                End If
+                ' Not buildable here (missing font), unchanged: keep the outline the file had.
+            Next
+        End If
         Dim all As New List(Of Machining)
         If Settings.TextMachining IsNot Nothing Then all.Add(Settings.TextMachining)
         If Objects IsNot Nothing Then all.AddRange(Objects.Where(Function(o) o?.Machining IsNot Nothing).Select(Function(o) o.Machining))
@@ -92,6 +107,7 @@ Public Class ProjectFile
         For Each o In pf.Objects
             If o.SvgContent Is Nothing Then o.SvgContent = ""
             If o.Name Is Nothing Then o.Name = "Drawing"
+            o.Repair()
         Next
         For Each l In pf.Lines
             If l.Text Is Nothing Then l.Text = ""

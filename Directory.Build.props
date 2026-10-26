@@ -1,7 +1,7 @@
 <Project>
   <!-- Shared by the app and the installer project: bump the version here. -->
   <PropertyGroup>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <Product>CarveMaker</Product>
     <Company>CarveMaker</Company>
     <Copyright>Copyright © 2026</Copyright>

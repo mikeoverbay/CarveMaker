@@ -11,9 +11,19 @@ history. Read this, then `README.md` for the user-facing description.
   `git push origin master` only when the user asks.
   `Samples\00717 Mandala Floral Pattern` is a git-ignored stock-art test pack.
 - Releases: GitHub Actions (`.github/workflows/release.yml`) builds Release on
-  every push and publishes `CarveMaker-Setup-<ver>.exe` on tags `v*`. To ship:
-  bump `<Version>` in `Directory.Build.props`, commit, `git tag v1.1.0`,
-  `git push --tags`. v1.0.0 is published; v1.1.0 (tool library, pocket/profile, per-toolpath feeds, drawing tools, snapping) is tagged.
+  every push and publishes `CarveMaker-Setup-<ver>.exe` on tags `v*`, with
+  `release-notes.md` as the release text. Releases so far: v1.0.0; v1.1.0 (tool
+  library, pocket/profile, per-toolpath feeds, drawing tools, snapping); v1.2.0
+  (movable toolbars).
+- Shipping a release is the whole job, done in one go (the user asked for that):
+  1. run the harness modes; 2. write `release-notes.md` for the new version;
+  3. bump `<Version>` in `Directory.Build.props` and the fallback `AppVersion` in
+  `Setup/Setup.iss`; 4. `dotnet build CarveMaker.sln -c Release` (installer
+  `CarveMaker-Setup-<ver>.exe` in the root); 5. commit, `git tag -a vX.Y.Z`, push
+  master and the tag; 6. watch the Actions run for the tag and check the release has
+  the installer (public pages: /actions, /releases/expanded_assets/vX.Y.Z); 7. install
+  it here (`CarveMaker-Setup-<ver>.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+  /CURRENTUSER`, per-user, upgrades in place) once CarveMaker is closed.
 
 ## Build and run
 

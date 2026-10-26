@@ -3,7 +3,8 @@
 # Every push to master builds the solution (Release) as a check.
 # Pushing a tag like v1.2.0 additionally publishes a GitHub Release with the
 # installer (CarveMaker-Setup-<version>.exe) attached, so users can install
-# without building. Bump <Version> in Directory.Build.props to match the tag.
+# without building. Bump <Version> in Directory.Build.props to match the tag;
+# the release text comes from release-notes.md (the commit list is added below it).
 
 on:
   push:
@@ -46,4 +47,5 @@ jobs:
         with:
           name: CarveMaker ${{ github.ref_name }}
           files: CarveMaker-Setup-*.exe
+          body_path: release-notes.md
           generate_release_notes: true

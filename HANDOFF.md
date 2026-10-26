@@ -13,7 +13,7 @@ history. Read this, then `README.md` for the user-facing description.
 - Releases: GitHub Actions (`.github/workflows/release.yml`) builds Release on
   every push and publishes `CarveMaker-Setup-<ver>.exe` on tags `v*`. To ship:
   bump `<Version>` in `Directory.Build.props`, commit, `git tag v1.1.0`,
-  `git push --tags`. v1.0.0 is published.
+  `git push --tags`. v1.0.0 is published; v1.1.0 (tool library, pocket/profile, per-toolpath feeds, drawing tools, snapping) is tagged.
 
 ## Build and run
 

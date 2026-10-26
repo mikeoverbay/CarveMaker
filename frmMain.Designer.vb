@@ -81,7 +81,15 @@ Partial Class frmMain
         mnuStyleAlignLeft = New ToolStripMenuItem()
         mnuStyleAlignCenter = New ToolStripMenuItem()
         mnuStyleAlignRight = New ToolStripMenuItem()
-        tsDraw = New ToolStrip()
+        tsDrawTools = New ToolStrip()
+        tsTextStyle = New ToolStrip()
+        tsSnap = New ToolStrip()
+        tspTop = New ToolStripPanel()
+        tspBottom = New ToolStripPanel()
+        tspLeft = New ToolStripPanel()
+        tspRight = New ToolStripPanel()
+        mnuViewSep3 = New ToolStripSeparator()
+        mnuViewToolbars = New ToolStripMenuItem()
         tsbToolSelect = New ToolStripButton()
         tsbToolRectangle = New ToolStripButton()
         tsbToolEllipse = New ToolStripButton()
@@ -89,7 +97,6 @@ Partial Class frmMain
         tsbToolStar = New ToolStripButton()
         tsbToolArea = New ToolStripButton()
         tsbToolText = New ToolStripButton()
-        tssDraw1 = New ToolStripSeparator()
         tslDrawFont = New ToolStripLabel()
         tscDrawFont = New ToolStripComboBox()
         tsbDrawBold = New ToolStripButton()
@@ -102,7 +109,6 @@ Partial Class frmMain
         mnuDrawSnapGrid = New ToolStripMenuItem()
         mnuDrawGridSpacing = New ToolStripMenuItem()
         mnuDrawRotationSnap = New ToolStripMenuItem()
-        tssDraw3 = New ToolStripSeparator()
         tsbSnapGrid = New ToolStripButton()
         tscSnapGrid = New ToolStripComboBox()
         tslSnapRot = New ToolStripLabel()
@@ -163,7 +169,9 @@ Partial Class frmMain
         pnlSim.SuspendLayout()
         CType(tbSim, System.ComponentModel.ISupportInitialize).BeginInit()
         tsSim.SuspendLayout()
-        tsDraw.SuspendLayout()
+        tsDrawTools.SuspendLayout()
+        tsTextStyle.SuspendLayout()
+        tsSnap.SuspendLayout()
         splitMain.SuspendLayout()
         tlpLeft.SuspendLayout()
         pnlEditor.SuspendLayout()
@@ -272,7 +280,7 @@ Partial Class frmMain
         '
         ' mnuView
         '
-        mnuView.DropDownItems.AddRange(New ToolStripItem() {mnuViewTop, mnuViewIso, mnuViewFit, mnuViewSep1, mnuViewRapids, mnuViewOutline, mnuViewGrid, mnuViewSep2, mnuViewSim})
+        mnuView.DropDownItems.AddRange(New ToolStripItem() {mnuViewTop, mnuViewIso, mnuViewFit, mnuViewSep1, mnuViewRapids, mnuViewOutline, mnuViewGrid, mnuViewSep2, mnuViewSim, mnuViewSep3, mnuViewToolbars})
         mnuView.Name = "mnuView"
         mnuView.Size = New Size(44, 20)
         mnuView.Text = "&View"
@@ -560,16 +568,74 @@ Partial Class frmMain
         mnuStyleAlignRight.Size = New Size(220, 22)
         mnuStyleAlignRight.Text = "Align &Right"
         '
-        ' tsDraw
+        ' tsDrawTools
         '
-        tsDraw.BackColor = SystemColors.Control
-        tsDraw.GripStyle = ToolStripGripStyle.Hidden
-        tsDraw.Items.AddRange(New ToolStripItem() {tsbToolSelect, tsbToolRectangle, tsbToolEllipse, tsbToolPolygon, tsbToolStar, tsbToolArea, tsbToolText, tssDraw1, tslDrawFont, tscDrawFont, tsbDrawBold, tsbDrawItalic, tssDraw2, tsbDrawAlignLeft, tsbDrawAlignCenter, tsbDrawAlignRight, tssDraw3, tsbSnapGrid, tscSnapGrid, tslSnapRot, tscSnapRot})
-        tsDraw.Location = New Point(0, 0)
-        tsDraw.Name = "tsDraw"
-        tsDraw.RenderMode = ToolStripRenderMode.System
-        tsDraw.Size = New Size(774, 25)
-        tsDraw.TabIndex = 2
+        tsDrawTools.BackColor = SystemColors.Control
+        tsDrawTools.Dock = DockStyle.None
+        tsDrawTools.Items.AddRange(New ToolStripItem() {tsbToolSelect, tsbToolRectangle, tsbToolEllipse, tsbToolPolygon, tsbToolStar, tsbToolArea, tsbToolText})
+        tsDrawTools.Name = "tsDrawTools"
+        tsDrawTools.RenderMode = ToolStripRenderMode.System
+        tsDrawTools.TabIndex = 2
+        tsDrawTools.Text = "Draw Tools"
+        '
+        ' tsTextStyle
+        '
+        tsTextStyle.BackColor = SystemColors.Control
+        tsTextStyle.Dock = DockStyle.None
+        tsTextStyle.Items.AddRange(New ToolStripItem() {tslDrawFont, tscDrawFont, tsbDrawBold, tsbDrawItalic, tssDraw2, tsbDrawAlignLeft, tsbDrawAlignCenter, tsbDrawAlignRight})
+        tsTextStyle.Name = "tsTextStyle"
+        tsTextStyle.RenderMode = ToolStripRenderMode.System
+        tsTextStyle.TabIndex = 3
+        tsTextStyle.Text = "Text Style"
+        '
+        ' tsSnap
+        '
+        tsSnap.BackColor = SystemColors.Control
+        tsSnap.Dock = DockStyle.None
+        tsSnap.Items.AddRange(New ToolStripItem() {tsbSnapGrid, tscSnapGrid, tslSnapRot, tscSnapRot})
+        tsSnap.Name = "tsSnap"
+        tsSnap.RenderMode = ToolStripRenderMode.System
+        tsSnap.TabIndex = 4
+        tsSnap.Text = "Snap"
+        '
+        ' tspTop
+        '
+        tspTop.BackColor = SystemColors.Control
+        tspTop.Dock = DockStyle.Top
+        tspTop.Name = "tspTop"
+        tspTop.RowMargin = New Padding(3, 0, 0, 0)
+        '
+        ' tspBottom
+        '
+        tspBottom.BackColor = SystemColors.Control
+        tspBottom.Dock = DockStyle.Bottom
+        tspBottom.Name = "tspBottom"
+        tspBottom.RowMargin = New Padding(3, 0, 0, 0)
+        '
+        ' tspLeft
+        '
+        tspLeft.BackColor = SystemColors.Control
+        tspLeft.Dock = DockStyle.Left
+        tspLeft.Name = "tspLeft"
+        tspLeft.RowMargin = New Padding(3, 0, 0, 0)
+        '
+        ' tspRight
+        '
+        tspRight.BackColor = SystemColors.Control
+        tspRight.Dock = DockStyle.Right
+        tspRight.Name = "tspRight"
+        tspRight.RowMargin = New Padding(3, 0, 0, 0)
+        '
+        ' mnuViewSep3
+        '
+        mnuViewSep3.Name = "mnuViewSep3"
+        mnuViewSep3.Size = New Size(197, 6)
+        '
+        ' mnuViewToolbars
+        '
+        mnuViewToolbars.Name = "mnuViewToolbars"
+        mnuViewToolbars.Size = New Size(200, 22)
+        mnuViewToolbars.Text = "Tool&bars"
         '
         ' tsbToolSelect
         '
@@ -619,11 +685,6 @@ Partial Class frmMain
         tsbToolText.Name = "tsbToolText"
         tsbToolText.Size = New Size(23, 22)
         tsbToolText.ToolTipText = "Draw text (T): drag a box as tall as a capital letter, then type"
-        '
-        ' tssDraw1
-        '
-        tssDraw1.Name = "tssDraw1"
-        tssDraw1.Size = New Size(6, 25)
         '
         ' tslDrawFont
         '
@@ -708,11 +769,6 @@ Partial Class frmMain
         mnuDrawRotationSnap.Name = "mnuDrawRotationSnap"
         mnuDrawRotationSnap.Size = New Size(220, 22)
         mnuDrawRotationSnap.Text = "R&otation Snap"
-        '
-        ' tssDraw3
-        '
-        tssDraw3.Name = "tssDraw3"
-        tssDraw3.Size = New Size(6, 25)
         '
         ' tsbSnapGrid
         '
@@ -1031,8 +1087,11 @@ Partial Class frmMain
         ' pnlView
         '
         pnlView.BackColor = Color.FromArgb(CType(CType(30, Byte), Integer), CType(CType(30, Byte), Integer), CType(CType(34, Byte), Integer))
+        pnlView.Controls.Add(tspRight)
+        pnlView.Controls.Add(tspLeft)
+        pnlView.Controls.Add(tspBottom)
+        pnlView.Controls.Add(tspTop)
         pnlView.Controls.Add(pnlSim)
-        pnlView.Controls.Add(tsDraw)
         pnlView.Dock = DockStyle.Fill
         pnlView.Location = New Point(0, 0)
         pnlView.Name = "pnlView"
@@ -1185,8 +1244,12 @@ Partial Class frmMain
         CType(tbSim, System.ComponentModel.ISupportInitialize).EndInit()
         tsSim.ResumeLayout(False)
         tsSim.PerformLayout()
-        tsDraw.ResumeLayout(False)
-        tsDraw.PerformLayout()
+        tsDrawTools.ResumeLayout(False)
+        tsDrawTools.PerformLayout()
+        tsTextStyle.ResumeLayout(False)
+        tsTextStyle.PerformLayout()
+        tsSnap.ResumeLayout(False)
+        tsSnap.PerformLayout()
         splitMain.Panel2.ResumeLayout(False)
         CType(splitMain, System.ComponentModel.ISupportInitialize).EndInit()
         splitMain.ResumeLayout(False)
@@ -1291,7 +1354,6 @@ Partial Class frmMain
     Friend WithEvents mnuDrawSnapGrid As ToolStripMenuItem
     Friend WithEvents mnuDrawGridSpacing As ToolStripMenuItem
     Friend WithEvents mnuDrawRotationSnap As ToolStripMenuItem
-    Friend WithEvents tssDraw3 As ToolStripSeparator
     Friend WithEvents tsbSnapGrid As ToolStripButton
     Friend WithEvents tscSnapGrid As ToolStripComboBox
     Friend WithEvents tslSnapRot As ToolStripLabel
@@ -1323,7 +1385,15 @@ Partial Class frmMain
     Friend WithEvents mnuStyleAlignLeft As ToolStripMenuItem
     Friend WithEvents mnuStyleAlignCenter As ToolStripMenuItem
     Friend WithEvents mnuStyleAlignRight As ToolStripMenuItem
-    Friend WithEvents tsDraw As ToolStrip
+    Friend WithEvents tsDrawTools As ToolStrip
+    Friend WithEvents tsTextStyle As ToolStrip
+    Friend WithEvents tsSnap As ToolStrip
+    Friend WithEvents tspTop As ToolStripPanel
+    Friend WithEvents tspBottom As ToolStripPanel
+    Friend WithEvents tspLeft As ToolStripPanel
+    Friend WithEvents tspRight As ToolStripPanel
+    Friend WithEvents mnuViewSep3 As ToolStripSeparator
+    Friend WithEvents mnuViewToolbars As ToolStripMenuItem
     Friend WithEvents tsbToolSelect As ToolStripButton
     Friend WithEvents tsbToolRectangle As ToolStripButton
     Friend WithEvents tsbToolEllipse As ToolStripButton
@@ -1331,7 +1401,6 @@ Partial Class frmMain
     Friend WithEvents tsbToolStar As ToolStripButton
     Friend WithEvents tsbToolArea As ToolStripButton
     Friend WithEvents tsbToolText As ToolStripButton
-    Friend WithEvents tssDraw1 As ToolStripSeparator
     Friend WithEvents tslDrawFont As ToolStripLabel
     Friend WithEvents tscDrawFont As ToolStripComboBox
     Friend WithEvents tsbDrawBold As ToolStripButton

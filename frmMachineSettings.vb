@@ -48,7 +48,8 @@ Public Class frmMachineSettings
         Return True
     End Function
 
-    Private Shared Function FindShortcut(items As ToolStripItemCollection, keyData As Keys) As ToolStripMenuItem
+    ''' <summary>The enabled menu item with this shortcut, searched through all submenus.</summary>
+    Friend Shared Function FindShortcut(items As ToolStripItemCollection, keyData As Keys) As ToolStripMenuItem
         If items Is Nothing Then Return Nothing
         For Each it In items.OfType(Of ToolStripMenuItem)()
             If it.Enabled AndAlso it.ShortcutKeys = keyData AndAlso keyData <> Keys.None Then Return it

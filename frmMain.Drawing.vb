@@ -104,6 +104,7 @@ Partial Class frmMain
             mnuDrawRotationSnap.DropDownItems.Add(mi)
         Next
         ApplySnapPreferences()
+        SetupToolbars()
         UpdateDrawUi()
     End Sub
 

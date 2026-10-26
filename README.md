@@ -6,7 +6,7 @@ installed font into a **V-carve toolpath** for a V-bit (default 1/4" diameter,
 
 ```
 +------------------------------+----------------------------------------+
-| [Text] [Drawings]            | draw tools | font B I | align           |
+| [Text] [Drawings]            | [draw tools] [font B I align] [snap]   |
 |                              |                     +----------------+ |
 | Size: Large Medium Small     |   OpenGL toolpath   |Machine Settings| |
 | Align: Left Center Right     |   view (pan: left   | (Ctrl+K, tool  | |
@@ -121,7 +121,7 @@ into the installer, and the Import SVG dialog opens there the first time.
 
 ## Drawing on the blank
 
-The toolbar over the view and the **Draw** menu draw shapes and text straight
+The toolbars over the view and the **Draw** menu draw shapes and text straight
 onto the blank. Each one becomes a drawing in the Drawings list with its own
 toolpath (V-carve, pocket or profile), just like an imported SVG.
 
@@ -148,7 +148,15 @@ Arrow keys nudge by 0.01" (0.1" with Shift), **Delete** removes the drawing.
 **Draw** also has Rotate 90 degrees left/right, Mirror, Bring to Front and Send
 to Back.
 
-**Snapping** (toolbar over the view, or **Draw > Snap to Grid / Grid Spacing /
+**Toolbars**: *Draw Tools*, *Text Style* and *Snap* start side by side over the
+view. Drag one by its grip to any edge of the view (top, bottom, left or right,
+in rows), or off the view to float it in its own small window (double-click
+that window's title to dock it again). Right-click a toolbar to dock it on an
+edge, float it or hide it; **View > Toolbars** shows hidden ones again and
+*Reset Toolbars* puts them all back along the top. The arrangement is
+remembered for the next start.
+
+**Snapping** (Snap toolbar, or **Draw > Snap to Grid / Grid Spacing /
 Rotation Snap**):
 
 - *Snap to grid* (off by default; picking a spacing turns it on): 1", 1/2",

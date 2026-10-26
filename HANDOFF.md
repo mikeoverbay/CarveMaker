@@ -50,6 +50,7 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
 | `frmMachineSettings.vb` / `.Designer.vb` | Machine Settings tool window (Machine > Machine Settings, Ctrl+K), owned by the main form, hides on close |
 | `frmMain.vb` / `.Designer.vb` | UI: Text tab (editor + `pgText` text settings), Drawings tab, binds the Machine Settings window, menus, simulation bar, regenerate pipeline (`RequestRegenerate` -> 400 ms timer -> `GenerateAsync` on a worker) |
 | `Preferences.vb` | `UserPreferences`: per-user snap settings (JSON in %AppData%\CarveMaker), offered spacings and rotation steps |
+| `frmMain.Toolbars.vb` | Partial frmMain: the three movable toolbars over the view (`tsDrawTools`, `tsTextStyle`, `tsSnap`) in four `ToolStripPanel`s around the GL view or in a `ToolbarWindow` (floating), right-click menu, View > Toolbars, layout saved per toolbar as panel + row + order (floating: screen position) in `UserPreferences.Toolbars` |
 | `frmMain.Drawing.vb` | Partial frmMain: Draw and Style menus, snap controls, draw toolbar (`tsDraw` over the view, icons drawn in code), drawings from `ShapeDrawn`, the in-place text editor (`BeginTextEdit` / `EndTextEdit`), text style, arrange commands, `RemoveDrawingAt` |
 | `Setup\` | Installer project and `Setup.iss` |
 | `Samples\` | Six sample SVGs shipped next to the exe |
@@ -134,6 +135,10 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
    dead zone around the centre. Alt suspends grid snapping; the view swallows the Alt
    release (`WndProc`, WM_SYSKEYUP) after a drag so the main menu does not open.
    `BuildGridLayer` draws the minor grid while snapping is on.
+11. **Movable toolbars.** The draw toolbar became Draw Tools, Text Style and Snap
+   (frmMain.Toolbars.vb): docked in `tspTop/Bottom/Left/Right` around the GL view (grip
+   drag between edges), floating in `ToolbarWindow` (drag off the view or right-click >
+   Float; closing hides, title double-click docks), View > Toolbars to show/hide/reset.
 
 ## Test harness (not in the repo)
 
@@ -183,6 +188,10 @@ The torture expectations (`svg-torture-transforms-expect.js`,
 - VB precedence: `\` (integer division) binds looser than `*`, so
   `(n + 3) \ 4 * 4` is `(n + 3) \ 16`. VB is case-insensitive: a local `f`
   hides a function `F`.
+- The harness sets `UserPreferences.FilePath` to a temp file in `Program.Main`: GUI
+  modes would otherwise read and overwrite the user's snap settings and toolbar layout.
+- Toolbar layout is saved as row + order, not pixels: restoring pixel positions during
+  Load (before the toolbars have their final widths) scrambled the order.
 - Harness mouse drags are window messages; the real mouse moving over the window
   sends its own moves, so the view takes drag results from the button-up point.
   Keep GUI test forms `TopMost` so SendKeys shortcuts reach them. Clicking or

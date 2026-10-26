@@ -1,9 +1,9 @@
 ' ============================================================================
 '  Preferences.vb
 '  Per-user settings that belong to the person, not to a project: snapping
-'  to the grid and the rotation snap step. Stored as JSON next to the tool
-'  library in %AppData%\CarveMaker\Preferences.json; a missing or unreadable
-'  file just gives the defaults.
+'  to the grid, the rotation snap step and where the toolbars are. Stored as
+'  JSON next to the tool library in %AppData%\CarveMaker\Preferences.json; a
+'  missing or unreadable file just gives the defaults.
 ' ============================================================================
 
 Imports System.IO
@@ -25,6 +25,9 @@ Public Class UserPreferences
     ''' <summary>Rotation with the knob snaps to multiples of this (degrees; 0 = free).</summary>
     Public Property RotationSnapDeg As Double = 15
 
+    ''' <summary>Where each toolbar over the view is (empty: all along the top).</summary>
+    Public Property Toolbars As New List(Of ToolbarPlacement)
+
     ''' <summary>Where the preferences live (tests point it elsewhere).</summary>
     Public Shared Property FilePath As String =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CarveMaker", "Preferences.json")
@@ -40,6 +43,8 @@ Public Class UserPreferences
             ' Unreadable: start from the defaults.
         End Try
         If p Is Nothing Then p = New UserPreferences()
+        If p.Toolbars Is Nothing Then p.Toolbars = New List(Of ToolbarPlacement)
+        p.Toolbars.RemoveAll(Function(t) t Is Nothing OrElse String.IsNullOrEmpty(t.Name))
         If Not GridSpacings.Contains(p.GridSpacing) Then p.GridSpacing = 0.125
         If Not RotationSteps.Contains(p.RotationSnapDeg) Then p.RotationSnapDeg = 15
         Return p
@@ -73,4 +78,20 @@ Public Class UserPreferences
     Public Shared Function StepText(degrees As Double) As String
         Return If(degrees <= 0, "Off", degrees.ToString("0", Globalization.CultureInfo.InvariantCulture) & "°")
     End Function
+End Class
+
+''' <summary>Where one toolbar is: docked on an edge of the view, or floating.</summary>
+Public Class ToolbarPlacement
+    ''' <summary>The toolbar's control name.</summary>
+    Public Property Name As String = ""
+    ''' <summary>Top, Bottom, Left, Right or Float.</summary>
+    Public Property Place As String = "Top"
+    ''' <summary>Docked: which row of its edge panel, and its place in that row (counted from the left or top).</summary>
+    Public Property Row As Integer
+    Public Property Order As Integer
+    ''' <summary>Floating: the window's screen position, and the edge it goes back to (title double-click).</summary>
+    Public Property X As Integer
+    Public Property Y As Integer
+    Public Property LastDock As String = "Top"
+    Public Property Visible As Boolean = True
 End Class

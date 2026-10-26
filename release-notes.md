@@ -1,20 +1,16 @@
-## CarveMaker 1.2.0
+## CarveMaker 1.3.0
 
-**Movable toolbars.** The toolbar over the view is now three toolbars: *Draw Tools*, *Text Style* and *Snap*.
+**User guide.** *Help > User Guide* (F1) opens an illustrated guide to the whole app: getting started, text, drawing, toolbars, toolpaths, the tool library, machine settings, the simulation, and every keyboard and mouse shortcut. It is installed with the program and also in the Start menu (*CarveMaker User Guide*). *Help* also has *Newer Versions* and *About*.
 
-- Drag a toolbar by its grip to any edge of the view (top, bottom, left or right, in rows).
-- Drag it off the view to float it in its own small window; double-click that window's title to dock it again.
-- Right-click a toolbar to dock it on an edge, float it or hide it. **View > Toolbars** shows hidden toolbars again; *Reset Toolbars* puts them all back along the top.
-- The arrangement is remembered for the next start.
-- Floating toolbars work on the first click and leave the keyboard with the view or the text being typed.
+**Picking what you mean where drawings overlap.**
 
-### Still new since 1.0
+- The selected drawing keeps the click wherever it is under the mouse, so it can be moved, scaled or rotated even where other drawings lie over it.
+- A click picks the smallest drawing under the mouse: text inside a frame picks the text, not the frame.
+- **Ctrl+click** steps to the next drawing under the mouse, to reach one that lies behind or around another.
 
-- **Tool library** (Toolpath > Tool Library, Ctrl+L): standard inch V-bits, end mills, ball and bull nose, tapered ball nose and drills, each with its own spindle speed, feed and plunge rate.
-- **Pocket and profile toolpaths** next to V-carving; the text and every drawing have their own operation, tool, speed and feeds. G-code is written as one program per tool.
-- **Drawing on the blank** (Draw menu): rectangles, ellipses, polygons, stars, free-form areas and text areas; drag a corner of text to size the letters. The Style menu sets font, bold, italic and alignment.
-- **Handles** to move, scale, stretch and rotate drawings; clicks select exactly the shape under the mouse.
-- **Snapping**: grid snap (1" to 1/32") and rotation steps (15 degrees by default). Hold Alt or Shift to place freely.
-- **Machine Settings** in their own window (Ctrl+K).
+### Earlier in 1.x
 
-Install with `CarveMaker-Setup-1.2.0.exe` below. It upgrades an existing installation; projects, the tool library and preferences are kept.
+- **1.2**: movable toolbars (Draw Tools, Text Style, Snap): dock on any edge, float, hide; View > Toolbars.
+- **1.1**: tool library with speeds and feeds; pocket and profile toolpaths; drawing shapes, areas and text on the blank; handles to move, scale and rotate; grid and rotation snapping; Machine Settings window.
+
+Install with `CarveMaker-Setup-1.3.0.exe` below. It upgrades an existing installation; projects, the tool library and preferences are kept.

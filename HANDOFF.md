@@ -14,7 +14,7 @@ history. Read this, then `README.md` for the user-facing description.
   every push and publishes `CarveMaker-Setup-<ver>.exe` on tags `v*`, with
   `release-notes.md` as the release text. Releases so far: v1.0.0; v1.1.0 (tool
   library, pocket/profile, per-toolpath feeds, drawing tools, snapping); v1.2.0
-  (movable toolbars).
+  (movable toolbars); v1.3.0 (user guide with Help menu, click priority / Ctrl+click).
 - Shipping a release is the whole job, done in one go (the user asked for that):
   1. run the harness modes; 2. write `release-notes.md` for the new version;
   3. bump `<Version>` in `Directory.Build.props` and the fallback `AppVersion` in
@@ -60,6 +60,8 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
 | `frmMachineSettings.vb` / `.Designer.vb` | Machine Settings tool window (Machine > Machine Settings, Ctrl+K), owned by the main form, hides on close |
 | `frmMain.vb` / `.Designer.vb` | UI: Text tab (editor + `pgText` text settings), Drawings tab, binds the Machine Settings window, menus, simulation bar, regenerate pipeline (`RequestRegenerate` -> 400 ms timer -> `GenerateAsync` on a worker) |
 | `Preferences.vb` | `UserPreferences`: per-user snap settings (JSON in %AppData%\CarveMaker), offered spacings and rotation steps |
+| `frmMain.Help.vb` | Partial frmMain: Help menu (User Guide F1 opens `Help\CarveMaker Help.html` next to the exe, falling back to the README online; Newer Versions; About) |
+| `Help\` | The user guide (HTML, self-contained CSS, light/dark) and its screenshots in `Help\images` (made by the harness `helpshots` mode); copied next to the exe and into the installer, with a Start-menu shortcut |
 | `frmMain.Toolbars.vb` | Partial frmMain: the three movable toolbars over the view (`tsDrawTools`, `tsTextStyle`, `tsSnap`) in four `ToolStripPanel`s around the GL view or in a `ToolbarWindow` (floating), right-click menu, View > Toolbars, layout saved per toolbar as panel + row + order (floating: screen position) in `UserPreferences.Toolbars` |
 | `frmMain.Drawing.vb` | Partial frmMain: Draw and Style menus, snap controls, draw toolbar (`tsDraw` over the view, icons drawn in code), drawings from `ShapeDrawn`, the in-place text editor (`BeginTextEdit` / `EndTextEdit`), text style, arrange commands, `RemoveDrawingAt` |
 | `Setup\` | Installer project and `Setup.iss` |
@@ -149,6 +151,11 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
    (frmMain.Toolbars.vb): docked in `tspTop/Bottom/Left/Right` around the GL view (grip
    drag between edges), floating in `ToolbarWindow` (drag off the view or right-click >
    Float; closing hides, title double-click docks), View > Toolbars to show/hide/reset.
+12. **Picking rules and the user guide.** `PickAt` collects every object near the
+   cursor (one GPU pass per nearby object, `PickAllAt`) and picks: under the cursor,
+   then the smallest box, then the nearest, then the topmost. Clicks use
+   `PickToSelect`: the selected object keeps the click wherever it is hit, Ctrl+click
+   cycles. Hover keeps the one-pass topmost pick. Help menu + `Help\` guide (F1).
 
 ## Test harness (not in the repo)
 
@@ -170,6 +177,7 @@ torture SVG folders and their expectation scripts). Build with
 | `simres` | Changes Precision and Display mesh through the real PropertyGrid path, reads heightmap/mesh sizes, pixel-diffs screenshots, times frames |
 | `layout` | Settings layout: text grid inside the Text tab and hidden on the Drawings tab, Machine Settings categories, every setting in exactly one grid, edits from either grid regenerate and mark the project changed, window hides/reopens, project load rebinds both grids, screenshots |
 | `mill` | Pocket and profile: wall gouge and floor coverage, island clearance, 90% stepover clean-up, profile offsets and direction, through cut + tabs, refused tools, job order and tool groups, per-tool G-code, project round trip, and the form + multi-tool simulation on screen. `mill nogui` skips the screen part |
+| `helpshots <folder>` | Retakes the user-guide screenshots (main window, handles, simulation, tool library) into a folder, normally `C:\Text_to_CNC_path\Help\images` |
 | `draw` | Drawing: outlines of every kind (areas, tolerance, aspect), text sizing and alignment, grid rows per kind, SVG export and project round trip, carving; on screen: draw tools by mouse messages, GPU picking (holes, overlaps, edge slack), side/corner/rotation handles, text tool + typing + corner sizing, style toolbar and menu, double-click edit + Esc, area tool, Esc and Delete. `draw nogui` skips the screen part |
 | `tools` | Tool library: profiles and meshes of all standard tools, inch parsing, validation, settings/project migration, library file, the dialog (edits, type switch, save, pick mode) and the simulation tool, with screenshots. `tools nogui` skips the screen part |
 

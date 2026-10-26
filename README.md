@@ -18,6 +18,12 @@ installed font into a **V-carve toolpath** for a V-bit (default 1/4" diameter,
 +------------------------------+----------------------------------------+
 ```
 
+## User guide
+
+**Help > User Guide** (F1) opens the guide (`Help/CarveMaker Help.html`, also in
+the Start menu): getting started, text, drawing, toolbars, toolpaths, the tool
+library, machine settings, the simulation, and every shortcut.
+
 ## Download
 
 Ready-made installers are on the
@@ -184,8 +190,11 @@ drawings are separate from the main text on the Text tab.
 
 **Picking**: clicks are resolved on the GPU from an offscreen ID buffer, so a
 click selects the shape that is actually under the mouse: holes and the empty
-corners of round shapes pick nothing, the topmost of overlapping drawings wins,
-and thin strokes are caught within 4 pixels. Text drawings and the main text are
+corners of round shapes pick nothing, and thin strokes are caught within 4
+pixels. Where drawings overlap, the smallest one under the mouse wins (text
+inside a frame picks the text). The selected drawing keeps the click wherever
+it is under the mouse, so it can be moved, scaled or rotated where others
+overlap it; **Ctrl+click** steps to the next drawing under the mouse. Text drawings and the main text are
 picked anywhere in their box. Without a working OpenGL view picking falls back
 to bounding boxes.
 

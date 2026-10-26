@@ -113,6 +113,11 @@ Partial Class frmMain
         tscSnapGrid = New ToolStripComboBox()
         tslSnapRot = New ToolStripLabel()
         tscSnapRot = New ToolStripComboBox()
+        mnuHelp = New ToolStripMenuItem()
+        mnuHelpGuide = New ToolStripMenuItem()
+        mnuHelpReleases = New ToolStripMenuItem()
+        mnuHelpSep1 = New ToolStripSeparator()
+        mnuHelpAbout = New ToolStripMenuItem()
         stsMain = New StatusStrip()
         lblStatus = New ToolStripStatusLabel()
         lblStats = New ToolStripStatusLabel()
@@ -188,7 +193,7 @@ Partial Class frmMain
         '
         ' mnuMain
         '
-        mnuMain.Items.AddRange(New ToolStripItem() {mnuFile, mnuFont, mnuDraw, mnuStyle, mnuView, mnuToolpath, mnuMachine})
+        mnuMain.Items.AddRange(New ToolStripItem() {mnuFile, mnuFont, mnuDraw, mnuStyle, mnuView, mnuToolpath, mnuMachine, mnuHelp})
         mnuMain.Location = New Point(0, 0)
         mnuMain.Name = "mnuMain"
         mnuMain.Size = New Size(1200, 24)
@@ -798,6 +803,37 @@ Partial Class frmMain
         tscSnapRot.Size = New Size(56, 25)
         tscSnapRot.ToolTipText = "Rotation snap: the round knob turns in steps of this angle (hold Shift to turn freely)"
         '
+        ' mnuHelp
+        '
+        mnuHelp.DropDownItems.AddRange(New ToolStripItem() {mnuHelpGuide, mnuHelpReleases, mnuHelpSep1, mnuHelpAbout})
+        mnuHelp.Name = "mnuHelp"
+        mnuHelp.Size = New Size(44, 20)
+        mnuHelp.Text = "&Help"
+        '
+        ' mnuHelpGuide
+        '
+        mnuHelpGuide.Name = "mnuHelpGuide"
+        mnuHelpGuide.ShortcutKeys = Keys.F1
+        mnuHelpGuide.Size = New Size(220, 22)
+        mnuHelpGuide.Text = "&User Guide"
+        '
+        ' mnuHelpReleases
+        '
+        mnuHelpReleases.Name = "mnuHelpReleases"
+        mnuHelpReleases.Size = New Size(220, 22)
+        mnuHelpReleases.Text = "&Newer Versions (Web)"
+        '
+        ' mnuHelpSep1
+        '
+        mnuHelpSep1.Name = "mnuHelpSep1"
+        mnuHelpSep1.Size = New Size(217, 6)
+        '
+        ' mnuHelpAbout
+        '
+        mnuHelpAbout.Name = "mnuHelpAbout"
+        mnuHelpAbout.Size = New Size(220, 22)
+        mnuHelpAbout.Text = "&About CarveMaker"
+        '
         ' stsMain
         '
         stsMain.Items.AddRange(New ToolStripItem() {lblStatus, lblStats})
@@ -1350,6 +1386,11 @@ Partial Class frmMain
     Friend WithEvents dlgOpenProject As OpenFileDialog
     Friend WithEvents dlgSaveProject As SaveFileDialog
     Friend WithEvents dlgSvg As OpenFileDialog
+    Friend WithEvents mnuHelp As ToolStripMenuItem
+    Friend WithEvents mnuHelpGuide As ToolStripMenuItem
+    Friend WithEvents mnuHelpReleases As ToolStripMenuItem
+    Friend WithEvents mnuHelpSep1 As ToolStripSeparator
+    Friend WithEvents mnuHelpAbout As ToolStripMenuItem
     Friend WithEvents mnuDrawSep4 As ToolStripSeparator
     Friend WithEvents mnuDrawSnapGrid As ToolStripMenuItem
     Friend WithEvents mnuDrawGridSpacing As ToolStripMenuItem

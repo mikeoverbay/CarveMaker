@@ -29,6 +29,10 @@
     <None Update="Samples\**\*.svg">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <!-- The user guide (Help > User Guide, F1) ships next to the exe too. -->
+    <None Update="Help\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>

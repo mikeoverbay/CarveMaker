@@ -243,14 +243,64 @@ Public Class ToolpathView
 
     ''' <summary>
     ''' What is under a screen point: a drawing's index, TextSelection, or -1. Uses the
-    ''' back-buffer pick (exact outlines, holes and overlaps as drawn); falls back to
+    ''' back-buffer pick (exact outlines and holes; thin strokes within a few pixels).
+    ''' Where several objects are under the point the smallest one wins: the view shows
+    ''' outlines only, so a text inside a frame is the text, not the frame. Falls back to
     ''' bounding boxes when OpenGL is unavailable.
     ''' </summary>
     Public Function PickAt(p As Point) As Integer
-        Dim id As Integer
-        If TryGpuPick(p, id) Then Return id
+        Return ChooseHit(PickAllAt(p), preferSelected:=False, cycle:=False)
+    End Function
+
+    ''' <summary>
+    ''' The object a click selects: the selected object keeps the click wherever it is under
+    ''' the mouse (so it can be moved, scaled or rotated where others overlap it); otherwise
+    ''' as PickAt. cycle (Ctrl+click) steps to the next object under the mouse, so one that
+    ''' lies behind or around another can be reached.
+    ''' </summary>
+    Private Function PickToSelect(p As Point, cycle As Boolean) As Integer
+        Return ChooseHit(PickAllAt(p), preferSelected:=True, cycle:=cycle)
+    End Function
+
+    ''' <summary>One object under the cursor.</summary>
+    Private Structure PickHit
+        Public Id As Integer          ' drawing index or TextSelection
+        Public Distance As Integer    ' squared pixels from the cursor to its nearest pixel (0 = right under it)
+        Public Area As Double         ' its box area: smaller = more specific
+        Public Order As Integer       ' drawing order (later = on top), for ties
+    End Structure
+
+    ''' <summary>Under the cursor first, then the smallest, then the nearest, then the topmost.</summary>
+    Private Function ChooseHit(hits As List(Of PickHit), preferSelected As Boolean, cycle As Boolean) As Integer
+        If hits.Count = 0 Then Return -1
+        Dim ordered = hits.OrderBy(Function(h) If(h.Distance = 0, 0, 1)).ThenBy(Function(h) h.Area).
+                           ThenBy(Function(h) h.Distance).ThenByDescending(Function(h) h.Order).ToList()
+        Dim at = ordered.FindIndex(Function(h) h.Id = _selected)
+        If cycle Then Return ordered(If(at < 0, 0, (at + 1) Mod ordered.Count)).Id
+        ' The selection keeps the click when it is under the cursor, or when nothing is; not when it
+        ' is merely a few pixels away from an object the press is right on.
+        If preferSelected AndAlso at >= 0 AndAlso (ordered(at).Distance = 0 OrElse ordered(0).Distance > 0) Then Return _selected
+        Return ordered(0).Id
+    End Function
+
+    ''' <summary>Every object under (or within a few pixels of) a screen point.</summary>
+    Private Function PickAllAt(p As Point) As List(Of PickHit)
+        Dim hits As List(Of PickHit) = Nothing
+        If TryGpuPickAll(p, hits) Then Return hits
+        ' Without the GPU: bounding boxes.
+        hits = New List(Of PickHit)
         Dim w = ScreenToWorld(p)
-        Return CpuHitTest(w.X, w.Y)
+        For i = 0 To _objects.Count - 1
+            Dim o = _objects(i)
+            If o.Visible AndAlso o.HitTest(w.X, w.Y) Then hits.Add(New PickHit With {.Id = i, .Area = o.Width * o.Height, .Order = i + 1})
+        Next
+        If HasText() Then
+            Dim tp = _toolpath
+            If w.X >= tp.TextMinX AndAlso w.X <= tp.TextMaxX AndAlso w.Y >= tp.TextMinY AndAlso w.Y <= tp.TextMaxY Then
+                hits.Add(New PickHit With {.Id = TextSelection, .Area = (tp.TextMaxX - tp.TextMinX) * (tp.TextMaxY - tp.TextMinY), .Order = 0})
+            End If
+        End If
+        Return hits
     End Function
 
     ''' <summary>"GPU" while the back-buffer pick works, otherwise why it does not.</summary>
@@ -770,6 +820,8 @@ Public Class ToolpathView
         Public Id As Integer                   ' selection value: drawing index or TextSelection
         Public Fans As New List(Of PickRange)  ' outline contours (none = solid box)
         Public Cover As PickRange              ' quad over the whole item
+        Public MinX, MinY, MaxX, MaxY As Double ' world bounds (cover)
+        Public Area As Double                  ' box area, for "the smallest wins"
     End Class
 
     Private _pickProgram As Integer
@@ -785,8 +837,28 @@ Public Class ToolpathView
     Private _pickError As String
     Private ReadOnly _pickItems As New List(Of PickItem)
 
+    ''' <summary>The topmost object under the cursor in one pass (the hover cursor needs no more).</summary>
     Private Function TryGpuPick(p As Point, ByRef result As Integer) As Boolean
         result = -1
+        Dim hits As List(Of PickHit) = Nothing
+        If Not GpuPick(p, perObject:=False, hits) Then Return False
+        If hits.Count > 0 Then result = hits(0).Id
+        Return True
+    End Function
+
+    ''' <summary>Every object under the cursor: one small pass per object near it.</summary>
+    Private Function TryGpuPickAll(p As Point, ByRef hits As List(Of PickHit)) As Boolean
+        Return GpuPick(p, perObject:=True, hits)
+    End Function
+
+    ''' <summary>
+    ''' Renders pick colours around the cursor and reads them back. perObject = False: all
+    ''' objects in one pass, the painted pixel nearest the cursor names the topmost one.
+    ''' perObject = True: each object near the cursor alone, so objects under others are
+    ''' found too, each with its own distance to the cursor.
+    ''' </summary>
+    Private Function GpuPick(p As Point, perObject As Boolean, ByRef hits As List(Of PickHit)) As Boolean
+        hits = New List(Of PickHit)
         If _pickFailed OrElse _contextFailed OrElse _initError IsNot Nothing OrElse Not IsHandleCreated OrElse DesignMode Then Return False
         Dim w = Math.Max(ClientSize.Width, 1), h = Math.Max(ClientSize.Height, 1)
         Try
@@ -819,77 +891,114 @@ Public Class ToolpathView
             GL.Viewport(-x0, -y0, w, h)
             GL.Disable(EnableCap.DepthTest)
             GL.Disable(EnableCap.Blend)
-            GL.ColorMask(True, True, True, True)
-            GL.StencilMask(&HFF)
             GL.ClearColor(0, 0, 0, 0)
             GL.ClearStencil(0)
-            GL.Clear(ClearBufferMask.ColorBufferBit Or ClearBufferMask.StencilBufferBit)
             GL.Enable(EnableCap.StencilTest)
             GL.UseProgram(_pickProgram)
             Dim mvp As Matrix4 = ViewMatrix() * ProjectionMatrix()
             GL.UniformMatrix4(_pickMvpLoc, False, mvp)
             GL.BindVertexArray(_pickVao)
-            For i = 0 To _pickItems.Count - 1
-                Dim it = _pickItems(i)
-                If it.Fans.Count > 0 Then
-                    GL.ColorMask(False, False, False, False)
-                    GL.StencilFunc(StencilFunction.Always, 0, &HFF)
-                    GL.StencilOp(StencilOp.Keep, StencilOp.Keep, StencilOp.Invert)
-                    For Each f In it.Fans
-                        GL.DrawArrays(PrimitiveType.TriangleFan, f.First, f.Count)
-                    Next
-                    GL.ColorMask(True, True, True, True)
-                    GL.StencilFunc(StencilFunction.Notequal, 0, &HFF)
-                    GL.StencilOp(StencilOp.Zero, StencilOp.Zero, StencilOp.Zero)
-                Else
-                    GL.StencilFunc(StencilFunction.Always, 0, &HFF)
-                    GL.StencilOp(StencilOp.Keep, StencilOp.Keep, StencilOp.Keep)
-                End If
-                Dim code = i + 1
-                GL.Uniform4(_pickColorLoc, (code And &HFF) / 255.0F, ((code >> 8) And &HFF) / 255.0F, ((code >> 16) And &HFF) / 255.0F, 1.0F)
-                GL.DrawArrays(PrimitiveType.TriangleFan, it.Cover.First, it.Cover.Count)
-                ' Outlines too: a sliver thinner than a pixel covers no pixel centre, but its lines always draw.
-                GL.StencilFunc(StencilFunction.Always, 0, &HFF)
-                GL.StencilOp(StencilOp.Keep, StencilOp.Keep, StencilOp.Keep)
-                If it.Fans.Count > 0 Then
-                    For Each f In it.Fans
-                        GL.DrawArrays(PrimitiveType.LineLoop, f.First, f.Count)
-                    Next
-                Else
-                    GL.DrawArrays(PrimitiveType.LineLoop, it.Cover.First, it.Cover.Count)
-                End If
-            Next
             Dim px(rw * rh * 4 - 1) As Byte
             GL.PixelStore(PixelStoreParameter.PackAlignment, 1)
-            GL.ReadPixels(0, 0, rw, rh, PixelFormat.Rgba, PixelType.UnsignedByte, px)
-            RestoreAfterPick(w, h)
 
-            ' The painted pixel nearest the cursor wins.
-            Dim best = 0, bestD = Integer.MaxValue
-            For yy = 0 To rh - 1
-                For xx = 0 To rw - 1
-                    Dim k = (yy * rw + xx) * 4
-                    Dim code = CInt(px(k)) Or (CInt(px(k + 1)) << 8) Or (CInt(px(k + 2)) << 16)
-                    If code = 0 OrElse code > _pickItems.Count Then Continue For
-                    Dim ddx = x0 + xx - gx, ddy = y0 + yy - gy
-                    Dim d = ddx * ddx + ddy * ddy
-                    If d < bestD Then
-                        bestD = d
-                        best = code
+            If Not perObject Then
+                ClearPickBuffer()
+                For i = 0 To _pickItems.Count - 1
+                    DrawPickItem(_pickItems(i), i + 1)
+                Next
+                GL.ReadPixels(0, 0, rw, rh, PixelFormat.Rgba, PixelType.UnsignedByte, px)
+                Dim code As Integer, d As Integer
+                If NearestCode(px, rw, rh, x0 - gx, y0 - gy, code, d) Then
+                    Dim it = _pickItems(code - 1)
+                    hits.Add(New PickHit With {.Id = it.Id, .Distance = d, .Area = it.Area, .Order = code})
+                End If
+            Else
+                ' Only objects whose box comes near the cursor are drawn.
+                Dim c = ScreenToWorld(p)
+                Dim slack = (PickRadius + 2) * Math.Sqrt(2) * _unitsPerPixel / PitchScale()
+                For i = 0 To _pickItems.Count - 1
+                    Dim it = _pickItems(i)
+                    If c.X < it.MinX - slack OrElse c.X > it.MaxX + slack OrElse c.Y < it.MinY - slack OrElse c.Y > it.MaxY + slack Then Continue For
+                    ClearPickBuffer()
+                    DrawPickItem(it, 1)
+                    GL.ReadPixels(0, 0, rw, rh, PixelFormat.Rgba, PixelType.UnsignedByte, px)
+                    Dim code As Integer, d As Integer
+                    If NearestCode(px, rw, rh, x0 - gx, y0 - gy, code, d) Then
+                        hits.Add(New PickHit With {.Id = it.Id, .Distance = d, .Area = it.Area, .Order = i + 1})
                     End If
                 Next
-            Next
-            result = If(best > 0, _pickItems(best - 1).Id, -1)
+            End If
+            RestoreAfterPick(w, h)
             Return True
         Catch ex As Exception
             ' One failed pick falls back to bounding boxes; the next pick tries the GPU again.
             _pickError = ex.Message
+            hits = New List(Of PickHit)
             Try
                 RestoreAfterPick(w, h)
             Catch
             End Try
             Return False
         End Try
+    End Function
+
+    Private Shared Sub ClearPickBuffer()
+        GL.ColorMask(True, True, True, True)
+        GL.StencilMask(&HFF)
+        GL.Clear(ClearBufferMask.ColorBufferBit Or ClearBufferMask.StencilBufferBit)
+    End Sub
+
+    ''' <summary>
+    ''' Draws one object in the colour of its code: the fans flip the stencil (inside = odd),
+    ''' the cover paints where it is set and clears it, the outlines catch slivers.
+    ''' </summary>
+    Private Sub DrawPickItem(it As PickItem, code As Integer)
+        If it.Fans.Count > 0 Then
+            GL.ColorMask(False, False, False, False)
+            GL.StencilFunc(StencilFunction.Always, 0, &HFF)
+            GL.StencilOp(StencilOp.Keep, StencilOp.Keep, StencilOp.Invert)
+            For Each f In it.Fans
+                GL.DrawArrays(PrimitiveType.TriangleFan, f.First, f.Count)
+            Next
+            GL.ColorMask(True, True, True, True)
+            GL.StencilFunc(StencilFunction.Notequal, 0, &HFF)
+            GL.StencilOp(StencilOp.Zero, StencilOp.Zero, StencilOp.Zero)
+        Else
+            GL.StencilFunc(StencilFunction.Always, 0, &HFF)
+            GL.StencilOp(StencilOp.Keep, StencilOp.Keep, StencilOp.Keep)
+        End If
+        GL.Uniform4(_pickColorLoc, (code And &HFF) / 255.0F, ((code >> 8) And &HFF) / 255.0F, ((code >> 16) And &HFF) / 255.0F, 1.0F)
+        GL.DrawArrays(PrimitiveType.TriangleFan, it.Cover.First, it.Cover.Count)
+        ' Outlines too: a sliver thinner than a pixel covers no pixel centre, but its lines always draw.
+        GL.StencilFunc(StencilFunction.Always, 0, &HFF)
+        GL.StencilOp(StencilOp.Keep, StencilOp.Keep, StencilOp.Keep)
+        If it.Fans.Count > 0 Then
+            For Each f In it.Fans
+                GL.DrawArrays(PrimitiveType.LineLoop, f.First, f.Count)
+            Next
+        Else
+            GL.DrawArrays(PrimitiveType.LineLoop, it.Cover.First, it.Cover.Count)
+        End If
+    End Sub
+
+    ''' <summary>The painted pixel nearest the cursor: its code and squared distance (dx0, dy0: window offset of pixel 0,0).</summary>
+    Private Function NearestCode(px As Byte(), rw As Integer, rh As Integer, dx0 As Integer, dy0 As Integer,
+                                 ByRef code As Integer, ByRef dist As Integer) As Boolean
+        code = 0 : dist = Integer.MaxValue
+        For yy = 0 To rh - 1
+            For xx = 0 To rw - 1
+                Dim k = (yy * rw + xx) * 4
+                Dim c = CInt(px(k)) Or (CInt(px(k + 1)) << 8) Or (CInt(px(k + 2)) << 16)
+                If c = 0 OrElse c > _pickItems.Count Then Continue For
+                Dim ddx = dx0 + xx, ddy = dy0 + yy
+                Dim d = ddx * ddx + ddy * ddy
+                If d < dist Then
+                    dist = d
+                    code = c
+                End If
+            Next
+        Next
+        Return code > 0
     End Function
 
     ''' <summary>Puts back the state the view's paint relies on.</summary>
@@ -966,7 +1075,8 @@ Public Class ToolpathView
         If HasText() Then
             Dim tp = _toolpath
             AddPickItem(v, TextSelection, Nothing, {New Pt2(tp.TextMinX, tp.TextMinY), New Pt2(tp.TextMaxX, tp.TextMinY),
-                                                   New Pt2(tp.TextMaxX, tp.TextMaxY), New Pt2(tp.TextMinX, tp.TextMaxY)})
+                                                   New Pt2(tp.TextMaxX, tp.TextMaxY), New Pt2(tp.TextMinX, tp.TextMaxY)},
+                        (tp.TextMaxX - tp.TextMinX) * (tp.TextMaxY - tp.TextMinY))
         End If
         For i = 0 To _objects.Count - 1
             Dim o = _objects(i)
@@ -974,10 +1084,10 @@ Public Class ToolpathView
             Dim paths = If(o.Kind = DrawingKind.Text, Nothing, o.PlacedPaths(_curveTolerance))
             If paths IsNot Nothing AndAlso paths.Count > 0 Then
                 Dim b = Clipper2Lib.Clipper.GetBounds(paths)
-                AddPickItem(v, i, paths, {New Pt2(b.left, b.top), New Pt2(b.right, b.top), New Pt2(b.right, b.bottom), New Pt2(b.left, b.bottom)})
+                AddPickItem(v, i, paths, {New Pt2(b.left, b.top), New Pt2(b.right, b.top), New Pt2(b.right, b.bottom), New Pt2(b.left, b.bottom)}, o.Width * o.Height)
             Else
                 ' Text, or a drawing without an outline: its whole box.
-                AddPickItem(v, i, Nothing, o.Corners())
+                AddPickItem(v, i, Nothing, o.Corners(), o.Width * o.Height)
             End If
         Next
         Dim data = v.ToArray()
@@ -986,8 +1096,10 @@ Public Class ToolpathView
         GL.BindBuffer(BufferTarget.ArrayBuffer, 0)
     End Sub
 
-    Private Sub AddPickItem(v As List(Of Single), id As Integer, paths As Clipper2Lib.PathsD, cover As Pt2())
-        Dim it As New PickItem With {.Id = id}
+    Private Sub AddPickItem(v As List(Of Single), id As Integer, paths As Clipper2Lib.PathsD, cover As Pt2(), area As Double)
+        Dim it As New PickItem With {.Id = id, .Area = Math.Abs(area),
+            .MinX = cover.Min(Function(c) c.X), .MaxX = cover.Max(Function(c) c.X),
+            .MinY = cover.Min(Function(c) c.Y), .MaxY = cover.Max(Function(c) c.Y)}
         If paths IsNot Nothing Then
             For Each path In paths
                 If path.Count < 3 Then Continue For
@@ -1868,7 +1980,7 @@ Public Class ToolpathView
             Cursor = HandleCursor(handle)
             Return
         End If
-        Dim hit = PickAt(p)
+        Dim hit = PickToSelect(p, cycle:=(ModifierKeys And Keys.Control) = Keys.Control)
         SelectedObject = hit
         If hit >= 0 Then
             _mode = DragMode.MoveObject
@@ -2076,7 +2188,13 @@ Public Class ToolpathView
         If (now - _hoverPickAt).TotalMilliseconds < 30 AndAlso Math.Abs(p.X - _hoverPickPoint.X) < 3 AndAlso Math.Abs(p.Y - _hoverPickPoint.Y) < 3 Then
             Return _hoverPickResult
         End If
-        _hoverPickResult = PickAt(p)
+        Dim top As Integer
+        If TryGpuPick(p, top) Then
+            _hoverPickResult = top
+        Else
+            Dim w = ScreenToWorld(p)
+            _hoverPickResult = CpuHitTest(w.X, w.Y)
+        End If
         _hoverPickAt = now
         _hoverPickPoint = p
         Return _hoverPickResult
@@ -2114,9 +2232,14 @@ Public Class ToolpathView
             Return
         End If
         If _tool <> DrawTool.Select Then Return
+        ' Quick Ctrl+clicks step through the drawings under the mouse; the pair is not a double-click.
+        If (ModifierKeys And Keys.Control) = Keys.Control Then Return
         If e.Button = MouseButtons.Left Then
-            Dim hit = PickAt(e.Location)
-            If hit >= 0 AndAlso hit < _objects.Count AndAlso _objects(hit).Kind = DrawingKind.Text Then
+            ' The text drawing under the mouse is edited, even inside a selected frame or text block.
+            Dim texts = PickAllAt(e.Location).Where(Function(h) h.Distance = 0 AndAlso h.Id >= 0 AndAlso h.Id < _objects.Count AndAlso _objects(h.Id).Kind = DrawingKind.Text).
+                                              OrderBy(Function(h) h.Area).ToList()
+            If texts.Count > 0 Then
+                Dim hit = texts(0).Id
                 _mode = DragMode.None
                 SelectedObject = hit
                 RaiseEvent EditTextRequested(Me, New ObjectEditedEventArgs With {.Index = hit})

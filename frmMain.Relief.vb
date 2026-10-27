@@ -264,6 +264,7 @@ Friend Class frmScale
         AddHandler _txtWidth.TextChanged, Sub(s, e) FromSide(True)
         AddHandler _txtHeight.TextChanged, Sub(s, e) FromSide(False)
         AddHandler ok.Click, AddressOf Ok_Click
+        Skin.Apply(Me)
     End Sub
 
     Private Sub FromPercent()

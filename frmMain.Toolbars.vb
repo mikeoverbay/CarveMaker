@@ -1,6 +1,6 @@
 ' ============================================================================
 '  frmMain.Toolbars.vb
-'  The toolbars over the view (Draw Tools, Text Style, Snap, View). Each can be
+'  The toolbars over the view (Project, Draw Tools, Text Style, Snap, View). Each can be
 '  docked on any edge of the view (drag it by its grip), floated in a small
 '  window (drag it off the view, or right-click > Float), and hidden; View >
 '  Toolbars shows them again or puts them all back along the top. Where each
@@ -18,7 +18,7 @@ Partial Class frmMain
     ''' <summary>The movable toolbars, in their default order along the top.</summary>
     Private ReadOnly Property ViewToolbars As ToolStrip()
         Get
-            Return {tsDrawTools, tsTextStyle, tsSnap, tsView}
+            Return {tsProject, tsDrawTools, tsTextStyle, tsSnap, tsView}
         End Get
     End Property
 
@@ -131,13 +131,45 @@ Partial Class frmMain
         Return If(panel.Orientation = Orientation.Horizontal, New Point(lastEdge, row.Bounds.Top), New Point(row.Bounds.Left, lastEdge))
     End Function
 
-    ''' <summary>Docks a toolbar on an edge of the view (at the end of the first row unless a spot is given).</summary>
+    ''' <summary>
+    ''' Where a toolbar docked without a spot goes: the end of the first row with room for
+    ''' it, or a new row (so a long row does not hide buttons behind its overflow chevron).
+    ''' </summary>
+    Private Shared Function EndOfRoomyRow(panel As ToolStripPanel, ts As ToolStrip) As Point
+        If RoomAlong(panel) <= 0 Then Return EndOfFirstRow(panel)
+        For r = 0 To panel.Rows.Length - 1
+            If FitsAtEndOfRow(panel, r, ts) Then Return EndOfRow(panel, r)
+        Next
+        Return EndOfRow(panel, panel.Rows.Length)
+    End Function
+
+    ''' <summary>The saved spot (end of its saved row), or a row with room when the toolbar no longer fits there.</summary>
+    Private Shared Function SavedSpot(panel As ToolStripPanel, row As Integer, ts As ToolStrip) As Point
+        If row >= panel.Rows.Length OrElse RoomAlong(panel) <= 0 OrElse FitsAtEndOfRow(panel, row, ts) Then Return EndOfRow(panel, row)
+        Return EndOfRoomyRow(panel, ts)
+    End Function
+
+    Private Shared Function RoomAlong(panel As ToolStripPanel) As Integer
+        Return If(panel.Orientation = Orientation.Horizontal, panel.Width, panel.Height)
+    End Function
+
+    Private Shared Function FitsAtEndOfRow(panel As ToolStripPanel, row As Integer, ts As ToolStrip) As Boolean
+        Dim spot = EndOfRow(panel, row)
+        Return If(panel.Orientation = Orientation.Horizontal, spot.X, spot.Y) + ToolbarLength(ts) <= RoomAlong(panel)
+    End Function
+
+    ''' <summary>A toolbar's length along its buttons, whichever way it stands now (it turns when it joins a side).</summary>
+    Private Shared Function ToolbarLength(ts As ToolStrip) As Integer
+        Return If(ts.Orientation = Orientation.Horizontal, ts.PreferredSize.Width, ts.PreferredSize.Height)
+    End Function
+
+    ''' <summary>Docks a toolbar on an edge of the view (at the end of a row with room unless a spot is given).</summary>
     Private Sub DockToolbar(ts As ToolStrip, place As String, Optional at As Point? = Nothing)
         UnfloatToolbar(ts)
         Dim panel = PanelOf(place)
         If ts.Parent IsNot Nothing Then ts.Parent.Controls.Remove(ts)
         ts.Visible = IsToolbarVisible(ts)
-        panel.Join(ts, If(at, EndOfFirstRow(panel)))
+        panel.Join(ts, If(at, EndOfRoomyRow(panel, ts)))
         _lastDock(ts) = place
         SaveToolbarLayout()
     End Sub
@@ -228,7 +260,7 @@ Partial Class frmMain
                 If st.Place = "Float" AndAlso {"Top", "Bottom", "Left", "Right"}.Contains(st.LastDock) Then _lastDock(ts) = st.LastDock
                 Select Case st.Place
                     Case "Float" : FloatToolbar(ts, New Point(st.X, st.Y))
-                    Case "Top", "Bottom", "Left", "Right" : DockToolbar(ts, st.Place, EndOfRow(PanelOf(st.Place), Math.Max(0, st.Row)))
+                    Case "Top", "Bottom", "Left", "Right" : DockToolbar(ts, st.Place, SavedSpot(PanelOf(st.Place), Math.Max(0, st.Row), ts))
                     Case Else : DockToolbar(ts, "Top")
                 End Select
             Next
@@ -342,6 +374,8 @@ Friend Class ToolbarWindow
         strip.Location = Point.Empty
         Controls.Add(strip)
         _clickThrough = New ClickThrough(strip)
+        BackColor = Skin.Window
+        Skin.DarkTitleBar(Me)
         For Each combo In strip.Items.OfType(Of ToolStripComboBox)()
             _combos.Add(combo)
             AddHandler combo.DropDownClosed, AddressOf ReturnFocus

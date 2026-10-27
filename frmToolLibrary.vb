@@ -50,6 +50,14 @@ Public Class frmToolLibrary
     ' ------------------------------------------------------------ setup
 
     Private Sub frmToolLibrary_Load(sender As Object, e As EventArgs) Handles MyBase.Load
+        Skin.Apply(Me)
+        tsbNew.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText
+        tsbDuplicate.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText
+        tsbDelete.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText
+        Skin.StyleToolbar(tsList)
+        Skin.SetIcon(tsbNew, IconKind.NewFile)
+        Skin.SetIcon(tsbDuplicate, IconKind.Duplicate)
+        Skin.SetIcon(tsbDelete, IconKind.Remove)
         If IsPickMode Then
             Text = If(_pickTitle, "Tool Library - choose the V-carve tool")
             btnOK.Text = "Use This Tool"
@@ -97,7 +105,7 @@ Public Class frmToolLibrary
                 For Each t In tools
                     Dim n = grp.Nodes.Add(t.Id, t.DisplayName(), key, key)
                     n.Tag = t
-                    If IsPickMode AndAlso _pickFilter(t) IsNot Nothing Then n.ForeColor = SystemColors.GrayText
+                    If IsPickMode AndAlso _pickFilter(t) IsNot Nothing Then n.ForeColor = Skin.InkDim
                     If t Is selectTool Then selectNode = n
                 Next
                 grp.Expand()
@@ -157,7 +165,7 @@ Public Class frmToolLibrary
                 txtRpm.Text = "" : txtFeed.Text = "" : txtPlunge.Text = ""
             End If
             For Each tb In {txtDiameter, txtLength, txtRadius, txtAngle, txtRpm, txtFeed, txtPlunge}
-                tb.BackColor = SystemColors.Window
+                tb.BackColor = Skin.Field
             Next
         Finally
             _loading = False
@@ -208,9 +216,9 @@ Public Class frmToolLibrary
         End If
 
         Select Case t.Type
-            Case ToolType.BallNose : lblRadiusHint.Text = "always half the diameter"
+            Case ToolType.BallNose : lblRadiusHint.Text = "half the ball: ball Ø " & InchFormat.EditText(Math.Round(2 * t.EffectiveEndRadius, 4)) & """ = 2 × radius = the diameter"
             Case ToolType.BullNose : lblRadiusHint.Text = "rounded corner of the flat end"
-            Case ToolType.TaperedBallNose : lblRadiusHint.Text = If(t.EndRadius > 0, "tip ball " & InchFormat.EditText(Math.Round(2 * t.EndRadius, 4)) & """ across", "")
+            Case ToolType.TaperedBallNose : lblRadiusHint.Text = If(t.EndRadius > 0, "tip ball Ø " & InchFormat.EditText(Math.Round(2 * t.EndRadius, 4)) & """ = 2 × radius", "")
             Case Else : lblRadiusHint.Text = "not used by this type"
         End Select
         If t.UsesAngle Then
@@ -240,7 +248,7 @@ Public Class frmToolLibrary
         End If
         If msg Is Nothing Then msg = _notice
         lblMessage.Text = If(msg, "")
-        lblMessage.ForeColor = If(isError, Color.Firebrick, If(msg IsNot Nothing AndAlso msg Is _notice, SystemColors.GrayText, Color.FromArgb(160, 90, 0)))
+        lblMessage.ForeColor = If(isError, Skin.ErrorInk, If(msg IsNot Nothing AndAlso msg Is _notice, Skin.InkDim, Skin.WarningInk))
         btnOK.Enabled = okEnabled
     End Sub
 
@@ -253,10 +261,10 @@ Public Class frmToolLibrary
         Dim v As Double
         Dim plain = tb Is txtAngle OrElse tb Is txtRpm OrElse tb Is txtFeed OrElse tb Is txtPlunge
         Dim ok = If(plain, TryParseAngle(tb.Text, v), InchFormat.TryParse(tb.Text, v)) AndAlso v >= 0
-        tb.BackColor = If(ok, SystemColors.Window, Color.MistyRose)
+        tb.BackColor = If(ok, Skin.Field, Skin.FieldError)
         If Not ok Then
             lblMessage.Text = "Enter a number such as 0.25 or 1/4."
-            lblMessage.ForeColor = Color.Firebrick
+            lblMessage.ForeColor = Skin.ErrorInk
             Return
         End If
         If tb Is txtDiameter Then
@@ -289,7 +297,7 @@ Public Class frmToolLibrary
     Private Sub NumberField_Leave(sender As Object, e As EventArgs) Handles txtDiameter.Leave, txtLength.Leave, txtRadius.Leave, txtAngle.Leave, txtRpm.Leave, txtFeed.Leave, txtPlunge.Leave
         If _current Is Nothing Then Return
         Dim tb = DirectCast(sender, TextBox)
-        If Not tb.Enabled OrElse tb.BackColor <> SystemColors.Window Then Return
+        If Not tb.Enabled OrElse tb.BackColor <> Skin.Field Then Return
         If tb Is txtDiameter Then SetTextQuietly(tb, InchFormat.EditText(_current.Diameter))
         If tb Is txtLength Then SetTextQuietly(tb, InchFormat.EditText(_current.Length))
         If tb Is txtRadius Then SetTextQuietly(tb, InchFormat.EditText(_current.EffectiveEndRadius))

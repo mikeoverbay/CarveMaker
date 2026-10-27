@@ -984,35 +984,35 @@ Public Class CarveSettings
     End Property
 
     ' ---------------------------------------------------------------- Carve
-    <Category("2. Carve"), DisplayName("Flat depth (in)"),
+    <Category("2. Cut settings"), DisplayName("Flat depth (in)"),
      Description("Maximum V-carve depth. Areas wider than the V can reach at this depth are cleared flat here. Limited to each V-bit's max usable depth (shown in its toolpath rows); keep a little margin below it.")>
     Public Property FlatDepth As Double = 0.12
 
-    <Category("2. Carve"), DisplayName("Roughing depth step (in)"),
+    <Category("2. Cut settings"), DisplayName("Roughing depth step (in)"),
      Description("Vertical distance between the constant-depth roughing contours.")>
     Public Property DepthStep As Double = 0.02
 
-    <Category("2. Carve"), DisplayName("Roughing allowance (in)"),
+    <Category("2. Cut settings"), DisplayName("Roughing allowance (in)"),
      Description("Skin left by the roughing contours so they never rub the finished bevel. Removed by the centerline finishing pass.")>
     Public Property RoughAllowance As Double = 0.004
 
-    <Category("2. Carve"), DisplayName("Centerline finishing pass"),
+    <Category("2. Cut settings"), DisplayName("Centerline finishing pass"),
      Description("Final variable-depth pass along the center of each stroke: cuts the ridge, the sharp corners and the finished bevel exactly. Turn off only for quick previews.")>
     Public Property FinishPass As Boolean = True
 
-    <Category("2. Carve"), DisplayName("Finishing resolution (in)"),
+    <Category("2. Cut settings"), DisplayName("Finishing resolution (in)"),
      Description("Spacing of the boundary samples used to trace the centerline. Smaller = smoother, slower to compute.")>
     Public Property FinishResolution As Double = 0.002
 
-    <Category("2. Carve"), DisplayName("Floor stepover (in)"),
+    <Category("2. Cut settings"), DisplayName("Floor stepover (in)"),
      Description("Spacing between flat-depth floor clearing passes. Scallop height is about half of this on straight runs and up to the stepover at corners.")>
     Public Property ClearStepover As Double = 0.006
 
-    <Category("2. Carve"), DisplayName("Milling direction"),
+    <Category("2. Cut settings"), DisplayName("Milling direction"),
      Description("Direction of the closed contours relative to the material still to be removed (inside the loop). Both flanks of a V cut are engaged, so this mostly affects the roughing contours.")>
     Public Property Direction As MillingDirection = MillingDirection.Climb
 
-    <Category("2. Carve"), DisplayName("Curve tolerance (in)"),
+    <Category("2. Cut settings"), DisplayName("Curve tolerance (in)"),
      Description("Chord error allowed when flattening glyph curves into line segments.")>
     Public Property CurveTolerance As Double = 0.0005
 

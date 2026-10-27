@@ -94,13 +94,15 @@ Public Class frmMain
         AddHandler _glView.ObjectEdited, AddressOf OnViewObjectEdited
         AddHandler _glView.TextMoved, AddressOf OnViewTextMoved
         _glView.Objects = _objects
-        SetupDrawing()
+        ' The Stop menu item exists before the Project toolbar's Stop button follows it.
         SetupGenerationUi()
+        SetupDrawing()
         _glView.CurveTolerance = _settings.CurveTolerance
         tscSimSpeed.SelectedIndex = 3      ' 10x
 
         ' Machine Settings window: created now (hidden) so its grid is always bound and current.
         _machineWindow = New frmMachineSettings() With {.Owner = Me}
+        Skin.Apply(_machineWindow)
         AddHandler _machineWindow.Grid.PropertyValueChanged, AddressOf Settings_PropertyValueChanged
         BindSettingsGrids()
         UpdateSizeButtonCaptions()
@@ -1070,6 +1072,10 @@ Public Class frmMain
             If String.Equals(Path.GetExtension(dlgOpen.FileName), ".rtf", StringComparison.OrdinalIgnoreCase) Then
                 rtbText.LoadFile(dlgOpen.FileName, RichTextBoxStreamType.RichText)
                 ReplaceSoftBreaks()
+                ' RTF brings its own (usually black) text colour: the dark editor's light ink instead.
+                rtbText.SelectAll()
+                rtbText.SelectionColor = rtbText.ForeColor
+                rtbText.Select(0, 0)
             Else
                 rtbText.Text = File.ReadAllText(dlgOpen.FileName)
                 rtbText.SelectAll()
@@ -1329,6 +1335,7 @@ Public Class frmMain
             tslSimTime.Text = FormatClock(cur) & " / " & FormatClock(total)
             tbSim.Value = If(total > 0, CInt(Math.Round(Math.Max(0, Math.Min(1, cur / total)) * tbSim.Maximum)), 0)
             tsbSimPlay.Text = If(_glView.SimulationPlaying, "Pause", "Play")
+            tsbSimPlay.Image = If(_glView.SimulationPlaying, _pauseIcon, _playIcon)
             Dim info = _glView.SimulationInfo
             tslSimInfo.Text = info
             tslSimInfo.ToolTipText = If(info.Length > 0, "Heightmap " & info & ". Set under Machine > Machine Settings > 4. Simulation.", "")

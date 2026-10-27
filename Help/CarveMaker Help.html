@@ -100,7 +100,7 @@
   <tr><td>Menu bar</td><td>File, Font (the main text's fonts), Draw, Style (text drawings), View, Toolpath, Machine and Help.</td></tr>
   <tr><td><b>Text</b> tab</td><td>The main text editor with its size and alignment buttons, and below it the text settings: sizes and fonts, placement on the blank, and the text's toolpath.</td></tr>
   <tr><td><b>Drawings</b> tab</td><td>The list of drawings (imported SVGs, shapes, areas and text drawings) and the settings of the selected one, including its toolpath.</td></tr>
-  <tr><td>Toolbars over the view</td><td><i>Draw Tools</i>, <i>Text Style</i>, <i>Snap</i> and <i>View</i>. They can be moved, floated or hidden (see <a href="#toolbars">Toolbars</a>).</td></tr>
+  <tr><td>Toolbars over the view</td><td><i>Project</i>, <i>Draw Tools</i>, <i>Text Style</i>, <i>Snap</i> and <i>View</i>. They can be moved, floated or hidden (see <a href="#toolbars">Toolbars</a>).</td></tr>
   <tr><td>The view</td><td>The blank, the outlines, the toolpath coloured by depth (cyan shallow, orange deep) and the rapid moves in red; or the simulated carving.</td></tr>
   <tr><td>Status bar</td><td>Messages on the left (warnings such as text running off the blank, or hints for the current tool); on the right the job size, depth, cut length, time estimate and number of tools.</td></tr>
 </table>
@@ -192,7 +192,10 @@
 <p>The roughing removes the stock top over the model, so before each program after the first, zero Z on a part of the stock top that has not been cut (a corner of the board).</p>
 
 <h2 id="toolbars">Toolbars</h2>
+<p>Buttons that do something once are glossy black with a lime bar that glows under the mouse. Buttons that stay on (a draw tool, Bold, Italic, an alignment or size, the simulation switch) are round and turn yellow while on. Hold the mouse on a button to see what it does and its shortcut.</p>
 <ul>
+  <li><i>Project</i>: New, Open and Save; Generate (<kbd>F5</kbd>), Stop (<kbd>Shift</kbd>+<kbd>F5</kbd>) and Export G-code; the Tool Library and Machine Settings. Each button is greyed out when its menu item is (Stop only while a toolpath is being computed).</li>
+  <li>A toolbar that does not fit on the row starts a new row.</li>
   <li>Drag a toolbar by its dotted grip to any edge of the view: top, bottom, left or right, in rows.</li>
   <li>Drag it off the view to float it in its own small window. Double-click that window's title to dock it again; closing it hides the toolbar.</li>
   <li>Right-click a toolbar to dock it on an edge, float it or hide it.</li>
@@ -203,7 +206,7 @@
 <p>The text (<i>3. Toolpath</i> on the Text tab) and every drawing (<i>Toolpath</i> on the Drawings tab) have their own toolpath: the <b>Operation</b>, the <b>Tool</b> (the <b>&hellip;</b> button opens the tool library), and the <b>spindle speed</b>, <b>feed rate</b> and <b>plunge rate</b>. Picking a tool fills in its speeds; you can still change them.</p>
 <table>
   <tr><th>Operation</th><th>What it does</th></tr>
-  <tr><td>V-carve</td><td>Carves the shape with a V-bit: deeper where the shape is wider, with sharp corners. Depths are under <i>Machine Settings &gt; 2. Carve</i>.</td></tr>
+  <tr><td>V-carve</td><td>Carves the shape with a V-bit: deeper where the shape is wider, with sharp corners. Depths are under <i>Machine Settings &gt; 2. Cut settings</i>.</td></tr>
   <tr><td>Pocket</td><td>Clears the inside to a flat floor with an end mill. Set the cut depth, pass depth and stepover.</td></tr>
   <tr><td>Profile</td><td>Follows the outline: <b>Outside</b> cuts the shape out at its true size, <b>Inside</b> cuts an opening, <b>On the line</b> engraves. <i>Cut through the stock</i> and <i>tabs</i> hold the part in place.</td></tr>
   <tr><td>3D roughing and finishing</td><td>The two toolpaths of a 3D model (see <a href="#models">3D models</a>).</td></tr>
@@ -215,14 +218,14 @@
   <img src="images/tool-library.png" alt="Tool Library dialog with a V-bit selected">
   <figcaption>The Tool Library: tools by type, their four numbers, speeds and feeds, and a scale drawing.</figcaption>
 </figure>
-<p><span class="menu">Toolpath &gt; Tool Library</span> (<kbd>Ctrl</kbd>+<kbd>L</kbd>). Flat end mills, ball and bull nose, V-bits, tapered ball nose and drills, in inches. Each tool is its diameter, flute length, end radius and angle where they apply, plus its spindle speed, feed rate and plunge rate. Numbers accept decimals or fractions (<code>0.25</code>, <code>1/4</code>, <code>1-1/4</code>). <b>New</b>, <b>Duplicate</b> and <b>Delete</b> manage the list; <b>Save</b> stores it for all projects. The standard tools start with conservative values for wood: tune them to your machine and material.</p>
+<p><span class="menu">Toolpath &gt; Tool Library</span> (<kbd>Ctrl</kbd>+<kbd>L</kbd>). Flat end mills, ball and bull nose, V-bits, tapered ball nose and drills, in inches. Each tool is its diameter, flute length, end radius and angle where they apply, plus its spindle speed, feed rate and plunge rate. Numbers accept decimals or fractions (<code>0.25</code>, <code>1/4</code>, <code>1-1/4</code>). <b>New</b>, <b>Duplicate</b> and <b>Delete</b> manage the list; <b>Save</b> stores it for all projects. A ball nose's radius is half its ball: a 1/8" ball nose has R 1/16". The drawing of a ball nose or tapered ball nose shows the radius and, under it, the ball size (2 × R); a bull nose shows its corner radius only. The standard tools start with conservative values for wood: tune them to your machine and material.</p>
 
 <h2 id="machine">Machine settings</h2>
 <p><span class="menu">Machine &gt; Machine Settings</span> (<kbd>Ctrl</kbd>+<kbd>K</kbd>) opens a window that can stay open while you work.</p>
 <table>
   <tr><th>Section</th><th>Settings</th></tr>
   <tr><td>1. Blank</td><td>Width, height, thickness, margin and the machine coordinates of the lower-left corner (use <code>-width/2, -height/2</code> if you zero at the centre).</td></tr>
-  <tr><td>2. Carve</td><td>V-carve depth (flat depth), roughing depth step and allowance, finishing resolution, floor stepover, the centerline finishing pass, milling direction and curve tolerance.</td></tr>
+  <tr><td>2. Cut settings</td><td>V-carve depth (flat depth), roughing depth step and allowance, finishing resolution, floor stepover, the centerline finishing pass, milling direction and curve tolerance.</td></tr>
   <tr><td>3. Machine</td><td>Safe Z and clearance Z, rapid rate, spindle dwell, dust collection (M8/M9), retract to machine home (G53), cut order of the text lines, and G-code units (inches or millimetres).</td></tr>
   <tr><td>4. Simulation</td><td>Precision of the simulated board and how much of it is drawn (Display mesh: pick Low on integrated graphics).</td></tr>
 </table>

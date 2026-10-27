@@ -411,7 +411,6 @@ Partial Class frmToolLibrary
         '
         ' drawTool
         '
-        drawTool.BackColor = Color.White
         drawTool.Dock = DockStyle.Fill
         drawTool.Location = New Point(3, 212)
         drawTool.Name = "drawTool"

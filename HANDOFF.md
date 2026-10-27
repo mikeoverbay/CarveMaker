@@ -1,4 +1,4 @@
-# CarveMaker handoff (updated 2026-10-26: 3D models / relief carving, Shift to select)
+# CarveMaker handoff (updated 2026-10-26: dark Code Chop skin, Project toolbar)
 
 Written so any session (or person) can pick the project up without the chat
 history. Read this, then `README.md` for the user-facing description.
@@ -67,8 +67,11 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
 | `Preferences.vb` | `UserPreferences`: per-user snap settings (JSON in %AppData%\CarveMaker), offered spacings and rotation steps |
 | `frmMain.Help.vb` | Partial frmMain: Help menu (User Guide F1 opens `Help\CarveMaker Help.html` next to the exe, falling back to the README online; Newer Versions; About) |
 | `Help\` | The user guide (HTML, self-contained CSS, light/dark) and its screenshots in `Help\images` (made by the harness `helpshots` mode); copied next to the exe and into the installer, with a Start-menu shortcut |
-| `frmMain.Toolbars.vb` | Partial frmMain: the three movable toolbars over the view (`tsDrawTools`, `tsTextStyle`, `tsSnap`) in four `ToolStripPanel`s around the GL view or in a `ToolbarWindow` (floating), right-click menu, View > Toolbars, layout saved per toolbar as panel + row + order (floating: screen position) in `UserPreferences.Toolbars` |
-| `frmMain.Drawing.vb` | Partial frmMain: Draw and Style menus, snap controls, draw toolbar (`tsDraw` over the view, icons drawn in code), drawings from `ShapeDrawn`, the in-place text editor (`BeginTextEdit` / `EndTextEdit`), text style, arrange commands, `RemoveDrawingAt` |
+| `Skin.vb` | The dark look after the user's old program Code Chop: colours, `PaintButton` (Square = glossy command with a lime bar that glows; Round = toggle, yellow while on), `PaintBand` (toolbar band with a lime edge), `PaintSpacer`, `Apply` (walks a window and darkens every control; does not recurse into composite controls), `StyleToolbar` (32 px buttons, 20 px icons, text buttons padded to the same height), `SetIcon`/`Icon`/`YellowTwin` (each light icon keeps a dark twin for the yellow state), `MarkToggle`, `SkinRenderer` (+ `SkinColorTable`) for menus, toolbars and the status bar, `DarkTabControl`, DWM dark title bar, `SetWindowTheme` dark themes, owner-drawn ListBox and DropDownList ComboBox |
+| `Icons.vb` | `IconKind` and every button/menu picture, drawn in code on a 20-unit grid (light ink, or dark ink for a yellow toggle); `ToolLibrary` uses `ToolDrawing.RenderIcon` |
+| `frmMain.Skin.vb` | Partial frmMain: `SetupSkin` (skin, toolbar styling, toggles, toolbar and menu icons) and the Project toolbar (`tsProject`: `MenuButton` mirrors a menu item's click and enabled state) |
+| `frmMain.Toolbars.vb` | Partial frmMain: the five movable toolbars over the view (`tsProject`, `tsDrawTools`, `tsTextStyle`, `tsSnap`, `tsView`; docked without a spot they go to the end of the first row with room, `EndOfRoomyRow`) in four `ToolStripPanel`s around the GL view or in a `ToolbarWindow` (floating), right-click menu, View > Toolbars, layout saved per toolbar as panel + row + order (floating: screen position) in `UserPreferences.Toolbars` |
+| `frmMain.Drawing.vb` | Partial frmMain: Draw and Style menus, snap controls, draw toolbar (`tsDrawTools` over the view, icons from `Icons.vb`), drawings from `ShapeDrawn`, the in-place text editor (`BeginTextEdit` / `EndTextEdit`), text style, arrange commands, `RemoveDrawingAt` |
 | `Setup\` | Installer project and `Setup.iss` |
 | `Samples\` | Six sample SVGs shipped next to the exe |
 
@@ -170,6 +173,13 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
    Shift at the press (read from the mouse message, MK_SHIFT) selects / moves / uses handles,
    Shift+Ctrl+click cycles, Alt turns freely (was Shift). The drawing under the mouse lights up
    (`AddHoverLight`, model pictures brighten). Every drawing is picked anywhere in its rotated box.
+15. **Dark Code Chop skin and the Project toolbar.** The user showed the toolbar of Code Chop
+   (`C:XportXport`, their 2010 CNC program: Button subclasses swapping skin PNGs, icons on top) and
+   asked for everything really dark. The skins are redrawn in code (`Skin.vb`, sampled from
+   `C:XportXportResourcesBTN_M_*.png`, `D_RND_BTN_M_*.png`, `bar_background.png`, `spacer_2.png`),
+   the icons are new (`Icons.vb`). All menus are dark, so menu icons use the light ink too.
+   GL clear colour 0.055. Harness `skinsheet` renders every icon in every state; `skinshots` captures
+   the main window, a menu, Machine Settings and the Tool Library.
 12. **Picking rules and the user guide.** `PickAt` collects every object near the
    cursor (one GPU pass per nearby object, `PickAllAt`) and picks: under the cursor,
    then the smallest box, then the nearest, then the topmost. Clicks use
@@ -202,6 +212,8 @@ torture SVG folders and their expectation scripts). Build with
 | `reliefgui` | 3D import through the form (env `SMOKE_SHOTS=1` screenshots during generation, `SMOKE_HOVER=1` hover light check, `SMOKE_STEPS=1` tab-switch steps) |
 | `reliefdemo` | Opens the window maximized, imports the dragon at 15" on a 16" blank, shows the simulation and leaves the window to the user |
 | `modelinfo <file> [dir]` | What the importer makes of a model: side, units, size, height spread, and a preview PNG per side |
+| `skinsheet [dir]` | Every icon on a command button (normal, hot, pressed, disabled), a round toggle (off, on), at menu size and at twice the size, plus a band with a spacer: `skin_sheet.png` |
+| `skinshots [dir]` | The real window in the skin: main window, Drawings tab, an open menu, Machine Settings, the Tool Library (`skin_*.png`) |
 | `tools` | Tool library: profiles and meshes of all standard tools, inch parsing, validation, settings/project migration, library file, the dialog (edits, type switch, save, pick mode) and the simulation tool, with screenshots. `tools nogui` skips the screen part |
 
 The torture expectations (`svg-torture-transforms-expect.js`,
@@ -249,6 +261,22 @@ The torture expectations (`svg-torture-transforms-expect.js`,
   switching windows while a GUI mode runs takes the mouse capture away, which
   (by design) cancels the drag in progress: rerun a single failed drag check
   before hunting a bug.
+- Dark WinForms: a DropDownList ComboBox draws its box light whatever its colours (owner-draw it);
+  a RichTextBox border stays light (use no border); a disabled TextBox stays light unless it has the
+  `DarkMode_CFD` window theme; `PropertyGrid.ToolStripRenderer` is protected (set the renderer on the
+  grid's child ToolStrip). `ToolStripManager.Renderer` covers context menus.
+- Dark WinForms, more: disabled Label / CheckBox text is drawn ControlPaint.Dark(BackColor), black on these
+  windows, so `Skin.Apply` repaints it in `InkDim` (Paint handlers); flat ComboBox frames and drop-down
+  buttons are painted in system colours after WM_PAINT, so `ComboFrame` (a NativeWindow) paints over them;
+  an owner-drawn ListBox keeps the designer's ItemHeight (size it from the font); `Control.DeviceDpi` is
+  valid before the handle exists (do not fall back to 96 without a handle); RTF loaded into the editor
+  brings its own black, so the import sets `SelectionColor` to the editor's ink.
+- Saved toolbar rows are restored only where they still fit (`SavedSpot`), and a toolbar's length is
+  measured whichever way it stands (`ToolbarLength`): it turns when it joins a side panel.
+- Tool drawing: a full radius (ball nose, tapered ball nose) is labelled R and, under it, the ball
+  size 2 x R (the user read "R 1/16 (ball)" as a 1/16" ball).
+- `SetupGenerationUi` runs before `SetupDrawing`: the Project toolbar's Stop button mirrors the
+  Stop Generating menu item, which must exist first.
 - PropertyGrid edits write straight into `_settings`; toolpath-relevant ones go
   through `RequestRegenerate`, simulation-only ones (`SimResolution`,
   `SimMeshDetail`) through `UpdateSimulationSettings` and must also be copied

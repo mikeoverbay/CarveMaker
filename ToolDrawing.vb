@@ -1,8 +1,9 @@
 ' ============================================================================
 '  ToolDrawing.vb
-'  Side view of a tool, to scale: flutes (light steel with helix marks), the
-'  shank stub above them (darker), the centre line, and dimensions for the
-'  diameter, flute length, end radius and angle that the tool type uses.
+'  Side view of a tool, to scale, on the dark skin: flutes (light steel with
+'  helix marks), the shank stub above them (darker), the centre line, and
+'  dimensions in light blue for the diameter, flute length, end radius and
+'  angle that the tool type uses.
 '  Also renders the small type icons for the tool list.
 ' ============================================================================
 
@@ -15,13 +16,13 @@ Public Class ToolDrawing
 
     Private _tool As ToolDefinition
 
-    Private Shared ReadOnly DimColor As Color = Color.FromArgb(0, 92, 175)
-    Private Shared ReadOnly OutlineColor As Color = Color.FromArgb(45, 48, 52)
+    Private Shared ReadOnly DimColor As Color = Color.FromArgb(96, 186, 255)
+    Private Shared ReadOnly OutlineColor As Color = Color.FromArgb(8, 9, 10)
 
     Public Sub New()
         SetStyle(ControlStyles.AllPaintingInWmPaint Or ControlStyles.OptimizedDoubleBuffer Or
                  ControlStyles.UserPaint Or ControlStyles.ResizeRedraw, True)
-        BackColor = Color.White
+        BackColor = Skin.Field
     End Sub
 
     ''' <summary>The tool to draw (Nothing shows a hint).</summary>
@@ -40,14 +41,14 @@ Public Class ToolDrawing
         Dim g = e.Graphics
         g.Clear(BackColor)
         If _tool Is Nothing OrElse Not (_tool.Diameter > 0) OrElse Not (_tool.Length > 0) Then
-            TextRenderer.DrawText(g, "Select or create a tool", Font, ClientRectangle, SystemColors.GrayText,
+            TextRenderer.DrawText(g, "Select or create a tool", Font, ClientRectangle, Skin.InkDim,
                                   TextFormatFlags.HorizontalCenter Or TextFormatFlags.VerticalCenter)
             Return
         End If
         Try
             Draw(g, ClientRectangle, _tool, True, Font)
         Catch ex As Exception
-            TextRenderer.DrawText(g, "Cannot draw this tool: " & ex.Message, Font, ClientRectangle, Color.Firebrick,
+            TextRenderer.DrawText(g, "Cannot draw this tool: " & ex.Message, Font, ClientRectangle, Color.FromArgb(244, 90, 70),
                                   TextFormatFlags.HorizontalCenter Or TextFormatFlags.VerticalCenter Or TextFormatFlags.WordBreak)
         End Try
     End Sub
@@ -124,7 +125,7 @@ Public Class ToolDrawing
         If Not withDimensions Then Return
 
         ' Centre line.
-        Using cl As New Pen(Color.FromArgb(150, 150, 150), 1.0F)
+        Using cl As New Pen(Color.FromArgb(110, 110, 116), 1.0F)
             cl.DashStyle = DashStyle.DashDot
             g.DrawLine(cl, cx, shankRect.Y - 12, cx, baseY + 12)
         End Using
@@ -173,7 +174,10 @@ Public Class ToolDrawing
                     g.DrawLine(lead, onArc, c)
                 End Using
                 g.FillEllipse(txt, c.X - 2, c.Y - 2, 4, 4)
-                Dim label = If(tool.Type = ToolType.BallNose, "R " & InchFormat.DimText(r) & " (ball)", "R " & InchFormat.DimText(r))
+                ' A full radius (ball nose, tapered ball nose) is half the ball: show the ball's size too.
+                Dim fullBall = tool.Type = ToolType.BallNose OrElse tool.Type = ToolType.TaperedBallNose
+                Dim label = "R " & InchFormat.DimText(r)
+                If fullBall Then label &= Environment.NewLine & "ball Ø " & InchFormat.DimText(2 * r) & " (2 × R)"
                 DrawLabel(g, label, font, txt, New PointF(outPt.X + 3, outPt.Y + 2), ContentAlignment.TopLeft)
             End If
 
@@ -228,7 +232,7 @@ Public Class ToolDrawing
             Case ContentAlignment.MiddleLeft : y -= sz.Height / 2
             Case ContentAlignment.BottomRight : x -= sz.Width : y -= sz.Height
         End Select
-        Using bg As New SolidBrush(Color.FromArgb(225, Color.White))
+        Using bg As New SolidBrush(Color.FromArgb(225, Skin.Field))
             g.FillRectangle(bg, x, y, sz.Width, sz.Height)
         End Using
         g.DrawString(text, font, brush, x, y)

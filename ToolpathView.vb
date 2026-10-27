@@ -1842,7 +1842,7 @@ Public Class ToolpathView
         If _errorLabel IsNot Nothing OrElse Parent Is Nothing Then Return
         _errorLabel = New Label() With {
             .Dock = DockStyle.Fill,
-            .BackColor = Color.FromArgb(30, 30, 34),
+            .BackColor = Skin.Window,
             .ForeColor = Color.Gainsboro,
             .TextAlign = ContentAlignment.MiddleCenter,
             .Padding = New Padding(16),
@@ -1888,7 +1888,7 @@ Public Class ToolpathView
             GL.DepthFunc(DepthFunction.Lequal)
             GL.Enable(EnableCap.Multisample)
             GL.Enable(EnableCap.LineSmooth)
-            GL.ClearColor(0.12F, 0.12F, 0.13F, 1.0F)
+            GL.ClearColor(0.055F, 0.055F, 0.06F, 1.0F)
 
             ' Hardware limits for the simulation heightmap: texture edge and render viewport.
             Dim maxTex As Integer = GL.GetInteger(GetPName.MaxTextureSize)
@@ -1991,7 +1991,7 @@ Public Class ToolpathView
         GL.Viewport(0, 0, Math.Max(ClientSize.Width, 1), Math.Max(ClientSize.Height, 1))
         If _initError IsNot Nothing Then
             ' Context works but shaders do not: keep the surface deterministic; the label explains.
-            GL.ClearColor(0.12F, 0.12F, 0.13F, 1.0F)
+            GL.ClearColor(0.055F, 0.055F, 0.06F, 1.0F)
             GL.Clear(ClearBufferMask.ColorBufferBit Or ClearBufferMask.DepthBufferBit)
             SwapBuffers()
             Return
@@ -2003,7 +2003,7 @@ Public Class ToolpathView
             GL.Viewport(0, 0, Math.Max(ClientSize.Width, 1), Math.Max(ClientSize.Height, 1))
         End If
 
-        GL.ClearColor(0.12F, 0.12F, 0.13F, 1.0F)
+        GL.ClearColor(0.055F, 0.055F, 0.06F, 1.0F)
         GL.Clear(ClearBufferMask.ColorBufferBit Or ClearBufferMask.DepthBufferBit)
         For Each layer In AllLayers
             UploadIfDirty(layer)

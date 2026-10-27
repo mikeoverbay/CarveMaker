@@ -2,7 +2,7 @@
 '  Machining.vb
 '  What happens to each item of the job (the text block, each drawing):
 '
-'    V-carve  carved with its V-bit (depths: Machine Settings > 2. Carve), with every other
+'    V-carve  carved with its V-bit (depths: Machine Settings > 2. Cut settings), with every other
 '             V-carved item (the original CarveMaker engine, VCarve.vb).
 '    Pocket   the area is cleared to a flat floor with an end mill: offset
 '             rings from the centre out to the wall, level by level.
@@ -131,7 +131,7 @@ Public Class Machining
     End Class
 
     <DisplayName("Operation"), RefreshProperties(RefreshProperties.All), TypeConverter(GetType(CutOperationConverter)),
-     Description("V-carve: carved with the V-bit chosen below (depths under Machine Settings > 2. Carve). Pocket: the area is cleared to a flat floor with an end mill. Profile: the tool follows the outline (outside, inside or on the line), for example to cut the shape out of the board.")>
+     Description("V-carve: carved with the V-bit chosen below (depths under Machine Settings > 2. Cut settings). Pocket: the area is cleared to a flat floor with an end mill. Profile: the tool follows the outline (outside, inside or on the line), for example to cut the shape out of the board.")>
     Public Property Operation As CutOperation
         Get
             Return _operation
@@ -169,7 +169,7 @@ Public Class Machining
     Public Property PlungeRate As Double = 15
 
     <DisplayName("Max usable depth (in)"), [ReadOnly](True), JsonIgnore,
-     Description("Deepest this V-bit can carve: where it reaches its full diameter, or the end of its flutes if they are shorter. The flat depth (Machine Settings > 2. Carve) is limited to this.")>
+     Description("Deepest this V-bit can carve: where it reaches its full diameter, or the end of its flutes if they are shorter. The flat depth (Machine Settings > 2. Cut settings) is limited to this.")>
     Public ReadOnly Property MaxUsableDepth As Double
         Get
             Return If(Tool Is Nothing, 0.0, Math.Round(Tool.UsableDepth, 4))

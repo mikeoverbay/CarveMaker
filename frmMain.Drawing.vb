@@ -54,26 +54,8 @@ Partial Class frmMain
         AddHandler _glView.Resize, Sub(o, ev) PositionTextEditor()
         AddHandler _glView.CameraChanged, Sub(o, ev) PositionTextEditor()
 
-        tsbToolSelect.Image = DrawIcon(DrawTool.Select)
-        tsbToolRectangle.Image = DrawIcon(DrawTool.Rectangle)
-        tsbToolEllipse.Image = DrawIcon(DrawTool.Ellipse)
-        tsbToolPolygon.Image = DrawIcon(DrawTool.Polygon)
-        tsbToolStar.Image = DrawIcon(DrawTool.Star)
-        tsbToolArea.Image = DrawIcon(DrawTool.Area)
-        tsbToolText.Image = DrawIcon(DrawTool.Text)
-        mnuDrawSelect.Image = tsbToolSelect.Image
-        mnuDrawRectangle.Image = tsbToolRectangle.Image
-        mnuDrawEllipse.Image = tsbToolEllipse.Image
-        mnuDrawPolygon.Image = tsbToolPolygon.Image
-        mnuDrawStar.Image = tsbToolStar.Image
-        mnuDrawArea.Image = tsbToolArea.Image
-        mnuDrawText.Image = tsbToolText.Image
-        tsbDrawAlignLeft.Image = AlignIcon(TextAlign.Left)
-        tsbDrawAlignCenter.Image = AlignIcon(TextAlign.Center)
-        tsbDrawAlignRight.Image = AlignIcon(TextAlign.Right)
-        mnuStyleAlignLeft.Image = tsbDrawAlignLeft.Image
-        mnuStyleAlignCenter.Image = tsbDrawAlignCenter.Image
-        mnuStyleAlignRight.Image = tsbDrawAlignRight.Image
+        ' The dark look, the big buttons and their icons (frmMain.Skin.vb).
+        SetupSkin()
 
         Dim names As New List(Of String)
         Using coll As New InstalledFontCollection()
@@ -87,16 +69,6 @@ Partial Class frmMain
 
         ' Snapping: toolbar lists and menu choices from the same tables.
         _prefs = UserPreferences.Load()
-        tsbSnapGrid.Image = SnapIcon()
-        mnuDrawSnapGrid.Image = tsbSnapGrid.Image
-        _simIcon = BoardIcon()
-        _pathIcon = PathIcon()
-        tsbSimToggle.Image = _pathIcon
-        tsbSimToggle.Text = "Toolpath"
-        tsbHide.Image = EyeIcon(crossed:=True)
-        tsbShowAll.Image = EyeIcon(crossed:=False)
-        mnuDrawHide.Image = tsbHide.Image
-        mnuDrawShowAll.Image = tsbShowAll.Image
         For Each spacing In UserPreferences.GridSpacings
             Dim value = spacing
             tscSnapGrid.Items.Add(UserPreferences.SpacingText(value))
@@ -388,6 +360,8 @@ Partial Class frmMain
                 .WordWrap = False,
                 .ScrollBars = ScrollBars.None,
                 .BorderStyle = BorderStyle.FixedSingle,
+                .BackColor = Skin.Field,
+                .ForeColor = Skin.Ink,
                 .Visible = False
             }
             AddHandler _textEditor.TextChanged, AddressOf TextEditor_TextChanged
@@ -782,128 +756,4 @@ Partial Class frmMain
         RequestRegenerate(immediate:=True)
     End Sub
 
-    ' ----------------------------------------------------------------- icons
-
-    Private Shared Function NewIcon(paint As Action(Of Graphics, Pen)) As Bitmap
-        Dim bmp As New Bitmap(16, 16)
-        Using g = Graphics.FromImage(bmp)
-            g.SmoothingMode = SmoothingMode.AntiAlias
-            Using pen As New Pen(Color.FromArgb(40, 40, 48), 1.4F)
-                paint(g, pen)
-            End Using
-        End Using
-        Return bmp
-    End Function
-
-    ''' <summary>Small toolbar pictures of the draw tools.</summary>
-    Private Shared Function DrawIcon(tool As DrawTool) As Bitmap
-        Select Case tool
-            Case DrawTool.Rectangle
-                Return NewIcon(Sub(g, p) g.DrawRectangle(p, 2, 4, 12, 8))
-            Case DrawTool.Ellipse
-                Return NewIcon(Sub(g, p) g.DrawEllipse(p, 1.5F, 3.5F, 13, 9))
-            Case DrawTool.Polygon
-                Return NewIcon(Sub(g, p) g.DrawPolygon(p, Enumerable.Range(0, 6).Select(Function(i) New PointF(CSng(8 + 6.5 * Math.Cos(Math.PI / 6 + i * Math.PI / 3)), CSng(8 + 6.5 * Math.Sin(Math.PI / 6 + i * Math.PI / 3)))).ToArray()))
-            Case DrawTool.Star
-                Return NewIcon(Sub(g, p) g.DrawPolygon(p, Enumerable.Range(0, 10).Select(Function(i) New PointF(CSng(8 + If(i Mod 2 = 0, 7, 3) * Math.Cos(-Math.PI / 2 + i * Math.PI / 5)), CSng(8.5 + If(i Mod 2 = 0, 7, 3) * Math.Sin(-Math.PI / 2 + i * Math.PI / 5)))).ToArray()))
-            Case DrawTool.Area
-                Return NewIcon(Sub(g, p)
-                                   Dim pts = {New PointF(2, 12), New PointF(5, 3), New PointF(10, 6), New PointF(14, 2), New PointF(13, 13)}
-                                   g.DrawPolygon(p, pts)
-                                   For Each q In pts
-                                       g.FillRectangle(Brushes.SteelBlue, q.X - 1.5F, q.Y - 1.5F, 3, 3)
-                                   Next
-                               End Sub)
-            Case DrawTool.Text
-                Return NewIcon(Sub(g, p)
-                                   g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit
-                                   Using f As New Font("Georgia", 11.0F, FontStyle.Bold, GraphicsUnit.Pixel)
-                                       Using b As New SolidBrush(p.Color)
-                                           g.DrawString("T", f, b, 2.0F, 1.0F)
-                                       End Using
-                                   End Using
-                               End Sub)
-            Case Else
-                ' Select: an arrow pointer.
-                Return NewIcon(Sub(g, p)
-                                   Dim arrow = {New PointF(4, 1), New PointF(4, 13), New PointF(7, 10), New PointF(9.5F, 15), New PointF(11.5F, 14), New PointF(9, 9), New PointF(13, 9)}
-                                   g.FillPolygon(Brushes.White, arrow)
-                                   g.DrawPolygon(p, arrow)
-                               End Sub)
-        End Select
-    End Function
-
-    ' Pictures of the View toolbar's switch: the carved board, or toolpath lines.
-    Private _simIcon, _pathIcon As Bitmap
-
-    ''' <summary>A board with a carved groove.</summary>
-    Private Shared Function BoardIcon() As Bitmap
-        Return NewIcon(Sub(g, p)
-                           Using wood As New SolidBrush(Color.FromArgb(214, 170, 110))
-                               g.FillRectangle(wood, 1, 4, 14, 9)
-                           End Using
-                           Using groove As New SolidBrush(Color.FromArgb(120, 80, 40))
-                               g.FillEllipse(groove, 4, 6, 8, 5)
-                           End Using
-                           g.DrawRectangle(p, 1, 4, 14, 9)
-                       End Sub)
-    End Function
-
-    ''' <summary>Zig-zag toolpath lines.</summary>
-    Private Shared Function PathIcon() As Bitmap
-        Return NewIcon(Sub(g, p)
-                           Using cyan As New Pen(Color.FromArgb(30, 150, 200), 1.4F)
-                               g.DrawLines(cyan, {New PointF(2, 3), New PointF(14, 3), New PointF(14, 7), New PointF(2, 7), New PointF(2, 11), New PointF(14, 11)})
-                           End Using
-                           Using red As New Pen(Color.FromArgb(200, 60, 50), 1.0F) With {.DashStyle = DashStyle.Dash}
-                               g.DrawLine(red, 2, 14, 14, 14)
-                           End Using
-                       End Sub)
-    End Function
-
-    ''' <summary>An eye; crossed out for Hide.</summary>
-    Private Shared Function EyeIcon(crossed As Boolean) As Bitmap
-        Return NewIcon(Sub(g, p)
-                           Using path As New GraphicsPath()
-                               path.AddBezier(1.5F, 8, 4.5F, 3, 11.5F, 3, 14.5F, 8)
-                               path.AddBezier(14.5F, 8, 11.5F, 13, 4.5F, 13, 1.5F, 8)
-                               g.DrawPath(p, path)
-                           End Using
-                           Using b As New SolidBrush(Color.FromArgb(40, 110, 210))
-                               g.FillEllipse(b, 5.5F, 5.5F, 5, 5)
-                           End Using
-                           If crossed Then
-                               Using red As New Pen(Color.FromArgb(200, 40, 40), 1.8F)
-                                   g.DrawLine(red, 2, 14, 14, 2)
-                               End Using
-                           End If
-                       End Sub)
-    End Function
-
-    ''' <summary>A grid of dots with a corner square sitting on one of them.</summary>
-    Private Shared Function SnapIcon() As Bitmap
-        Return NewIcon(Sub(g, p)
-                           For gx = 0 To 3
-                               For gy = 0 To 3
-                                   g.FillRectangle(Brushes.Gray, 1.5F + gx * 4, 1.5F + gy * 4, 1.6F, 1.6F)
-                               Next
-                           Next
-                           Using b As New SolidBrush(Color.FromArgb(40, 110, 210))
-                               g.FillRectangle(b, 5.5F, 5.5F, 5, 5)
-                           End Using
-                           g.DrawRectangle(p, 5.5F, 5.5F, 5, 5)
-                       End Sub)
-    End Function
-
-    ''' <summary>Four lines lined up left, centred or right.</summary>
-    Private Shared Function AlignIcon(align As TextAlign) As Bitmap
-        Return NewIcon(Sub(g, p)
-                           Dim lengths = {12, 8, 11, 6}
-                           For i = 0 To 3
-                               Dim len = lengths(i)
-                               Dim x0 As Single = If(align = TextAlign.Left, 2, If(align = TextAlign.Right, 14 - len, 8 - len / 2.0F))
-                               g.DrawLine(p, x0, 3 + i * 3.3F, x0 + len, 3 + i * 3.3F)
-                           Next
-                       End Sub)
-    End Function
 End Class

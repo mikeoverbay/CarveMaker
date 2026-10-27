@@ -6,7 +6,7 @@ installed font into a **V-carve toolpath** for a V-bit (default 1/4" diameter,
 
 ```
 +------------------------------+----------------------------------------+
-| [Text] [Drawings]            | [draw tools] [font B I align] [snap]   |
+| [Text] [Drawings]            | [project] [draw tools] [font B I align]|
 |                              |                     +----------------+ |
 | Size: Large Medium Small     |   OpenGL toolpath   |Machine Settings| |
 | Align: Left Center Right     |   view (pan: left   | (Ctrl+K, tool  | |
@@ -17,6 +17,15 @@ installed font into a **V-carve toolpath** for a V-bit (default 1/4" diameter,
 |   toolpath ]                 |                     +----------------+ |
 +------------------------------+----------------------------------------+
 ```
+
+## The look
+
+Everything is dark, after the author's earlier CNC program *Code Chop*: command
+buttons are glossy black with a lime bar that glows under the mouse; buttons
+that stay on (the draw tools, Bold, Italic, the alignment and size buttons, the
+simulation switch) are round and turn yellow while on; grooves separate the
+groups. The icons are drawn in code (`Icons.vb`), so they stay sharp at any
+screen scale; the Tool Library button shows a real tool.
 
 ## User guide
 
@@ -163,8 +172,11 @@ Arrow keys nudge by 0.01" (0.1" with Shift), **Delete** removes the drawing.
 to Back, **Hide** (Ctrl+H: not shown, picked or carved) and **Show All**
 (Ctrl+Shift+H); both are also on the *View* toolbar.
 
-**Toolbars**: *Draw Tools*, *Text Style*, *Snap* and *View* start side by side over the
-view. Drag one by its grip to any edge of the view (top, bottom, left or right,
+**Toolbars**: *Project*, *Draw Tools*, *Text Style*, *Snap* and *View* start over the
+view, side by side (a toolbar that does not fit on a row starts the next one).
+*Project* has New, Open and Save, Generate, Stop and Export G-code, and the Tool
+Library and Machine Settings; each button does what its menu item does and is
+greyed out when that is. Drag one by its grip to any edge of the view (top, bottom, left or right,
 in rows), or off the view to float it in its own small window (double-click
 that window's title to dock it again). Right-click a toolbar to dock it on an
 edge, float it or hide it; **View > Toolbars** shows hidden ones again and
@@ -255,7 +267,7 @@ Then come the rows of the chosen operation:
 
 | Operation | What it does | Settings |
 |---|---|---|
-| V-carve (default) | Carved with its V-bit; items with the same V-bit are carved together as one shape, each at its own feed (give them the same spindle speed; the first one's is used) | *Max usable depth* of the bit (read only); depths and passes under *Machine Settings > 2. Carve* |
+| V-carve (default) | Carved with its V-bit; items with the same V-bit are carved together as one shape, each at its own feed (give them the same spindle speed; the first one's is used) | *Max usable depth* of the bit (read only); depths and passes under *Machine Settings > 2. Cut settings* |
 | Pocket | Clears the area to a flat floor with an end mill: offset rings from the centre out to the wall, level by level | tool, cut depth, pass depth, stepover % |
 | Profile | The tool follows the outline: **Outside** (cut the shape out at its true size), **Inside** (cut an opening) or **On the line** (engrave; a V-bit is allowed here) | tool, side, cut depth or *Cut through the stock*, pass depth, tabs (count, width, thickness) |
 
@@ -288,10 +300,10 @@ scale drawing with its dimensions:
 | Type | Diameter | Flute length | End radius | Angle (included) |
 |---|---|---|---|---|
 | Flat end mill | yes | yes | | |
-| Ball nose | yes | yes | always half the diameter | |
+| Ball nose | yes | yes | ball radius: half the ball (a 1/8" ball nose has R 1/16"); the drawing shows the radius and the ball size, 2 x R | |
 | Bull nose | yes | yes | corner radius | |
 | V-bit | yes | yes | | yes |
-| Tapered ball nose | yes | yes | tip radius | taper |
+| Tapered ball nose | yes | yes | tip radius: half the tip ball (R 1/32" is a 1/16" ball); the drawing shows both | taper |
 | Drill | yes | yes | | point angle |
 
 Each tool also stores a **spindle speed, feed rate and plunge rate**. Picking the

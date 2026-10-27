@@ -133,7 +133,7 @@ Partial Class frmMain
         splitMain = New SplitContainer()
         tlpLeft = New TableLayoutPanel()
         pnlEditor = New Panel()
-        tabLeft = New TabControl()
+        tabLeft = New DarkTabControl()
         tabText = New TabPage()
         tabObjects = New TabPage()
         tsObjects = New ToolStrip()
@@ -1435,7 +1435,7 @@ Partial Class frmMain
     Friend WithEvents splitMain As SplitContainer
     Friend WithEvents tlpLeft As TableLayoutPanel
     Friend WithEvents pnlEditor As Panel
-    Friend WithEvents tabLeft As TabControl
+    Friend WithEvents tabLeft As DarkTabControl
     Friend WithEvents tabText As TabPage
     Friend WithEvents tabObjects As TabPage
     Friend WithEvents tsObjects As ToolStrip

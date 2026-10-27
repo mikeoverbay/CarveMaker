@@ -948,7 +948,12 @@ End Module
 Public Module JobBuilder
     Private ReadOnly Ci As CultureInfo = CultureInfo.InvariantCulture
 
-    Public Function Generate(lines As IList(Of TextLine), items As IList(Of MachiningItem), s As CarveSettings, token As CancellationToken) As Toolpath
+    ''' <param name="oneSegmentPerItem">
+    ''' Each pocket and profile item gets a segment of its own instead of sharing one with the items
+    ''' cut by the same tool at the same speed (G-code export, one program per toolpath).
+    ''' </param>
+    Public Function Generate(lines As IList(Of TextLine), items As IList(Of MachiningItem), s As CarveSettings, token As CancellationToken,
+                             Optional oneSegmentPerItem As Boolean = False) As Toolpath
         Dim tp As New Toolpath()
         tp.BlankMinX = s.BlankOriginX
         tp.BlankMinY = s.BlankOriginY
@@ -1060,8 +1065,12 @@ Public Module JobBuilder
                     MillingEngine.LinkPasses(passes, it.Machining.ApplyTo(s), moves, tp.Contours, regionIndex)
                     regionIndex += 1
                     tp.RegionCount += 1
+                    If oneSegmentPerItem Then
+                        AppendSegment(tp, "Pocket: " & it.Name, CutOperation.Pocket, it.Machining.Tool, it.Machining.SpindleRpm, moves)
+                        moves = New List(Of ToolMove)
+                    End If
                 Next
-                AppendSegment(tp, "Pocket: " & String.Join(", ", g.Select(Function(i) i.Name)), CutOperation.Pocket, g(0).Machining.Tool, g(0).Machining.SpindleRpm, moves)
+                AppendSegment(tp, "Pocket: " & String.Join(", ", g.Select(Function(i) i.Name)), CutOperation.Pocket, g(0).Machining.Tool, g(0).Machining.SpindleRpm, moves, g.Count)
             Next
         Next
 
@@ -1078,8 +1087,12 @@ Public Module JobBuilder
                 If bottom > it.Machining.Tool.Length + 0.000001 Then
                     tp.Warnings.Add(String.Format(Ci, "{0}: the cut ({1:0.###}"") is deeper than the {2}'s flutes ({3:0.###}"").", it.Name, bottom, it.Machining.Tool.DisplayName(), it.Machining.Tool.Length))
                 End If
+                If oneSegmentPerItem Then
+                    AppendSegment(tp, "Profile: " & it.Name, CutOperation.Profile, it.Machining.Tool, it.Machining.SpindleRpm, moves)
+                    moves = New List(Of ToolMove)
+                End If
             Next
-            AppendSegment(tp, "Profile: " & String.Join(", ", g.Select(Function(i) i.Name)), CutOperation.Profile, g(0).Machining.Tool, g(0).Machining.SpindleRpm, moves)
+            AppendSegment(tp, "Profile: " & String.Join(", ", g.Select(Function(i) i.Name)), CutOperation.Profile, g(0).Machining.Tool, g(0).Machining.SpindleRpm, moves, g.Count)
         Next
         For Each it In pocketItems
             Dim bottom = it.Machining.BottomDepth(s.StockThickness)
@@ -1150,11 +1163,12 @@ Public Module JobBuilder
         Return groups
     End Function
 
-    Friend Sub AppendSegment(tp As Toolpath, name As String, op As CutOperation, tool As ToolDefinition, rpm As Double, moves As List(Of ToolMove))
+    Friend Sub AppendSegment(tp As Toolpath, name As String, op As CutOperation, tool As ToolDefinition, rpm As Double, moves As List(Of ToolMove),
+                             Optional itemCount As Integer = 1)
         If moves.Count = 0 Then Return
         tp.Segments.Add(New ToolpathSegment With {
             .Name = name, .Operation = op, .Tool = If(tool?.Clone(), ToolDefinition.DefaultVBit()), .SpindleRpm = rpm,
-            .FirstMove = tp.Moves.Count, .MoveCount = moves.Count})
+            .FirstMove = tp.Moves.Count, .MoveCount = moves.Count, .ItemCount = Math.Max(1, itemCount)})
         tp.Moves.AddRange(moves)
     End Sub
 

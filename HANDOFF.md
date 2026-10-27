@@ -301,7 +301,10 @@ The torture expectations (`svg-torture-transforms-expect.js`,
 - Export G-code: with more than one toolpath, `ExportDialog` asks one program per tool
   (`GCodeWriter.ToolGroups`) or per toolpath (`ToolpathGroups`, each segment its own program,
   `SameToolAsPrevious` writes "keep the tool and the Z zero" instead of "fit this tool");
-  remembered as `UserPreferences.GCodePerToolpath`. Files are named after the toolpath.
+  remembered as `UserPreferences.GCodePerToolpath`. Files are named after the toolpath (capped at 40
+  characters, all names checked before writing). On screen, pocket/profile items with the same tool and
+  speed share a segment (`ToolpathSegment.ItemCount`); per-toolpath export regenerates with
+  `JobBuilder.Generate(..., oneSegmentPerItem:=True)` so each item gets its own program.
 - Status button (`frmMain.Status.vb`, `_tsbStatus` inserted after `tsbSimToggle` in `SetupSkin` before
   styling): `JobState` Empty/Busy/Fine/Problem from `SetJobBusy` (SetGenerating) and `SetJobStatus`
   (PublishToolpath notes, generation errors, settings problems); Problem blinks (450 ms timer).

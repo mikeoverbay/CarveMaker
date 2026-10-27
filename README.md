@@ -316,9 +316,10 @@ stock. Each program has the usual FluidNC start and end.
 
 When the job has more than one toolpath, Export asks how to split it: **one program
 per tool** (the above; a single program when every toolpath uses the same tool) or
-**one program per toolpath**: the V-carve, each pocket, profile and 3D pass in its own
-numbered program (`Sign-2-Pocket_Rectangle_1.nc`, ...), to run, run again or skip each
-one on its own. Where the next program uses the same tool, its header says to keep the
+**one program per toolpath**: every pocket and profile drawing (even several cut with the
+same end mill), each 3D pass and the V-carve in its own numbered program
+(`Sign-2-Pocket_Rectangle_1.nc`, ...), to run, run again or skip each one on its own.
+Shapes V-carved with the same bit are carved as one shape, so they share a program. Where the next program uses the same tool, its header says to keep the
 tool and the Z zero. The choice is remembered for the next export.
 
 ## Tool library

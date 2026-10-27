@@ -47,7 +47,7 @@ Friend NotInheritable Class ExportDialog
         _byToolpath.Text = "One program per toolpath: " & Count(toolpathPrograms)
         _byToolpath.AutoSize = True
         body.Controls.Add(_byToolpath)
-        body.Controls.Add(hint("Each toolpath (the V-carve, each pocket, profile and 3D pass) in its own program, numbered in the order to run them, so each can be run, run again or skipped on its own. Where the next one uses the same tool, keep the tool and the Z zero."))
+        body.Controls.Add(hint("Each toolpath in its own program: every pocket and profile drawing, each 3D pass, and the V-carve (shapes V-carved with the same bit are carved as one, so they share a program). Numbered in the order to run them, so each can be run, run again or skipped on its own. Where the next one uses the same tool, keep the tool and the Z zero."))
         _byTool.Checked = Not perToolpath
         _byToolpath.Checked = perToolpath
 

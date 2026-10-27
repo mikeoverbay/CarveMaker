@@ -109,6 +109,11 @@ Public Class ToolpathSegment
     Public Property EstimatedMinutes As Double
     ''' <summary>Deepest Z of the segment (negative).</summary>
     Public Property MinZ As Double
+    ''' <summary>
+    ''' Separate items cut one after another in this segment (pockets or profiles that share a tool
+    ''' and speed); each can have a program of its own. A V-carve's shapes are carved as one: 1.
+    ''' </summary>
+    Public Property ItemCount As Integer = 1
 End Class
 
 ''' <summary>One cutting pass: a closed constant-Z loop or an open variable-Z centerline.</summary>

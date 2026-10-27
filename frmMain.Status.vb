@@ -73,30 +73,52 @@ Partial Class frmMain
         ShowJobState()
     End Sub
 
+    ''' <summary>
+    ''' Everything wrong with a finished toolpath: the drawings' notes, the toolpath's warnings, and the
+    ''' extra stock note from the current settings (extra stock is display only, so it never regenerates).
+    ''' </summary>
+    Private Function JobNotes(itemNotes As IEnumerable(Of String), tp As Toolpath) As List(Of String)
+        Dim notes = itemNotes.Concat(If(tp?.Warnings, New List(Of String))).ToList()
+        Dim extraNote = _settings.ExtraStockNote()
+        If extraNote IsNot Nothing Then notes.Add(extraNote)
+        Return notes
+    End Function
+
+    ''' <summary>"  (2 problems: see Status)" after a saved-file message, or nothing.</summary>
+    Private Function ProblemsSuffix() As String
+        Dim n = _statusRows.Where(Function(r) r.IsProblem).Count()
+        Return If(n = 0, "", "  (" & n & If(n = 1, " problem", " problems") & ": see Status)")
+    End Function
+
     ''' <summary>The extra stock changed (it does not regenerate): its row follows the current settings.</summary>
     Private Sub RefreshExtraStockStatus()
         _statusRows.RemoveAll(Function(r) r.IsProblem AndAlso r.Where = "Blank (extra stock)")
         Dim note = _settings.ExtraStockNote()
         If note IsNot Nothing Then _statusRows.Insert(0, ProblemRow(note))
-        If _jobState <> JobState.Busy Then
-            Dim anyProblem = _statusRows.Any(Function(r) r.IsProblem)
-            _jobState = If(anyProblem, JobState.Problem, If(_toolpath Is Nothing OrElse _toolpath.IsEmpty, JobState.Empty, JobState.Fine))
-        Else
-            _stateBeforeBusy = If(_statusRows.Any(Function(r) r.IsProblem), JobState.Problem, _stateBeforeBusy)
-        End If
+        ' Worked out again from the rows, whether shown now or restored after a run in progress.
+        Dim anyProblem = _statusRows.Any(Function(r) r.IsProblem)
+        Dim state = If(anyProblem, JobState.Problem, If(_toolpath Is Nothing OrElse _toolpath.IsEmpty, JobState.Empty, JobState.Fine))
+        If _jobState = JobState.Busy Then _stateBeforeBusy = state Else _jobState = state
         ShowJobState()
     End Sub
 
     ''' <summary>A problem message as a row: where it is (a drawing, the text, the blank, the settings) and what.</summary>
     Private Function ProblemRow(note As String) As JobStatusRow
+        ' A drawing's note starts with its name (longest names first, so "Star 12" is not taken for "Star 1").
         For Each o In _objects.OrderByDescending(Function(x) x.Name.Length)
-            If note.StartsWith(o.Name & ": ", StringComparison.Ordinal) Then Return New JobStatusRow(True, o.Name, note.Substring(o.Name.Length + 2))
+            For Each joint In {": ", " skipped: ", " roughing: ", " finishing: "}
+                If note.StartsWith(o.Name & joint, StringComparison.Ordinal) Then
+                    Dim what = note.Substring(o.Name.Length + joint.Length)
+                    If joint <> ": " Then what = joint.Trim().TrimEnd(":"c) & ": " & what
+                    Return New JobStatusRow(True, o.Name, what)
+                End If
+            Next
         Next
-        For Each prefix In {"Settings: ", "Error: ", "Roughing: ", "Finishing: "}
+        For Each prefix In {"Settings: ", "Error: "}
             If note.StartsWith(prefix, StringComparison.Ordinal) Then Return New JobStatusRow(True, prefix.TrimEnd(" "c, ":"c), note.Substring(prefix.Length))
         Next
         If note.StartsWith("Extra stock", StringComparison.Ordinal) Then Return New JobStatusRow(True, "Blank (extra stock)", note)
-        If note.StartsWith("Text ", StringComparison.Ordinal) OrElse note.StartsWith("Flat depth", StringComparison.Ordinal) Then Return New JobStatusRow(True, "Text", note)
+        If note.StartsWith("Text runs", StringComparison.Ordinal) OrElse note.StartsWith("Flat depth", StringComparison.Ordinal) Then Return New JobStatusRow(True, "Text", note)
         Return New JobStatusRow(True, "Job", note)
     End Function
 

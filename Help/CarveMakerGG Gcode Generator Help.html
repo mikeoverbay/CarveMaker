@@ -90,7 +90,7 @@
   <li><b>Type your text</b> on the <b>Text</b> tab. Each line can be Large, Medium or Small and aligned left, centre or right.</li>
   <li><b>Add drawings</b> if you like: draw shapes and text with the toolbar over the view, or import an SVG file.</li>
   <li><b>Check the toolpath.</b> It regenerates as you type (or press <kbd>F5</kbd>). Press <kbd>Ctrl</kbd>+<kbd>M</kbd> to see the carved board.</li>
-  <li><b>Export G-code</b> with <span class="menu">File &gt; Export G-code</span> (<kbd>Ctrl</kbd>+<kbd>G</kbd>). Jobs with several tools are written as one program per tool, in order. When the job has more than one toolpath, Export asks how to split it: one program per tool, or one program per toolpath (the V-carve, each pocket, profile and 3D pass in its own numbered program, to run, run again or skip each one on its own; where the next program uses the same tool its header says to keep the tool and the Z zero). The choice is remembered.</li>
+  <li><b>Export G-code</b> with <span class="menu">File &gt; Export G-code</span> (<kbd>Ctrl</kbd>+<kbd>G</kbd>). Jobs with several tools are written as one program per tool, in order. When the job has more than one toolpath, Export asks how to split it: one program per tool, or one program per toolpath (every pocket and profile drawing, even several cut with the same end mill, each 3D pass and the V-carve in its own numbered program, to run, run again or skip each one on its own; shapes V-carved with the same bit are carved as one shape, so they share a program; where the next program uses the same tool its header says to keep the tool and the Z zero). The choice is remembered.</li>
   <li><b>Save the project</b> (<kbd>Ctrl</kbd>+<kbd>S</kbd>) to come back to it later.</li>
 </ol>
 

@@ -887,10 +887,7 @@ Public Class frmMain
         _glView.SetToolpath(_toolpath, snapshot, t.Result)
         _glView.ExtraStockZ = snapshot.ExtraStockZ
         UpdateStats(_toolpath)
-        Dim notes = itemNotes.Concat(_toolpath.Warnings).ToList()
-        ' Extra stock is display only (changing it does not regenerate): warn from the current settings.
-        Dim extraNote = _settings.ExtraStockNote()
-        If extraNote IsNot Nothing Then notes.Add(extraNote)
+        Dim notes = JobNotes(itemNotes, _toolpath)
         ' The Status button: red and blinking with any of these, green without.
         SetJobStatus(notes, _toolpath)
         If notes.Count > 0 Then
@@ -1133,12 +1130,15 @@ Public Class frmMain
         If tp Is Nothing OrElse _running OrElse contentKey <> _lastLinesKey OrElse Not SameSettings(snapshot, _lastSettings) Then
             UseWaitCursor = True
             Try
+                Dim itemNotes = DrawingNotes()
                 tp = JobBuilder.Generate(lines, PlacedItems(), snapshot, CancellationToken.None)
                 _toolpath = tp
                 _lastLinesKey = contentKey
                 _lastSettings = snapshot
                 _glView.SetToolpath(tp, snapshot)
                 UpdateStats(tp)
+                ' The Status button follows the toolpath being exported.
+                SetJobStatus(JobNotes(itemNotes, tp), tp)
             Catch ex As Exception
                 MessageBox.Show(Me, ex.Message, "Generate", MessageBoxButtons.OK, MessageBoxIcon.Error)
                 Return
@@ -1152,18 +1152,34 @@ Public Class frmMain
             Return
         End If
 
-        ' Several toolpaths: one program per tool, or (the user's choice) one per toolpath.
+        ' Several toolpaths: one program per tool, or (the user's choice) one per toolpath, where each
+        ' pocket and profile item counts as a toolpath of its own.
         Dim groups = GCodeWriter.ToolGroups(tp)
         Dim perToolpath = False
-        Dim byToolpath = GCodeWriter.ToolpathGroups(tp)
-        If byToolpath.Count > 1 Then
-            Using choose As New ExportDialog(groups.Count, byToolpath.Count, _prefs.GCodePerToolpath)
+        Dim toolpathPrograms = tp.Segments.Sum(Function(sg) sg.ItemCount)
+        If toolpathPrograms > 1 Then
+            Using choose As New ExportDialog(groups.Count, toolpathPrograms, _prefs.GCodePerToolpath)
                 If choose.ShowDialog(Me) <> DialogResult.OK Then Return
                 perToolpath = choose.PerToolpath
                 _prefs.GCodePerToolpath = perToolpath
                 _prefs.Save()
             End Using
-            If perToolpath Then groups = byToolpath
+        End If
+        Dim exportTp = tp
+        If perToolpath Then
+            ' Items cut with the same tool and speed share a segment on screen: here each gets its own.
+            If tp.Segments.Any(Function(sg) sg.ItemCount > 1) Then
+                UseWaitCursor = True
+                Try
+                    exportTp = JobBuilder.Generate(lines, PlacedItems(), snapshot, CancellationToken.None, oneSegmentPerItem:=True)
+                Catch ex As Exception
+                    MessageBox.Show(Me, ex.Message, "Generate", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                    Return
+                Finally
+                    UseWaitCursor = False
+                End Try
+            End If
+            groups = GCodeWriter.ToolpathGroups(exportTp)
         End If
 
         If String.IsNullOrEmpty(dlgSave.FileName) Then
@@ -1172,23 +1188,33 @@ Public Class frmMain
         If dlgSave.ShowDialog(Me) <> DialogResult.OK Then Return
         Try
             If groups.Count <= 1 Then
-                File.WriteAllText(dlgSave.FileName, GCodeWriter.Write(tp, snapshot, rtbText.Text))
-                lblStatus.Text = "Saved " & dlgSave.FileName
+                File.WriteAllText(dlgSave.FileName, GCodeWriter.Write(exportTp, snapshot, rtbText.Text))
+                lblStatus.Text = "Saved " & dlgSave.FileName & ProblemsSuffix()
                 Return
             End If
-            ' Several programs, numbered in the order they must run.
+            ' Several programs, numbered in the order they must run. Every name is made (and checked)
+            ' before anything is written, so a bad name cannot leave half a job on disk.
             Dim dir = Path.GetDirectoryName(dlgSave.FileName)
             Dim stem = Path.GetFileNameWithoutExtension(dlgSave.FileName)
             Dim ext = Path.GetExtension(dlgSave.FileName)
             If String.IsNullOrEmpty(ext) Then ext = ".nc"
-            Dim tools = GCodeWriter.ToolGroups(tp).Count
+            Dim fileNames As New List(Of String)
+            For i = 0 To groups.Count - 1
+                Dim g = groups(i)
+                Dim part = SafeFilePart(If(If(perToolpath, g.Segments(0).Name, g.Tool?.AsciiName()), "tool"))
+                If part.Length > 40 Then part = part.Substring(0, 40).TrimEnd("_"c, "-"c)
+                Dim fileName = stem & "-" & (i + 1).ToString(CultureInfo.InvariantCulture) & "-" & part & ext
+                Path.GetFullPath(Path.Combine(dir, fileName))     ' throws here, before writing, for a name Windows refuses
+                fileNames.Add(fileName)
+            Next
+            Dim tools = GCodeWriter.ToolGroups(exportTp).Count
             Dim report As New Text.StringBuilder()
             If perToolpath Then
                 report.AppendLine("Saved as " & groups.Count & " programs, one per toolpath (" & tools & If(tools = 1, " tool", " tools") & ").")
             Else
                 report.AppendLine("This job uses " & groups.Count & " tools, so it was saved as " & groups.Count & " programs.")
             End If
-            If tp.Segments.Any(Function(sg) sg.Operation = CutOperation.Roughing3D) Then
+            If exportTp.Segments.Any(Function(sg) sg.Operation = CutOperation.Roughing3D) Then
                 report.AppendLine("Run them in this order. Before each one with a new tool, fit it and re-zero Z on the top of the stock, on a part the roughing has not cut away (a corner of the board):")
             Else
                 report.AppendLine("Run them in this order. Before each one with a new tool, fit it and re-zero Z on the top of the stock:")
@@ -1196,14 +1222,13 @@ Public Class frmMain
             report.AppendLine()
             For i = 0 To groups.Count - 1
                 Dim g = groups(i)
-                Dim part = If(perToolpath, g.Segments(0).Name, g.Tool?.AsciiName())
-                Dim fileName = stem & "-" & (i + 1).ToString(CultureInfo.InvariantCulture) & "-" & SafeFilePart(If(part, "tool")) & ext
-                File.WriteAllText(Path.Combine(dir, fileName), GCodeWriter.Write(tp, snapshot, rtbText.Text, g, i + 1, groups.Count))
+                Dim fileName = fileNames(i)
+                File.WriteAllText(Path.Combine(dir, fileName), GCodeWriter.Write(exportTp, snapshot, rtbText.Text, g, i + 1, groups.Count))
                 report.AppendLine(String.Format(CultureInfo.InvariantCulture, "{0}. {1}{2}     {3}, about {4:0.0} min{6}{2}     {5}",
                                                 i + 1, fileName, Environment.NewLine, If(g.Tool?.DisplayName(), "tool"), g.EstimatedMinutes, g.Operations,
                                                 If(g.SameToolAsPrevious, " (same tool: keep it and the Z zero)", "")))
             Next
-            lblStatus.Text = "Saved " & groups.Count & If(perToolpath, " programs (one per toolpath) in ", " programs (one per tool) in ") & dir
+            lblStatus.Text = "Saved " & groups.Count & If(perToolpath, " programs (one per toolpath) in ", " programs (one per tool) in ") & dir & ProblemsSuffix()
             MessageBox.Show(Me, report.ToString(), "Save G-code", MessageBoxButtons.OK, MessageBoxIcon.Information)
         Catch ex As Exception
             MessageBox.Show(Me, ex.Message, "Save G-code", MessageBoxButtons.OK, MessageBoxIcon.Error)

@@ -1003,7 +1003,8 @@ Public Class ToolpathView
             Else
                 ' Only objects whose box comes near the cursor are drawn.
                 Dim c = ScreenToWorld(p)
-                Dim slack = (PickRadius + 2) * Math.Sqrt(2) * _unitsPerPixel / PitchScale()
+                ' In perspective a pixel covers more beyond the target: a wider margin there.
+                Dim slack = (PickRadius + 2) * Math.Sqrt(2) * _unitsPerPixel / PitchScale() * If(IsPerspective, 4, 1)
                 For i = 0 To _pickItems.Count - 1
                     Dim it = _pickItems(i)
                     If c.X < it.MinX - slack OrElse c.X > it.MaxX + slack OrElse c.Y < it.MinY - slack OrElse c.Y > it.MaxY + slack Then Continue For
@@ -1614,8 +1615,8 @@ Public Class ToolpathView
     Public Sub SetIsoView()
         _yaw = -Math.PI / 4
         _pitch = Math.PI / 3.2
-        Invalidate()
-        RaiseEvent CameraChanged(Me, EventArgs.Empty)
+        ' In perspective the near end grows: fit the job so none of it runs off the view.
+        ZoomToFit()
     End Sub
 
     Public Sub ZoomToFit()
@@ -1635,9 +1636,40 @@ Public Class ToolpathView
         Dim pw As Integer = Math.Max(ClientSize.Width, 1)
         Dim ph As Integer = Math.Max(ClientSize.Height, 1)
         _unitsPerPixel = Math.Max(w / pw, h / ph) * 1.15
+        If IsPerspective Then FitPerspective(mn, mx)
         RebuildSelectionLayer()      ' handle size follows the zoom
         Invalidate()
         RaiseEvent CameraChanged(Me, EventArgs.Empty)
+    End Sub
+
+    ''' <summary>
+    ''' In perspective the near end of the job looks bigger: zoom until the job's box (board
+    ''' thickness and extra stock included) fills about 87 % of the view.
+    ''' </summary>
+    Private Sub FitPerspective(mn As Vector3, mx As Vector3)
+        Dim zLow = Math.Min(mn.Z, If(_showSimulation AndAlso _simSettings IsNot Nothing, -CSng(Math.Max(0.05, Math.Min(_simSettings.StockThickness, 2.0))), mn.Z))
+        Dim zHigh = Math.Max(0.0F, CSng(_extraStockZ))
+        For iteration = 1 To 10
+            Dim mvp = ViewMatrix() * ProjectionMatrix()
+            Dim extent = 0.0
+            For Each x In {mn.X, mx.X}
+                For Each y In {mn.Y, mx.Y}
+                    For Each z In {zLow, zHigh}
+                        Dim v = New Vector4(x, y, z, 1.0F) * mvp
+                        ' A corner behind the camera: far too close.
+                        If v.W <= 0.0001F Then
+                            extent = 10
+                        Else
+                            extent = Math.Max(extent, Math.Max(Math.Abs(v.X / v.W), Math.Abs(v.Y / v.W)))
+                        End If
+                    Next
+                Next
+            Next
+            If extent <= 0 Then Exit For
+            Dim k = extent / 0.87
+            If Math.Abs(k - 1) < 0.02 Then Exit For
+            _unitsPerPixel = Math.Max(0.00001, Math.Min(10.0, _unitsPerPixel * k))
+        Next
     End Sub
 
     ' --------------------------------------------------------------- buffers
@@ -1959,19 +1991,45 @@ Public Class ToolpathView
 
     ' --------------------------------------------------------------- camera
 
+    ' The top view is flat (exact for drawing and measuring); a tilted view is a true perspective,
+    ' so the near edge of the board is bigger than the far one (a flat tilted view reads inside-out).
+    Private Const PerspectiveFov As Double = 30.0 * Math.PI / 180.0
+
+    Private ReadOnly Property IsPerspective As Boolean
+        Get
+            Return _pitch > 0.01
+        End Get
+    End Property
+
+    ''' <summary>Camera distance in perspective: the target shows the same inches per pixel as the flat view.</summary>
+    Private Function CameraDistance() As Double
+        Return Math.Max(ClientSize.Height, 1) * _unitsPerPixel / (2 * Math.Tan(PerspectiveFov / 2))
+    End Function
+
     Private Function ViewMatrix() As Matrix4
         ' Row-vector convention (OpenTK): applied left to right.
         Return Matrix4.CreateTranslation(-_target) *
                Matrix4.CreateRotationZ(CSng(_yaw)) *
                Matrix4.CreateRotationX(CSng(-_pitch)) *
-               Matrix4.CreateTranslation(0, 0, -50.0F)
+               Matrix4.CreateTranslation(0, 0, If(IsPerspective, -CSng(CameraDistance()), -50.0F))
     End Function
 
     Private Function ProjectionMatrix() As Matrix4
+        If IsPerspective Then
+            Dim d = CameraDistance()
+            Dim aspect = CSng(Math.Max(ClientSize.Width, 1) / Math.Max(ClientSize.Height, 1))
+            Return Matrix4.CreatePerspectiveFieldOfView(CSng(PerspectiveFov), aspect, CSng(Math.Max(0.001, d * 0.02)), CSng(d + 2000))
+        End If
         Dim w As Single = CSng(Math.Max(ClientSize.Width, 1) * _unitsPerPixel)
         Dim h As Single = CSng(Math.Max(ClientSize.Height, 1) * _unitsPerPixel)
         ' Wide depth range so tilted, panned or very large jobs are never clipped.
         Return Matrix4.CreateOrthographic(w, h, -1000.0F, 1000.0F)
+    End Function
+
+    ''' <summary>A point in normalized device coordinates back in the world (perspective).</summary>
+    Private Shared Function Unproject(inverse As Matrix4, nx As Double, ny As Double, nz As Double) As Vector3
+        Dim v = New Vector4(CSng(nx), CSng(ny), CSng(nz), 1.0F) * inverse
+        Return If(Math.Abs(v.W) < 0.0000001F, v.Xyz, v.Xyz / v.W)
     End Function
 
     ''' <summary>Vertical screen distances shrink by cos(pitch) when the view is tilted.</summary>
@@ -1981,6 +2039,17 @@ Public Class ToolpathView
 
     ''' <summary>Screen pixel -> world point on the Z=0 plane.</summary>
     Public Function ScreenToWorld(p As Point) As Vector3
+        If IsPerspective Then
+            ' The ray through the pixel, met with the Z=0 plane (or far along it when it points above the horizon).
+            Dim inv = Matrix4.Invert(ViewMatrix() * ProjectionMatrix())
+            Dim nx = 2.0 * p.X / Math.Max(ClientSize.Width, 1) - 1.0
+            Dim ny = 1.0 - 2.0 * p.Y / Math.Max(ClientSize.Height, 1)
+            Dim a = Unproject(inv, nx, ny, -1), b = Unproject(inv, nx, ny, 1)
+            Dim dz = b.Z - a.Z
+            Dim t As Double = If(Math.Abs(dz) < 0.0000001, 0, -a.Z / dz)
+            If t < 0 OrElse Double.IsNaN(t) Then t = 1
+            Return New Vector3(CSng(a.X + (b.X - a.X) * t), CSng(a.Y + (b.Y - a.Y) * t), 0)
+        End If
         Dim cx As Double = ClientSize.Width / 2.0
         Dim cy As Double = ClientSize.Height / 2.0
         Dim dx As Double = (p.X - cx) * _unitsPerPixel
@@ -1991,6 +2060,11 @@ Public Class ToolpathView
 
     ''' <summary>World point on the Z=0 plane -> screen pixel (the inverse of ScreenToWorld).</summary>
     Public Function WorldToScreen(x As Double, y As Double) As Point
+        If IsPerspective Then
+            Dim v = New Vector4(CSng(x), CSng(y), 0.0F, 1.0F) * (ViewMatrix() * ProjectionMatrix())
+            If Math.Abs(v.W) < 0.0000001F Then Return New Point(ClientSize.Width \ 2, ClientSize.Height \ 2)
+            Return New Point(CInt(Math.Round((v.X / v.W + 1) / 2 * ClientSize.Width)), CInt(Math.Round((1 - v.Y / v.W) / 2 * ClientSize.Height)))
+        End If
         Dim dx = x - _target.X, dy = y - _target.Y
         Dim c = Math.Cos(_yaw), sn = Math.Sin(_yaw)
         Dim sx = dx * c - dy * sn, sy = dx * sn + dy * c

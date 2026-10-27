@@ -358,6 +358,11 @@ The torture expectations (`svg-torture-transforms-expect.js`,
   `JobStatusWindow` is a dark DataGridView table (Status / Where / What, then the job's numbers;
   Copy All = tab-separated). `ProblemRow` finds Where from the drawing-name prefix of each note.
   Harness `statusshots` captures the green and red states.
+- 3D view: the top view (pitch 0) is orthographic; any tilt (pitch > 0.01) is a true perspective
+  (`IsPerspective`, 30 degree FOV, `CameraDistance` keeps the target at the same inches per pixel, so zoom
+  and pan feel the same). `ScreenToWorld`/`WorldToScreen` unproject through the matrices in perspective;
+  `ZoomToFit` and `SetIsoView` fit the job box with `FitPerspective`. The user saw the flat tilted view as
+  "fatter away from the eye" (the illusion of parallel projection).
 - `SetupGenerationUi` runs before `SetupDrawing`: the Project toolbar's Stop button mirrors the
   Stop Generating menu item, which must exist first.
 - PropertyGrid edits write straight into `_settings`; toolpath-relevant ones go

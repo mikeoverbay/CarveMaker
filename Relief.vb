@@ -232,6 +232,11 @@ Partial Public Class DesignObject
         If Not Double.IsFinite(TopOffset) OrElse TopOffset < 0 Then TopOffset = 0
         If Machining Is Nothing OrElse Machining.Operation <> CutOperation.Roughing3D Then Machining = Global.CarveMaker.Machining.NewRelief(CutOperation.Roughing3D)
         If FinishMachining Is Nothing OrElse FinishMachining.Operation <> CutOperation.Finishing3D Then FinishMachining = Global.CarveMaker.Machining.NewRelief(CutOperation.Finishing3D)
+        ' Projects from before the spiral read as Raster / Inside out (the defaults); numbers out of range too.
+        For Each m In {Machining, FinishMachining}
+            If Not [Enum].IsDefined(m.Pattern) Then m.Pattern = ReliefPattern.Raster
+            If Not [Enum].IsDefined(m.SpiralDirection) Then m.SpiralDirection = SpiralDirection.InsideOut
+        Next
     End Sub
 
     ''' <summary>Inches per model unit.</summary>
@@ -391,6 +396,7 @@ Friend Module ReliefJob
                 .Tool = m.Tool, .FeedRate = m.FeedRate, .PlungeRate = m.PlungeRate,
                 .Stepover = m.EffectiveStepover(), .PassDepth = m.PassDepth,
                 .Allowance = If(isRough, m.Allowance, 0.0), .AngleDeg = If(isRough, 0.0, m.RasterAngle),
+                .Pattern = m.Pattern, .Direction = m.SpiralDirection,
                 .Tolerance = If(isRough, 0.0005, m.Tolerance), .Limit = o.MachineArea,
                 .SafeZ = s.SafeZ, .ClearanceZ = Math.Min(s.ClearanceZ, s.SafeZ)}
             Dim result = If(isRough, ReliefEngine.Roughing(grid, opt, token), ReliefEngine.Finishing(grid, opt, roughed, token))

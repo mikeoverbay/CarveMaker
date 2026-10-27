@@ -11,8 +11,9 @@
 '             level, with optional holding tabs.
 '    3D roughing / 3D finishing
 '             the two toolpaths of a 3D model (Relief.vb, ReliefEngine.vb):
-'             constant-Z levels that leave an allowance, then parallel passes
-'             that follow the surface. Any tool but a drill.
+'             constant-Z levels that leave an allowance, then passes that
+'             follow the surface; each in a Raster or Spiral pattern (inside
+'             out or outside in). Any tool but a drill.
 '
 '  Every toolpath has its own tool, spindle speed, feed and plunge rate.
 '  JobBuilder runs everything in machining order: 3D roughing and finishing
@@ -99,6 +100,22 @@ Public Class ReliefLimitConverter
     Public Sub New()
         MyBase.New(GetType(ReliefLimit), New Dictionary(Of Object, String) From {
             {ReliefLimit.ModelOutline, "Inside the model's outline"}, {ReliefLimit.WholeBox, "The whole box"}})
+    End Sub
+End Class
+
+Public Class ReliefPatternConverter
+    Inherits FriendlyEnumConverter
+    Public Sub New()
+        MyBase.New(GetType(ReliefPattern), New Dictionary(Of Object, String) From {
+            {ReliefPattern.Raster, "Raster"}, {ReliefPattern.Spiral, "Spiral"}})
+    End Sub
+End Class
+
+Public Class SpiralDirectionConverter
+    Inherits FriendlyEnumConverter
+    Public Sub New()
+        MyBase.New(GetType(SpiralDirection), New Dictionary(Of Object, String) From {
+            {SpiralDirection.InsideOut, "Inside out"}, {SpiralDirection.OutsideIn, "Outside in"}})
     End Sub
 End Class
 
@@ -211,6 +228,14 @@ Public Class Machining
 
     <DisplayName("Allowance (in)"), Description("Material the roughing pass leaves on the surface for the finishing pass to remove. The roughing tool never comes closer to the model than this.")>
     Public Property Allowance As Double = 0.01
+
+    <DisplayName("Pattern"), RefreshProperties(RefreshProperties.All), TypeConverter(GetType(ReliefPatternConverter)),
+     Description("Raster: straight passes side by side (finishing at the raster angle, roughing along the model's width). Spiral: one spiral about the centre of the model, Stepover between its turns, from the centre out or from the edge in (Spiral direction).")>
+    Public Property Pattern As ReliefPattern = ReliefPattern.Raster
+
+    <DisplayName("Spiral direction"), TypeConverter(GetType(SpiralDirectionConverter)),
+     Description("Inside out: the spiral starts at the centre of the model and works out to the edge. Outside in: it starts at the edge and works in to the centre. Both are climb cuts.")>
+    Public Property SpiralDirection As SpiralDirection = Global.CarveMaker.SpiralDirection.InsideOut
 
     <DisplayName("Raster angle (deg)"), Description("Direction of the finishing passes on the model: 0 runs along the model's width, 90 along its height. Passes turned with the model when it is rotated.")>
     Public Property RasterAngle As Double = 0.0
@@ -337,9 +362,12 @@ Public Class Machining
                 names.AddRange({NameOf(PassDepth), NameOf(TabCount)})
                 If m.TabCount > 0 Then names.AddRange({NameOf(TabWidth), NameOf(TabThickness)})
             Case CutOperation.Roughing3D
-                names.AddRange({NameOf(PassDepth), NameOf(StepoverPercent), NameOf(StepoverDistance), NameOf(Allowance)})
+                names.AddRange({NameOf(PassDepth), NameOf(StepoverPercent), NameOf(StepoverDistance), NameOf(Allowance), NameOf(Pattern)})
+                If m.Pattern = ReliefPattern.Spiral Then names.Add(NameOf(SpiralDirection))
             Case CutOperation.Finishing3D
-                names.AddRange({NameOf(StepoverPercent), NameOf(StepoverDistance), NameOf(RasterAngle), NameOf(Tolerance), NameOf(PassDepth)})
+                names.AddRange({NameOf(StepoverPercent), NameOf(StepoverDistance), NameOf(Pattern)})
+                names.Add(If(m.Pattern = ReliefPattern.Spiral, NameOf(SpiralDirection), NameOf(RasterAngle)))
+                names.AddRange({NameOf(Tolerance), NameOf(PassDepth)})
         End Select
         Return names.Select(Function(n) all.Find(n, False)).Where(Function(p) p IsNot Nothing).ToArray()
     End Function
@@ -388,6 +416,8 @@ Public Class Machining
         If Is3D Then
             Dim pass = If(Operation = CutOperation.Roughing3D, "roughing", "finishing")
             If Not (StepoverPercent >= 1 AndAlso StepoverPercent <= 90) Then p.Add("The " & pass & " stepover must be between 1% and 90%.")
+            If Not [Enum].IsDefined(Pattern) Then p.Add("The " & pass & " pattern must be Raster or Spiral.")
+            If Not [Enum].IsDefined(SpiralDirection) Then p.Add("The " & pass & " spiral direction must be Inside out or Outside in.")
             If Operation = CutOperation.Roughing3D Then
                 If Not (PassDepth > 0) Then p.Add("The roughing pass depth must be more than 0.")
                 If Not (Allowance >= 0 AndAlso Allowance <= 0.25) Then p.Add("The allowance must be between 0 and 0.25"".")
@@ -431,12 +461,21 @@ Public Class Machining
                 Return "Profile " & side & ", " & depth & If(TabCount > 0, ", " & TabCount & " tabs", "") & ", " & feeds
             Case CutOperation.Roughing3D
                 If Not Enabled Then Return "3D roughing off"
-                Return "3D roughing, " & InchFormat.EditText(PassDepth) & """ levels, " & feeds
+                Return "3D roughing, " & InchFormat.EditText(PassDepth) & """ levels, " & PatternText() & ", " & feeds
             Case CutOperation.Finishing3D
                 If Not Enabled Then Return "3D finishing off"
-                Return String.Format(Ci, "3D finishing, {0:0.####}"" stepover, {1}", EffectiveStepover(), feeds)
+                Return String.Format(Ci, "3D finishing, {0:0.####}"" stepover, {1}, {2}", EffectiveStepover(), PatternText(), feeds)
         End Select
         Return "V-carve, " & feeds
+    End Function
+
+    ''' <summary>"raster" (with its angle on a finishing pass) or "spiral inside out" / "spiral outside in".</summary>
+    Private Function PatternText() As String
+        If Pattern = ReliefPattern.Spiral Then
+            Return "spiral " & If(SpiralDirection = Global.CarveMaker.SpiralDirection.OutsideIn, "outside in", "inside out")
+        End If
+        If Operation = CutOperation.Finishing3D Then Return String.Format(Ci, "raster {0:0.##} deg", RasterAngle)
+        Return "raster"
     End Function
 
     Private Function ToolName() As String
@@ -453,7 +492,8 @@ Public Class Machining
            Append(SpindleRpm.ToString("R", Ci)).Append("|").Append(FeedRate.ToString("R", Ci)).Append("|").Append(PlungeRate.ToString("R", Ci))
         If Is3D Then
             sb.Append("|").Append(Enabled).Append("|").Append(Allowance.ToString("R", Ci)).Append("|").
-               Append(RasterAngle.ToString("R", Ci)).Append("|").Append(Tolerance.ToString("R", Ci))
+               Append(RasterAngle.ToString("R", Ci)).Append("|").Append(Tolerance.ToString("R", Ci)).Append("|").
+               Append(Pattern).Append("|").Append(SpiralDirection)
         End If
         If Tool IsNot Nothing Then
             sb.Append("|").Append(Tool.Type).Append("|").Append(Tool.Diameter.ToString("R", Ci)).Append("|").

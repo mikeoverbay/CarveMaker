@@ -267,15 +267,32 @@ above, so overhangs are filled in.
 - Size by Width / Height / **Scale (%)**, **Draw > Scale** or the handles;
   **Depth** follows the size until typed; **Top below stock** lowers it.
 - Two toolpaths, each with its own tool and feeds: **3D roughing** (flat levels,
-  raster runs plus each level's boundary, leaving an allowance) and **3D
-  finishing** (parallel passes at a raster angle). Any tool but a drill; exact
-  tool shapes for flat, ball, bull nose, V-bit and tapered ball nose.
+  raster runs or a spiral plus each level's boundary, leaving an allowance) and
+  **3D finishing** (parallel passes at a raster angle, or a spiral). Any tool but
+  a drill; exact tool shapes for flat, ball, bull nose, V-bit and tapered ball nose.
+- **Pattern** (both passes): *Raster* (straight passes side by side; the
+  finishing pass at its *Raster angle*) or *Spiral*: an Archimedean spiral about
+  the model's centre, *Stepover* between its turns, out to the farthest corner of
+  the model's box. **Spiral direction** (shown for a spiral): *Inside out* starts
+  at the centre and works out to the edge, *Outside in* starts at the edge and
+  works in (the same spiral travelled backwards; it turns so that both are climb
+  cuts). The spiral is made of straight chords, short near the centre, at most
+  0.25" long and within the *Smoothing* of the true curve (0.0005" when
+  roughing). Finishing treats each chord exactly like a raster line (with *The
+  whole box* as machine area it adds a lap along the box's sides, last going
+  out, first going in, as the box clips the outer turns); roughing cuts the
+  stretches of the spiral that are clear at each level and then the level's
+  boundary, so the no-gouge rules below hold for both patterns. On the 15"
+  dragon the spiral computes and cuts in about the same time as the raster; its
+  finishing program is about a third bigger (every line moves in X and Y). New
+  models and older projects start as Raster, Inside out.
 - **No gouging**: drop-cutter against the cell columns; finishing refines between
   points where the surface bends or rises steeply, turns the finest steep steps
   into staircases, simplifies one-sidedly (a line may replace points only if it
   stays above all of them) and sits 0.0001" above the computed surface; roughing
   widens every drop by the allowance and a node diagonal so straight runs,
-  boundary loops and links between nodes stay clear.
+  spiral stretches (samples half a node apart), boundary loops and links between
+  nodes stay clear.
 - The toolpaths are computed in the model's frame and cached, so moving or
   rotating the model does not compute them again. Generation runs on a worker
   with a busy bar and **Abort** (Shift+F5).

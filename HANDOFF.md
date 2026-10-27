@@ -1,4 +1,4 @@
-# CarveMakerGG Gcode Generator (CarveMaker) handoff (updated 2026-10-27: renamed, dark Code Chop skin, Project toolbar)
+# CarveMakerGG Gcode Generator (CarveMaker) handoff (updated 2026-10-27: renamed, dark Code Chop skin, Project toolbar, spiral 3D toolpaths)
 
 Written so any session (or person) can pick the project up without the chat
 history. Read this, then `README.md` for the user-facing description.
@@ -57,13 +57,13 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
 | `DrawingShapes.vb` | Natural outlines of drawn kinds (rounded rectangle, ellipse, polygon, star, free-form area, text via `GlyphOutline` on a huge temporary blank), normalized like an SVG import; `ToSvg` |
 | `CarveSimulation.vb` | GPU material removal: R32F heightmap FBO; every half cell along each cut one instanced QUAD stamp whose fragment shader evaluates the tool's exact profile (flat/ball/bull/V/tapered ball, capped at the flute length) and MAX-blends the depth; stamps streamed in bounded chunks (millions of 3D moves); surface mesh (one vertex per cell up to the Display mesh budget, triangle strips, texel-centre sampling), board walls; ToolModel meshes only draw the tool |
 | `ModelImport.vb` | 3D models and depth images: readers (STL bin/ASCII, OBJ, PLY ascii/LE/BE, 3MF with units + transforms, OFF, images), `DetectUp` (thin axis -> its non-flat side; else +Z, or the side with the most relief when +Z is flat), `Orient` (right-handed, never mirrored), conservative `Rasterize` (cell = max of the model over the cell), `ReliefModel` (Heights 0..1 / NaN, natural size, `ToBytes`/`FromBytes` UInt16 rounded up + row deltas + zlib, `Footprint`, `CreatePreview`) |
-| `ReliefEngine.vb` | `ReliefGrid` (absolute-Z cell columns), drop cutter with block-max pruning, `Finishing` (raster in a rotated frame, Refine/staircases, one-sided Simplify, FinishLift 0.0001", links along the surface, level clamping when not roughed), `Roughing` (widened drop on a node grid: allowance + node diagonal; levels; raster runs + marching-squares boundary loops; rapid down to the level above + 0.02 on row nodes) |
+| `ReliefEngine.vb` | `ReliefGrid` (absolute-Z cell columns), drop cutter with block-max pruning, `Finishing` (`RasterRuns` in a rotated frame or `SpiralRuns`, both through `SampleRuns`: sample, clip, Refine/staircases; then one-sided Simplify, FinishLift 0.0001", links along the surface, level clamping when not roughed), `Roughing` (widened drop on a node grid: allowance + node diagonal; levels; raster runs or `SpiralSamples.Stretches` + marching-squares boundary loops; rapid down to the level above + 0.02 where that level cut), `SpiralVertices` (Archimedean spiral about the grid centre, clockwise going out, chords by sagitta) |
 | `Relief.vb` | `DesignObject` partial for `DrawingKind.Model` (ModelData, ScalePercent, Depth/ModelDepth/DepthFollowsSize, TopOffset, ModelUnits, ModelUp, MachineArea, FinishMachining, `FromModel`, `ReplaceModel`) and `ReliefJob` (JobBuilder step 0: problems, roughing of every model then finishing, cache of compact local toolpaths keyed by everything but position/rotation, `Layout`/`BuildGrid` with max-pooling below 0.002" cells, `Trace` hook for tests) |
 | `frmMain.Relief.vb` | Import 3D (async, hops back to the UI thread if the await resumed elsewhere), the busy bar / Abort / Stop Generating controls, carved side and units edits, Draw > Scale dialog (`frmScale`) |
 | `ToolModel.vb` | Revolved mesh of any library tool (`ToolDefinition.FullProfile`: flutes + one-diameter shank stub) |
 | `ToolLibrary.vb` | `ToolType`, `ToolDefinition` (diameter, flute length, end radius, included angle; profile, validation, auto names), `ToolLibrary` (JSON in %AppData%\CarveMaker, standard inch tools), `InchFormat` (fractions), `ToolPickerEditor` (V-bit-only picker, no longer on any grid row; toolpath rows use `MachiningToolEditor` in Machining.vb) |
 | `ToolDrawing.vb` | Scale side view of a tool with dimensions; tree icons |
-| `Machining.vb` | `Machining` (per-item operation: V-carve / Pocket / Profile, tool, spindle speed, feed and plunge rate (`ApplyTo` copies them into a settings clone for the engines), depths, side, through cut, tabs; `VisibleProperties` picks the rows per operation; remembers the last V-bit and end mill across operation switches), `MachiningItem`, `MillingEngine` (pocket rings + residual clean-up, profile loops + tabs, `LinkPasses`), `JobBuilder.Generate` (V-carve, pockets, profiles in order, one `ToolpathSegment` per tool, `FinishStats`) |
+| `Machining.vb` | `Machining` (per-item operation: V-carve / Pocket / Profile, tool, spindle speed, feed and plunge rate (`ApplyTo` copies them into a settings clone for the engines), depths, side, through cut, tabs; 3D: allowance, `Pattern` + `SpiralDirection`, raster angle, smoothing; `VisibleProperties` picks the rows per operation and pattern; remembers the last V-bit and end mill across operation switches), `MachiningItem`, `MillingEngine` (pocket rings + residual clean-up, profile loops + tabs, `LinkPasses`), `JobBuilder.Generate` (V-carve, pockets, profiles in order, one `ToolpathSegment` per tool, `FinishStats`) |
 | `frmToolLibrary.vb` / `.Designer.vb` | Tool Library dialog: manage mode (Toolpath > Tool Library, Ctrl+L) and pick mode (filter: V-carving needs a V-bit) |
 | `SvgImport.vb` | SVG to Clipper polygons (inches, Y up): paths/shapes, groups, nested svg, use/symbol, CSS style sheets, preserveAspectRatio, strokes with caps/joins, fill rules |
 | `ProjectFile.vb` | `.prj` JSON (settings, lines, drawings), version check |
@@ -187,6 +187,25 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
    the icons are new (`Icons.vb`). All menus are dark, so menu icons use the light ink too.
    GL clear colour 0.055. Harness `skinsheet` renders every icon in every state; `skinshots` captures
    the main window, a menu, Machine Settings and the Tool Library.
+16. **Spiral 3D toolpaths** (branch `spiral-relief`). The user asked for reliefs cut in spirals, inside out
+   and outside in. `Machining.Pattern` (`ReliefPattern` Raster / Spiral) and `Machining.SpiralDirection`
+   (Inside out / Outside in) on both 3D passes: rows from `VisibleProperties` (Spiral direction only for a
+   spiral, Raster angle only for a raster finishing pass), part of `Key()` (cache, regeneration, Equals) and
+   `Summary`, saved in the .prj as strings (missing or out of range = Raster / Inside out, `RepairModel`);
+   `ReliefPassOptions.Pattern` / `.Direction`. Engine: `SpiralVertices` (r = stepover * theta / 2 pi about
+   the grid centre, out to the farthest corner + half a pitch, clockwise going out so both directions climb;
+   chords by sagitta <= tolerance, <= 0.25", <= 1/8 turn). Finishing: every chord goes through the same
+   `SampleRuns` as a raster line (sample at 0.75 cell, clip, Refine); with `WholeBox` a lap along the box
+   sides follows (the box clips the outer turns, which left edge strips up to a stepover wide: the harness
+   caught the corner 0.0122" from a cut); Outside in reverses the run order and every run; the level / Clamp
+   / Simplify / link loop is unchanged (chords that continue each other link by a zero-length feed and count
+   as one pass). Roughing: `SpiralSamples` (half a node apart over the node lattice, the same at every
+   level), `Stretches` of clear samples per level (start, chord corners, end), `GoTo_` links (feed only if
+   every half-node sample of the way is clear; a stretch start may rapid down to the level above + 0.02
+   because that level went through it), then the unchanged boundary loops.
+   Harness `relief` checks it (see the table). Dragon 15": finishing 3.79 M moves / 23 s / 382 min / 106 MB
+   (raster 3.87 M / 23 s / 394 min / 78 MB: spiral lines carry X and Y), roughing 68 k moves / 51 min vs
+   58 k / 59 min; spiral roughing leaves the raster's stock (replayed on a 0.01" grid).
 12. **Picking rules and the user guide.** `PickAt` collects every object near the
    cursor (one GPU pass per nearby object, `PickAllAt`) and picks: under the cursor,
    then the smallest box, then the nearest, then the topmost. Clicks use
@@ -215,7 +234,7 @@ torture SVG folders and their expectation scripts). Build with
 | `mill` | Pocket and profile: wall gouge and floor coverage, island clearance, 90% stepover clean-up, profile offsets and direction, through cut + tabs, refused tools, job order and tool groups, per-tool G-code, project round trip, and the form + multi-tool simulation on screen. `mill nogui` skips the screen part |
 | `helpshots <folder>` | Retakes the user-guide screenshots (main window, handles, simulation, tool library) into a folder, normally `C:\Text_to_CNC_path\Help\images` |
 | `draw` | Drawing: outlines of every kind (areas, tolerance, aspect), text sizing and alignment, grid rows per kind, SVG export and project round trip, carving; on screen: draw tools by mouse messages, GPU picking (holes, overlaps, edge slack), side/corner/rotation handles, text tool + typing + corner sizing, style toolbar and menu, double-click edit + Esc, area tool, Esc and Delete. `draw nogui` skips the screen part |
-| `relief` | 3D: dragon import (side, units, size), storage round trip, grid rows of a model, 15" scale + depth, roughing + finishing with an independent brute-force gouge check on sampled moves, the toolpath cache when moving, G-code programs |
+| `relief` | 3D: dragon import (side, units, size), storage round trip, grid rows of a model, 15" scale + depth, roughing + finishing with an independent brute-force gouge check on sampled moves (roughing: never closer than the allowance), the toolpath cache when moving, G-code programs; then the spiral pattern: rows / key / summary / project round trip (and pre-spiral files), spiral roughing + finishing in both directions with the gouge check (every n-th move plus the long moves), where each starts and ends (radius about the centre, mean radius per tenth of the moves), finishing coverage (every covered cell within a stepover of a cut), roughing levels and stock left (flat end mill replayed on a 0.01" grid, compared with the raster; no rapid into uncut stock), a 4" whole-box spiral (corners within half a stepover), and a moves / time / G-code size table |
 | `reliefgui` | 3D import through the form (env `SMOKE_SHOTS=1` screenshots during generation, `SMOKE_HOVER=1` hover light check, `SMOKE_STEPS=1` tab-switch steps) |
 | `reliefdemo` | Opens the window maximized, imports the dragon at 15" on a 16" blank, shows the simulation and leaves the window to the user |
 | `modelinfo <file> [dir]` | What the importer makes of a model: side, units, size, height spread, and a preview PNG per side |

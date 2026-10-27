@@ -29,6 +29,16 @@
 '  (marching squares: every boundary segment lies in a square with a clear
 '  corner) to clean the run ends against the walls.
 '
+'  Spiral pattern (both passes): an Archimedean spiral about the grid's
+'  centre, r = stepover * theta / (2 pi), out to the farthest corner, made of
+'  straight chords (sagitta within the tolerance). Finishing treats every
+'  chord exactly like a raster line (sampled, clipped to the machine area,
+'  refined; with the whole box, a lap along its sides follows); roughing
+'  cuts the stretches of the spiral that are clear at each level (every
+'  sample within half a node of the next), then the same boundary loops.
+'  Outside in is the same path travelled backwards. The spiral turns
+'  clockwise going out, so both directions are climb cuts.
+'
 '  Coordinates: the engines work in the grid's own frame (origin at its
 '  centre); moves are returned in machine coordinates (LocalToMachine).
 ' ============================================================================
@@ -78,6 +88,22 @@ Public Enum ReliefLimit
     WholeBox
 End Enum
 
+''' <summary>How a 3D pass covers the model.</summary>
+Public Enum ReliefPattern
+    ''' <summary>Straight passes side by side (finishing at the raster angle, roughing along the model's width).</summary>
+    Raster
+    ''' <summary>One Archimedean spiral about the model's centre.</summary>
+    Spiral
+End Enum
+
+''' <summary>Which way a spiral pass travels.</summary>
+Public Enum SpiralDirection
+    ''' <summary>From the centre out to the edge.</summary>
+    InsideOut
+    ''' <summary>From the edge in to the centre (the same spiral, travelled backwards).</summary>
+    OutsideIn
+End Enum
+
 Public Class ReliefPassOptions
     Public Property Tool As ToolDefinition
     Public Property FeedRate As Double
@@ -88,8 +114,12 @@ Public Class ReliefPassOptions
     Public Property PassDepth As Double
     ''' <summary>Roughing: material left on the relief (inches). Finishing ignores it.</summary>
     Public Property Allowance As Double
-    ''' <summary>Raster direction in the grid's local frame (0 = along local X).</summary>
+    ''' <summary>Raster direction in the grid's local frame (0 = along local X). Not used by a spiral.</summary>
     Public Property AngleDeg As Double
+    ''' <summary>Raster (straight passes) or Spiral (about the grid's centre, Stepover between turns).</summary>
+    Public Property Pattern As ReliefPattern = ReliefPattern.Raster
+    ''' <summary>Spiral only: from the centre out, or from the edge in.</summary>
+    Public Property Direction As SpiralDirection = SpiralDirection.InsideOut
     ''' <summary>Largest gap allowed above the computed tool surface when points are dropped (never below it).</summary>
     Public Property Tolerance As Double = 0.0005
     Public Property Limit As ReliefLimit = ReliefLimit.ModelOutline
@@ -120,6 +150,8 @@ Public Module ReliefEngine
     Private Const FinishLift As Double = 0.0001
     ''' <summary>Rapid down to this far above a level already cut, then plunge.</summary>
     Private Const PlungeGap As Double = 0.02
+    ''' <summary>Longest chord of a spiral (inches).</summary>
+    Private Const MaxChord As Double = 0.25
 
     ' ================================================================ tool shape
 
@@ -443,64 +475,13 @@ Public Module ReliefEngine
         Dim surf = Surface.FromGrid(g)
         Dim sh = ToolShape.Of(o.Tool)
         Dim tol = Math.Max(0.00001, o.Tolerance)
-        Dim th = o.AngleDeg * Math.PI / 180
-        Dim ux = Math.Cos(th), uy = Math.Sin(th)
-        Dim vx = -uy, vy = ux
-        Dim hw = (surf.X1 - surf.X0) / 2, hh = (surf.Y1 - surf.Y0) / 2
-        Dim alongHalf = Math.Abs(hw * ux) + Math.Abs(hh * uy)
-        Dim acrossHalf = Math.Abs(hw * vx) + Math.Abs(hh * vy)
         Dim ds = Math.Min(surf.Cx, surf.Cy) * 0.75
-        Dim nLines = Math.Max(1, CInt(Math.Ceiling(2 * acrossHalf / o.Stepover)))
-        Dim stepAcross = 2 * acrossHalf / nLines
-        Dim nSamples = Math.Max(2, CInt(Math.Ceiling(2 * alongHalf / ds)) + 1)
-        Dim dsLine = 2 * alongHalf / (nSamples - 1)
         Dim allowed As Func(Of Double, Double, Boolean) = Function(x As Double, y As Double) If(o.Limit = ReliefLimit.WholeBox, surf.InsideBox(x, y), surf.CoveredAt(x, y))
 
-        ' Every line on its own thread: runs of allowed samples, refined and simplified.
-        Dim lines(nLines - 1) As List(Of Run)
-        Dim po As New ParallelOptions With {.CancellationToken = token}
-        Parallel.For(0, nLines, po,
-            Sub(k)
-                po.CancellationToken.ThrowIfCancellationRequested()
-                Dim off = -acrossHalf + (k + 0.5) * stepAcross
-                Dim ox = vx * off, oy = vy * off
-                Dim runs As New List(Of Run)
-                Dim cur As Run = Nothing
-                For s = 0 To nSamples - 1
-                    Dim t = -alongHalf + s * dsLine
-                    Dim x = ox + ux * t, y = oy + uy * t
-                    If allowed(x, y) Then
-                        If cur Is Nothing Then
-                            cur = New Run With {.Ox = ox, .Oy = oy, .Ux = ux, .Uy = uy}
-                            runs.Add(cur)
-                        End If
-                        cur.Points.Add(New PassPoint(t, surf.Drop(x, y, sh) + FinishLift))
-                    Else
-                        cur = Nothing
-                    End If
-                Next
-                Dim done As New List(Of Run)
-                For Each r In runs
-                    If r.Points.Count < 2 Then Continue For
-                    Refine(r, surf, sh)
-                    done.Add(r)
-                Next
-                lines(k) = done
-            End Sub)
-        token.ThrowIfCancellationRequested()
-
-        ' Zig-zag: every other line runs backwards.
-        Dim ordered As New List(Of Run)
-        For k = 0 To nLines - 1
-            Dim lineRuns = lines(k)
-            If k Mod 2 = 1 Then
-                lineRuns.Reverse()
-                For Each r In lineRuns
-                    r.Points.Reverse()
-                Next
-            End If
-            ordered.AddRange(lineRuns)
-        Next
+        ' The passes in cutting order: runs of allowed samples along straight lines, refined.
+        Dim ordered = If(o.Pattern = ReliefPattern.Spiral,
+                         SpiralRuns(surf, sh, o, tol, ds, allowed, token),
+                         RasterRuns(surf, sh, o, ds, allowed, token))
         If ordered.Count = 0 Then
             result.Warnings.Add("nothing to cut inside the machine area.")
             Return result
@@ -527,6 +508,8 @@ Public Module ReliefEngine
                     Dim pts = Simplify(piece, tol)
                     Dim first = piece.At(0)
                     Dim startPt = New Pt3(first.X, first.Y, pts(0).Z)
+                    ' A spiral's chords follow on from each other: one pass until the path breaks off.
+                    If Not (path.Started AndAlso Math.Abs(path.Cur.X - startPt.X) < 0.0000001 AndAlso Math.Abs(path.Cur.Y - startPt.Y) < 0.0000001) Then result.PassCount += 1
                     If path.Started AndAlso CanLink(path.Cur, startPt, maxLink, allowed) Then
                         LinkAlongSurface(path, startPt, surf, sh, If(Double.IsNegativeInfinity(level), Double.NegativeInfinity, level))
                     Else
@@ -536,7 +519,6 @@ Public Module ReliefEngine
                     For i = 1 To pts.Count - 1
                         path.Feed(New Pt3(piece.Ox + piece.Ux * pts(i).T, piece.Oy + piece.Uy * pts(i).T, pts(i).Z))
                     Next
-                    result.PassCount += 1
                 Next
             Next
             above = level
@@ -545,6 +527,228 @@ Public Module ReliefEngine
         result.Moves = path.ToMachine()
         Return result
     End Function
+
+    ''' <summary>Finishing raster: lines at the raster angle, Stepover apart across the grid, every other one backwards.</summary>
+    Private Function RasterRuns(surf As Surface, sh As ToolShape, o As ReliefPassOptions, ds As Double,
+                                allowed As Func(Of Double, Double, Boolean), token As CancellationToken) As List(Of Run)
+        Dim th = o.AngleDeg * Math.PI / 180
+        Dim ux = Math.Cos(th), uy = Math.Sin(th)
+        Dim vx = -uy, vy = ux
+        Dim hw = (surf.X1 - surf.X0) / 2, hh = (surf.Y1 - surf.Y0) / 2
+        Dim alongHalf = Math.Abs(hw * ux) + Math.Abs(hh * uy)
+        Dim acrossHalf = Math.Abs(hw * vx) + Math.Abs(hh * vy)
+        Dim nLines = Math.Max(1, CInt(Math.Ceiling(2 * acrossHalf / o.Stepover)))
+        Dim stepAcross = 2 * acrossHalf / nLines
+
+        ' Every line on its own thread.
+        Dim lines(nLines - 1) As List(Of Run)
+        Dim po As New ParallelOptions With {.CancellationToken = token}
+        Parallel.For(0, nLines, po,
+            Sub(k)
+                po.CancellationToken.ThrowIfCancellationRequested()
+                Dim off = -acrossHalf + (k + 0.5) * stepAcross
+                lines(k) = SampleRuns(vx * off, vy * off, ux, uy, -alongHalf, alongHalf, ds, surf, sh, allowed)
+            End Sub)
+        token.ThrowIfCancellationRequested()
+
+        ' Zig-zag: every other line runs backwards.
+        Dim ordered As New List(Of Run)
+        For k = 0 To nLines - 1
+            Dim lineRuns = lines(k)
+            If k Mod 2 = 1 Then
+                lineRuns.Reverse()
+                For Each r In lineRuns
+                    r.Points.Reverse()
+                Next
+            End If
+            ordered.AddRange(lineRuns)
+        Next
+        Return ordered
+    End Function
+
+    ''' <summary>
+    ''' Finishing spiral: every chord of the spiral is a line like a raster line (sampled, clipped to the
+    ''' machine area, refined), in order from the centre out; with the whole box as the machine area a lap
+    ''' along the box's sides follows. Outside in reverses the order and every run, so the tool travels the
+    ''' same path backwards (the lap first, then the spiral inwards).
+    ''' </summary>
+    Private Function SpiralRuns(surf As Surface, sh As ToolShape, o As ReliefPassOptions, tol As Double, ds As Double,
+                                allowed As Func(Of Double, Double, Boolean), token As CancellationToken) As List(Of Run)
+        Dim v = SpiralVertices(surf.X0, surf.Y0, surf.X1, surf.Y1, o.Stepover, tol)
+        Dim chords(v.Count - 2) As List(Of Run)
+        Dim po As New ParallelOptions With {.CancellationToken = token}
+        Parallel.For(0, v.Count - 1, po,
+            Sub(k)
+                po.CancellationToken.ThrowIfCancellationRequested()
+                Dim a = v(k), b = v(k + 1)
+                Dim dx = b.X - a.X, dy = b.Y - a.Y
+                Dim len = Math.Sqrt(dx * dx + dy * dy)
+                ' A chord that misses the grid has no allowed point (both limits lie inside the grid).
+                If len < 0.0000001 OrElse Not TouchesBox(a, b, surf.X0, surf.Y0, surf.X1, surf.Y1) Then Return
+                chords(k) = SampleRuns(a.X, a.Y, dx / len, dy / len, 0, len, ds, surf, sh, allowed)
+            End Sub)
+        token.ThrowIfCancellationRequested()
+        Dim ordered As New List(Of Run)
+        For Each chordRuns In chords
+            If chordRuns IsNot Nothing Then ordered.AddRange(chordRuns)
+        Next
+        If o.Limit = ReliefLimit.WholeBox AndAlso ordered.Count > 0 Then
+            ' The box clips the turns, so along its sides strips up to a stepover wide are cut from one side
+            ' only: one more lap along the sides, clockwise like the spiral, from the corner nearest its end.
+            Dim last = ordered(ordered.Count - 1)
+            Dim endPt = last.At(last.Points.Count - 1)
+            Dim corners = {New Pt2(surf.X0, surf.Y0), New Pt2(surf.X0, surf.Y1), New Pt2(surf.X1, surf.Y1), New Pt2(surf.X1, surf.Y0)}
+            Dim k0 = 0
+            For q = 1 To 3
+                If corners(q).DistanceTo(New Pt2(endPt.X, endPt.Y)) < corners(k0).DistanceTo(New Pt2(endPt.X, endPt.Y)) Then k0 = q
+            Next
+            For q = 0 To 3
+                Dim a = corners((k0 + q) Mod 4), b = corners((k0 + q + 1) Mod 4)
+                Dim len = a.DistanceTo(b)
+                If len > 0.0000001 Then ordered.AddRange(SampleRuns(a.X, a.Y, (b.X - a.X) / len, (b.Y - a.Y) / len, 0, len, ds, surf, sh, allowed))
+            Next
+        End If
+        If o.Direction = SpiralDirection.OutsideIn Then
+            ordered.Reverse()
+            For Each r In ordered
+                r.Points.Reverse()
+            Next
+        End If
+        Return ordered
+    End Function
+
+    ''' <summary>
+    ''' One finishing line, origin + T * (ux, uy) for T from t0 to t1: sampled at most ds apart (both ends
+    ''' included), cut into runs of samples inside the machine area; runs of two or more samples are refined.
+    ''' </summary>
+    Private Function SampleRuns(ox As Double, oy As Double, ux As Double, uy As Double, t0 As Double, t1 As Double, ds As Double,
+                                surf As Surface, sh As ToolShape, allowed As Func(Of Double, Double, Boolean)) As List(Of Run)
+        Dim nSamples = Math.Max(2, CInt(Math.Ceiling((t1 - t0) / ds)) + 1)
+        Dim dsLine = (t1 - t0) / (nSamples - 1)
+        Dim runs As New List(Of Run)
+        Dim cur As Run = Nothing
+        For s = 0 To nSamples - 1
+            Dim t = t0 + s * dsLine
+            Dim x = ox + ux * t, y = oy + uy * t
+            If allowed(x, y) Then
+                If cur Is Nothing Then
+                    cur = New Run With {.Ox = ox, .Oy = oy, .Ux = ux, .Uy = uy}
+                    runs.Add(cur)
+                End If
+                cur.Points.Add(New PassPoint(t, surf.Drop(x, y, sh) + FinishLift))
+            Else
+                cur = Nothing
+            End If
+        Next
+        Dim done As New List(Of Run)
+        For Each r In runs
+            If r.Points.Count < 2 Then Continue For
+            Refine(r, surf, sh)
+            done.Add(r)
+        Next
+        Return done
+    End Function
+
+    ' ================================================================ spiral
+
+    ''' <summary>
+    ''' Vertices of the Archimedean spiral r = pitch * theta / (2 pi) about the local origin (the grid's
+    ''' centre), from the centre out to the farthest corner of the rectangle plus half a pitch (so every point
+    ''' of the rectangle is within half a pitch of a turn). It turns clockwise going out: with a clockwise
+    ''' spindle the uncut side is then on the left (climb), and travelled backwards (outside in) too.
+    ''' Each chord is as long as a sagitta of tol allows on the curve there (short near the centre, where
+    ''' the spiral bends most), at most MaxChord and an eighth of a turn.
+    ''' </summary>
+    Private Function SpiralVertices(x0 As Double, y0 As Double, x1 As Double, y1 As Double, pitch As Double, tol As Double) As List(Of Pt2)
+        Dim rx = Math.Max(Math.Abs(x0), Math.Abs(x1)), ry = Math.Max(Math.Abs(y0), Math.Abs(y1))
+        Dim a = pitch / (2 * Math.PI)
+        Dim thEnd = (Math.Sqrt(rx * rx + ry * ry) + pitch / 2) / a
+        Dim pts As New List(Of Pt2) From {New Pt2(0, 0)}
+        Dim th = 0.0
+        While th < thEnd
+            Dim r2 = (a * th) ^ 2, a2 = a * a
+            ' Radius of curvature of r = a theta: (r^2 + a^2)^1.5 / (r^2 + 2 a^2); a / 2 at the centre, growing outwards,
+            ' so the curvature where a chord starts bounds its sagitta: chord^2 / (8 rho).
+            Dim rho = (r2 + a2) * Math.Sqrt(r2 + a2) / (r2 + 2 * a2)
+            Dim chord = Math.Min(MaxChord, Math.Sqrt(8 * rho * tol))
+            th = Math.Min(thEnd, th + Math.Min(Math.PI / 4, chord / Math.Sqrt(r2 + a2)))
+            Dim r = a * th
+            pts.Add(New Pt2(r * Math.Cos(th), -r * Math.Sin(th)))
+        End While
+        Return pts
+    End Function
+
+    ''' <summary>True when the segment's bounding box meets the rectangle (otherwise no point of it is inside).</summary>
+    Private Function TouchesBox(a As Pt2, b As Pt2, x0 As Double, y0 As Double, x1 As Double, y1 As Double) As Boolean
+        Return Math.Max(a.X, b.X) >= x0 AndAlso Math.Min(a.X, b.X) <= x1 AndAlso Math.Max(a.Y, b.Y) >= y0 AndAlso Math.Min(a.Y, b.Y) <= y1
+    End Function
+
+    ''' <summary>A spiral as points at most a given step apart (roughing tests every one of them at each level).</summary>
+    Private NotInheritable Class SpiralSamples
+        Public ReadOnly X As New List(Of Double)
+        Public ReadOnly Y As New List(Of Double)
+        ''' <summary>The path turns here (a chord's end): kept when the samples become moves.</summary>
+        Public ReadOnly Corner As New List(Of Boolean)
+        ''' <summary>False where the sample does not follow on from the one before (chords off the grid are left out).</summary>
+        Public ReadOnly Joined As New List(Of Boolean)
+
+        Public Sub New(v As List(Of Pt2), stepMax As Double, x0 As Double, y0 As Double, x1 As Double, y1 As Double)
+            Dim follows = False
+            For k = 0 To v.Count - 2
+                Dim a = v(k), b = v(k + 1)
+                If Not TouchesBox(a, b, x0, y0, x1, y1) Then
+                    follows = False
+                    Continue For
+                End If
+                If Not follows Then Add(a.X, a.Y, True, False)
+                Dim n = Math.Max(1, CInt(Math.Ceiling(a.DistanceTo(b) / stepMax)))
+                For q = 1 To n - 1
+                    Dim t = q / CDbl(n)
+                    Add(a.X + (b.X - a.X) * t, a.Y + (b.Y - a.Y) * t, False, True)
+                Next
+                Add(b.X, b.Y, True, True)
+                follows = True
+            Next
+        End Sub
+
+        Private Sub Add(px As Double, py As Double, isCorner As Boolean, isJoined As Boolean)
+            X.Add(px) : Y.Add(py) : Corner.Add(isCorner) : Joined.Add(isJoined)
+        End Sub
+
+        ''' <summary>
+        ''' The stretches whose samples are all inside (as start, corners and end, in spiral order; a lone
+        ''' sample is a stretch of one point). Outside in: the stretches and their points backwards.
+        ''' </summary>
+        Public Function Stretches(isInside As Func(Of Double, Double, Boolean), outsideIn As Boolean) As List(Of List(Of Pt2))
+            Dim runs As New List(Of List(Of Pt2))
+            Dim n = X.Count
+            Dim i = 0
+            While i < n
+                If Not isInside(X(i), Y(i)) Then
+                    i += 1
+                    Continue While
+                End If
+                Dim i1 = i
+                While i1 + 1 < n AndAlso Joined(i1 + 1) AndAlso isInside(X(i1 + 1), Y(i1 + 1))
+                    i1 += 1
+                End While
+                Dim run As New List(Of Pt2) From {New Pt2(X(i), Y(i))}
+                For q = i + 1 To i1 - 1
+                    If Corner(q) Then run.Add(New Pt2(X(q), Y(q)))
+                Next
+                If i1 > i Then run.Add(New Pt2(X(i1), Y(i1)))
+                runs.Add(run)
+                i = i1 + 1
+            End While
+            If outsideIn Then
+                runs.Reverse()
+                For Each r In runs
+                    r.Reverse()
+                Next
+            End If
+            Return runs
+        End Function
+    End Class
 
     ''' <summary>
     ''' Refines a run between its samples: halves steps where the surface bends above the straight
@@ -773,7 +977,16 @@ Public Module ReliefEngine
 
         Dim path As New Path(g, o)
         Dim rowStep = Math.Max(1, CInt(Math.Round(o.Stepover / c)))
-        Dim previous As Double = Double.NaN      ' the level above (its rows were cut at every node clear here)
+        ' Spiral: samples at most half a node apart over the node lattice, the same at every level. A sample
+        ' maps to the node of its lattice square (within half a diagonal), so a straight move between two clear
+        ' samples stays within a node diagonal of a clear node: clear, like a run between row nodes.
+        Dim spiral As SpiralSamples = Nothing
+        If o.Pattern = ReliefPattern.Spiral Then
+            Dim lx1 = fine.X0 + nx * c, ly1 = fine.Y0 + ny * c
+            spiral = New SpiralSamples(SpiralVertices(fine.X0, fine.Y0, lx1, ly1, Math.Max(o.Stepover, c), Math.Max(0.00001, o.Tolerance)),
+                                       c / 2, fine.X0, fine.Y0, lx1, ly1)
+        End If
+        Dim previous As Double = Double.NaN      ' the level above (its rows / spiral were cut at every node clear here)
         Dim inside(nx * ny - 1) As Boolean
         For Each z In levels
             token.ThrowIfCancellationRequested()
@@ -786,34 +999,46 @@ Public Module ReliefEngine
                                Return inside(j * nx + i)
                            End Function
 
-            ' 1. Runs along every rowStep-th node row, zig-zag.
-            Dim forward = True
-            For j = 0 To ny - 1 Step rowStep
-                Dim runs As New List(Of (A As Integer, B As Integer))
-                Dim i = 0
-                While i < nx
-                    If inside(j * nx + i) Then
-                        Dim i1 = i
-                        While i1 + 1 < nx AndAlso inside(j * nx + i1 + 1)
-                            i1 += 1
-                        End While
-                        runs.Add((i, i1))
-                        i = i1 + 1
-                    Else
-                        i += 1
-                    End If
-                End While
-                If runs.Count = 0 Then Continue For
-                If Not forward Then runs.Reverse()
-                For Each rn In runs
-                    Dim ia = If(forward, rn.A, rn.B), ib = If(forward, rn.B, rn.A)
-                    Dim a As New Pt3(nodeX(ia), nodeY(j), z), b As New Pt3(nodeX(ib), nodeY(j), z)
-                    GoTo_(path, a, z, previous, isInside, c, rowNode:=True)
-                    path.Feed(b)
+            If spiral IsNot Nothing Then
+                ' 1. The stretches of the spiral that are clear at this level, in spiral order. Every sample clear
+                '    here was clear at the level above too, where the tool went through it.
+                For Each stretch In spiral.Stretches(isInside, o.Direction = SpiralDirection.OutsideIn)
+                    GoTo_(path, New Pt3(stretch(0).X, stretch(0).Y, z), z, previous, isInside, c, cutAbove:=True)
+                    For q = 1 To stretch.Count - 1
+                        path.Feed(New Pt3(stretch(q).X, stretch(q).Y, z))
+                    Next
                     result.PassCount += 1
                 Next
-                forward = Not forward
-            Next
+            Else
+                ' 1. Runs along every rowStep-th node row, zig-zag.
+                Dim forward = True
+                For j = 0 To ny - 1 Step rowStep
+                    Dim runs As New List(Of (A As Integer, B As Integer))
+                    Dim i = 0
+                    While i < nx
+                        If inside(j * nx + i) Then
+                            Dim i1 = i
+                            While i1 + 1 < nx AndAlso inside(j * nx + i1 + 1)
+                                i1 += 1
+                            End While
+                            runs.Add((i, i1))
+                            i = i1 + 1
+                        Else
+                            i += 1
+                        End If
+                    End While
+                    If runs.Count = 0 Then Continue For
+                    If Not forward Then runs.Reverse()
+                    For Each rn In runs
+                        Dim ia = If(forward, rn.A, rn.B), ib = If(forward, rn.B, rn.A)
+                        Dim a As New Pt3(nodeX(ia), nodeY(j), z), b As New Pt3(nodeX(ib), nodeY(j), z)
+                        GoTo_(path, a, z, previous, isInside, c, cutAbove:=True)
+                        path.Feed(b)
+                        result.PassCount += 1
+                    Next
+                    forward = Not forward
+                Next
+            End If
 
             ' 2. The region's boundary, to clean the run ends against the walls.
             For Each contour In Contours(dz, ok, nx, ny, z, nodeX, nodeY)
@@ -834,7 +1059,7 @@ Public Module ReliefEngine
                     rot.Add(rot(0))
                     loopPts = rot
                 End If
-                GoTo_(path, New Pt3(loopPts(0).X, loopPts(0).Y, z), z, previous, isInside, c, rowNode:=False)
+                GoTo_(path, New Pt3(loopPts(0).X, loopPts(0).Y, z), z, previous, isInside, c, cutAbove:=False)
                 For q = 1 To loopPts.Count - 1
                     path.Feed(New Pt3(loopPts(q).X, loopPts(q).Y, z))
                 Next
@@ -850,9 +1075,9 @@ Public Module ReliefEngine
     ''' <summary>
     ''' Gets to the start of a roughing pass at level z: a straight feed when every point of the way
     ''' is near a clear node, otherwise up, across and down (a rapid down to just above the level
-    ''' above when the start is a row node, which that level cut).
+    ''' above when that level cut through the start: a row node, or a spiral sample).
     ''' </summary>
-    Private Sub GoTo_(path As Path, p As Pt3, z As Double, previous As Double, isInside As Func(Of Double, Double, Boolean), c As Double, rowNode As Boolean)
+    Private Sub GoTo_(path As Path, p As Pt3, z As Double, previous As Double, isInside As Func(Of Double, Double, Boolean), c As Double, cutAbove As Boolean)
         If path.Started AndAlso Math.Abs(path.Cur.Z - z) < 0.0000001 Then
             Dim a = path.Cur
             Dim len = Math.Sqrt((p.X - a.X) ^ 2 + (p.Y - a.Y) ^ 2)
@@ -867,7 +1092,7 @@ Public Module ReliefEngine
                 Return
             End If
         End If
-        Dim downTo = If(rowNode AndAlso Not Double.IsNaN(previous), previous + PlungeGap, Double.NaN)
+        Dim downTo = If(cutAbove AndAlso Not Double.IsNaN(previous), previous + PlungeGap, Double.NaN)
         path.Travel(p, downTo)
     End Sub
 

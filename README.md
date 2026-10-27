@@ -322,9 +322,11 @@ between the toolpath lines and the carved board.
 board. The blank becomes a float heightmap texture on the GPU (one cell =
 *Precision* under *Machine Settings > 4. Simulation*: 0.003", 0.005" or 0.010"), automatically
 coarsened if the blank needs more cells than the graphics card allows (shown
-as *Max texture size (hardware)*). Material is removed by rendering the revolved
-tool model from above into that texture with MAX blending every half cell along
-each move, so the sweep is exact to the cell size and runs in milliseconds. The
+as *Max texture size (hardware)*). Material is removed by stamping the tool into
+that texture every half cell along each move: one small square per stamp whose
+shader works out the tool's exact shape (flat, ball, bull nose, V-bit, tapered ball
+nose) under each cell, MAX-blended, so the sweep is exact to the cell size and even
+the millions of moves of a 3D finishing pass simulate in seconds. The
 carved surface is drawn with one vertex per cell, so the chosen precision is
 what you see when you zoom into a letter; *Display mesh* (Full / Half / Low)
 caps that drawing at four million, one million or 250 thousand cells for

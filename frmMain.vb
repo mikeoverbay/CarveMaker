@@ -831,6 +831,7 @@ Public Class frmMain
             _genVersion += 1
             SetGenerating(False)
             lblStatus.Text = "Settings: " & String.Join(" ", problems)
+            SetJobStatus(problems.Select(Function(p) "Settings: " & p), Nothing)
             _statusNote = Nothing
             Return
         End If
@@ -874,6 +875,7 @@ Public Class frmMain
             Dim ex As Exception = t.Exception
             If TypeOf ex Is AggregateException Then ex = DirectCast(ex, AggregateException).GetBaseException()
             lblStatus.Text = "Error: " & ex.Message
+            SetJobStatus({"Error: " & ex.Message}, Nothing)
             _statusNote = Nothing
             Return
         End If
@@ -889,6 +891,8 @@ Public Class frmMain
         ' Extra stock is display only (changing it does not regenerate): warn from the current settings.
         Dim extraNote = _settings.ExtraStockNote()
         If extraNote IsNot Nothing Then notes.Add(extraNote)
+        ' The Status button: red and blinking with any of these, green without.
+        SetJobStatus(notes, _toolpath)
         If notes.Count > 0 Then
             lblStatus.Text = String.Join("  |  ", notes)
         ElseIf _toolpath.IsEmpty Then
@@ -909,6 +913,7 @@ Public Class frmMain
     ''' </summary>
     Private Sub SetGenerating(running As Boolean)
         _running = running
+        SetJobBusy(running)
         UseWaitCursor = False
         mnuToolpathGenerate.Enabled = Not running
         mnuFileSaveGcode.Enabled = Not running
@@ -1029,6 +1034,7 @@ Public Class frmMain
                     _glView.ExtraStockZ = _settings.ExtraStockZ
                     ' The simulated board starts that much higher: build it again (the moves are the same).
                     _glView.UpdateSimulationSettings(If(_lastSettings, _settings).Clone())
+                    RefreshExtraStockStatus()
                     Dim note = _settings.ExtraStockNote()
                     lblStatus.Text = If(note, If(_settings.ExtraStockZ > 0,
                         String.Format(CultureInfo.InvariantCulture, "Extra stock {0:0.###}"" shown over the blank (amber): face it off before carving; Z zero is the finished surface.", _settings.ExtraStockZ),

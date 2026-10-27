@@ -39,6 +39,8 @@ Partial Class frmMain
         tsbSimToggle.Image = _pathIcon
         tsbSimToggle.Text = "Toolpath"
         tsbSimPlay.Image = _playIcon
+        ' The Status button after the Toolpath / Simulation switch (frmMain.Status.vb).
+        SetupStatusButton(px)
         Dim simBarBefore = tsSim.PreferredSize.Height
         For Each ts In {tsProject, tsDrawTools, tsTextStyle, tsSnap, tsView, tsObjects, tsFormat, tsSim}
             Skin.StyleToolbar(ts)

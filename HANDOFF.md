@@ -302,6 +302,12 @@ The torture expectations (`svg-torture-transforms-expect.js`,
   (`GCodeWriter.ToolGroups`) or per toolpath (`ToolpathGroups`, each segment its own program,
   `SameToolAsPrevious` writes "keep the tool and the Z zero" instead of "fit this tool");
   remembered as `UserPreferences.GCodePerToolpath`. Files are named after the toolpath.
+- Status button (`frmMain.Status.vb`, `_tsbStatus` inserted after `tsbSimToggle` in `SetupSkin` before
+  styling): `JobState` Empty/Busy/Fine/Problem from `SetJobBusy` (SetGenerating) and `SetJobStatus`
+  (PublishToolpath notes, generation errors, settings problems); Problem blinks (450 ms timer).
+  `JobStatusWindow` is a dark DataGridView table (Status / Where / What, then the job's numbers;
+  Copy All = tab-separated). `ProblemRow` finds Where from the drawing-name prefix of each note.
+  Harness `statusshots` captures the green and red states.
 - `SetupGenerationUi` runs before `SetupDrawing`: the Project toolbar's Stop button mirrors the
   Stop Generating menu item, which must exist first.
 - PropertyGrid edits write straight into `_settings`; toolpath-relevant ones go

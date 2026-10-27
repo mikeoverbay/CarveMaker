@@ -197,6 +197,15 @@ edge, float it or hide it; **View > Toolbars** shows hidden ones again and
 *Reset Toolbars* brings the standard arrangement back. Once you move a toolbar
 yourself, your arrangement is kept and remembered for the next start.
 
+**Status** (the button after the Toolpath / Simulation switch on the *View* toolbar): green
+when the job is fine; red and blinking when something is wrong (a toolpath warning such as a
+bit too shallow for the depth or text off the blank, a drawing that cannot be carved,
+settings out of range, a failed generation, rapids inside the extra stock); amber while a
+toolpath is computed; grey with nothing to cut. Click it for the *Job Status* table: one
+row per problem (where it is and what it is), then the job's numbers (objects, passes, size,
+deepest cut, cut length, time, the tool of each program). *Copy All* copies the table to
+paste into a spreadsheet.
+
 **Snapping** (Snap toolbar, or **Draw > Snap to Grid / Grid Spacing /
 Rotation Snap**):
 

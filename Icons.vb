@@ -53,6 +53,11 @@ Friend Enum IconKind
     ObjectSettings
     TextJob
     Drawings
+    StatusOff
+    StatusBusy
+    StatusOk
+    StatusProblem
+    StatusProblemDim
 End Enum
 
 Friend Module Icons
@@ -183,7 +188,47 @@ Friend Module Icons
         End Using
     End Sub
 
+    ''' <summary>A status light: a lit dome in the colour, with a sign on it.</summary>
+    Private Sub StatusLight(g As Graphics, lit As Color, sign As IconKind)
+        Dim r As New RectangleF(2, 2, 16, 16)
+        Using dome As New GraphicsPath()
+            dome.AddEllipse(r)
+            Using b As New PathGradientBrush(dome)
+                b.CenterPoint = New PointF(8.2F, 7.4F)
+                b.CenterColor = ControlPaint.Light(lit, 0.6F)
+                b.SurroundColors = {ControlPaint.Dark(lit, 0.15F)}
+                g.FillPath(b, dome)
+            End Using
+            Using rim As New Pen(Color.FromArgb(200, 0, 0, 0), 1.1F)
+                g.DrawPath(rim, dome)
+            End Using
+        End Using
+        Using shine As New SolidBrush(Color.FromArgb(110, Color.White))
+            g.FillEllipse(shine, 5.6F, 4.2F, 5.2F, 3.2F)
+        End Using
+        Using ink As New Pen(Color.FromArgb(235, 255, 255, 255), 2.0F) With {.StartCap = LineCap.Round, .EndCap = LineCap.Round, .LineJoin = LineJoin.Round}
+            Select Case sign
+                Case IconKind.StatusOk
+                    g.DrawLines(ink, {Pt(6.2F, 10.4F), Pt(8.9F, 13.1F), Pt(14, 7.4F)})
+                Case IconKind.StatusProblem
+                    g.DrawLine(ink, 10, 5.8F, 10, 11.2F)
+                    g.DrawLine(ink, 10, 14.2F, 10, 14.3F)
+                Case IconKind.StatusBusy
+                    For Each x In {6.4F, 10.0F, 13.6F}
+                        g.DrawLine(ink, x, 10.4F, x, 10.5F)
+                    Next
+            End Select
+        End Using
+    End Sub
+
     Private Sub Paint(g As Graphics, kind As IconKind, p As Palette)
+        Select Case kind
+            Case IconKind.StatusOff : StatusLight(g, Color.FromArgb(78, 78, 84), kind) : Return
+            Case IconKind.StatusBusy : StatusLight(g, Color.FromArgb(244, 176, 32), kind) : Return
+            Case IconKind.StatusOk : StatusLight(g, Color.FromArgb(52, 196, 72), kind) : Return
+            Case IconKind.StatusProblem : StatusLight(g, Color.FromArgb(232, 40, 32), kind) : Return
+            Case IconKind.StatusProblemDim : StatusLight(g, Color.FromArgb(90, 22, 20), IconKind.StatusProblem) : Return
+        End Select
         Using main As New SolidBrush(p.Main), soft As New SolidBrush(p.Soft), cyan As New SolidBrush(p.Cyan),
               lime As New SolidBrush(p.Lime), red As New SolidBrush(p.Red), yellow As New SolidBrush(p.Yellow),
               line = p.Pen(p.Main, 1.6F), thin = p.Pen(p.Main, 1.1F), softLine = p.Pen(p.Soft, 1.1F), cyanLine = p.Pen(p.Cyan, 1.6F)

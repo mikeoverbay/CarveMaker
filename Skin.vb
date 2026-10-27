@@ -396,7 +396,7 @@ Friend NotInheritable Class Skin
         ' Composite controls (grids, number boxes, lists, the GL view) keep their insides as they are.
         If TypeOf root Is PropertyGrid OrElse TypeOf root Is UpDownBase OrElse TypeOf root Is ComboBox OrElse
            TypeOf root Is TextBoxBase OrElse TypeOf root Is ToolStrip OrElse TypeOf root Is ListControl OrElse
-           TypeOf root Is TreeView OrElse TypeOf root Is ToolpathView Then Return
+           TypeOf root Is TreeView OrElse TypeOf root Is ToolpathView OrElse TypeOf root Is DataGridView Then Return
         For Each c As Control In root.Controls
             Apply(c)
         Next
@@ -447,6 +447,8 @@ Friend NotInheritable Class Skin
                 AddHandler lb.DrawItem, AddressOf DrawListItem
             End If
             DarkScrollbars(c)
+        ElseIf TypeOf c Is DataGridView Then
+            StyleTable(DirectCast(c, DataGridView))
         ElseIf TypeOf c Is TreeView Then
             Dim tv = DirectCast(c, TreeView)
             tv.BackColor = Field
@@ -546,6 +548,25 @@ Friend NotInheritable Class Skin
         End Select
         Return f
     End Function
+
+    ''' <summary>A table (spreadsheet grid) in the skin's colours: dark rows, a header band, the skin's selection.</summary>
+    Public Shared Sub StyleTable(t As DataGridView)
+        t.BackgroundColor = Field
+        t.BorderStyle = BorderStyle.None
+        t.GridColor = Line
+        t.EnableHeadersVisualStyles = False
+        t.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.Single
+        With t.ColumnHeadersDefaultCellStyle
+            .BackColor = Category : .ForeColor = Ink
+            .SelectionBackColor = Category : .SelectionForeColor = Ink
+        End With
+        With t.DefaultCellStyle
+            .BackColor = Field : .ForeColor = Ink
+            .SelectionBackColor = Selection : .SelectionForeColor = Color.White
+        End With
+        t.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(32, 32, 35)
+        DarkScrollbars(t)
+    End Sub
 
     ''' <summary>A property grid in the skin's colours (rows, categories, help pane, its own toolbar).</summary>
     Public Shared Sub StyleGrid(pg As PropertyGrid)

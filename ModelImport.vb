@@ -181,7 +181,7 @@ Public NotInheritable Class ReliefModel
         If data Is Nothing OrElse data.Length < 16 Then Throw New InvalidDataException("The relief data is empty.")
         Using ms As New MemoryStream(data)
             Using br As New BinaryReader(ms, Encoding.UTF8, True)
-                If Encoding.ASCII.GetString(br.ReadBytes(Magic.Length)) <> Magic Then Throw New InvalidDataException("This is not CarveMaker relief data.")
+                If Encoding.ASCII.GetString(br.ReadBytes(Magic.Length)) <> Magic Then Throw New InvalidDataException("This is not " & AppInfo.Name & " relief data.")
                 Dim ver = br.ReadInt32()
                 If ver <> FormatVersion Then Throw New InvalidDataException("The relief data was made by a newer version (format " & ver & ").")
                 Dim cols = br.ReadInt32(), rows = br.ReadInt32()
@@ -320,7 +320,7 @@ Public Module ModelImport
             Case ".ply" : mesh = ReadPly(path)
             Case ".3mf" : mesh = Read3mf(path)
             Case ".off" : mesh = ReadOff(path)
-            Case Else : Throw New InvalidDataException("CarveMaker cannot read " & ext & " files.")
+            Case Else : Throw New InvalidDataException(AppInfo.Name & " cannot read " & ext & " files.")
         End Select
         token.ThrowIfCancellationRequested()
         If mesh.Count = 0 Then Throw New InvalidDataException("The file has no triangles.")

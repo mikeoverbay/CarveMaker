@@ -1,6 +1,6 @@
 ' ============================================================================
 '  frmMain.Help.vb
-'  Help menu: the user guide (Help\CarveMaker Help.html next to the exe,
+'  Help menu: the user guide (Help\CarveMakerGG Gcode Generator Help.html next to the exe,
 '  opened in the default browser; F1), the releases page, and About.
 ' ============================================================================
 
@@ -9,12 +9,12 @@ Imports System.IO
 
 Partial Class frmMain
 
-    Private Const ReleasesUrl As String = "https://github.com/mikeoverbay/CarveMaker/releases"
-    Private Const ReadmeUrl As String = "https://github.com/mikeoverbay/CarveMaker#readme"
+    Private Const ReleasesUrl As String = AppInfo.RepoUrl & "/releases"
+    Private Const ReadmeUrl As String = AppInfo.RepoUrl & "#readme"
 
     ''' <summary>Where the user guide is installed (next to the exe).</summary>
     Public Shared Function HelpGuidePath() As String
-        Return Path.Combine(AppContext.BaseDirectory, "Help", "CarveMaker Help.html")
+        Return Path.Combine(AppContext.BaseDirectory, "Help", AppInfo.Name & " Help.html")
     End Function
 
     ''' <summary>"1.3.0": the version without the build's commit id.</summary>
@@ -29,7 +29,7 @@ Partial Class frmMain
         Try
             Process.Start(New ProcessStartInfo(target) With {.UseShellExecute = True})
         Catch ex As Exception
-            MessageBox.Show(Me, "Could not open " & target & Environment.NewLine & ex.Message, "CarveMaker", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            MessageBox.Show(Me, "Could not open " & target & Environment.NewLine & ex.Message, AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Warning)
         End Try
     End Sub
 
@@ -45,9 +45,9 @@ Partial Class frmMain
 
     Private Sub mnuHelpAbout_Click(sender As Object, e As EventArgs) Handles mnuHelpAbout.Click
         MessageBox.Show(Me,
-                        "CarveMaker " & DisplayVersion() & Environment.NewLine & Environment.NewLine &
-                        "V-carve, pocket and profile toolpaths for text and drawings, with a live preview and simulation." & Environment.NewLine & Environment.NewLine &
+                        AppInfo.Name & " " & DisplayVersion() & Environment.NewLine & Environment.NewLine &
+                        "V-carve, pocket, profile and 3D relief toolpaths and G-code for text, drawings and models, with a live preview and simulation." & Environment.NewLine & Environment.NewLine &
                         "User guide: Help > User Guide (F1)" & Environment.NewLine & ReleasesUrl,
-                        "About CarveMaker", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                        "About " & AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Information)
     End Sub
 End Class

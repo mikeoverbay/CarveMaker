@@ -1,17 +1,23 @@
-# CarveMaker handoff (updated 2026-10-26: dark Code Chop skin, Project toolbar)
+# CarveMakerGG Gcode Generator (CarveMaker) handoff (updated 2026-10-27: renamed, dark Code Chop skin, Project toolbar)
 
 Written so any session (or person) can pick the project up without the chat
 history. Read this, then `README.md` for the user-facing description.
 
 ## State of the repo
 
-- Folder `C:\Text_to_CNC_path`, branch `master`, remote `github.com/mikeoverbay/CarveMaker`.
+- **Name.** Since 2026-10-26 everything people see says **CarveMakerGG Gcode Generator** (`AppInfo.Name`:
+  title bar, About, dialogs, messages, G-code header, installer, Start menu, user guide, release titles).
+  The user chose to keep the internals: `CarveMaker.exe`, `CarveMaker.sln/.vbproj`, the code namespace,
+  `%AppData%\CarveMaker` (tool library, preferences), the installer's fixed AppId and install folder,
+  and the project file marker `"App": "CarveMaker"`. The GitHub repo is **mikeoverbay/CarveMakerGG**
+  (renamed by the user; the old URL redirects).
+- Folder `C:\Text_to_CNC_path`, branch `master`, remote `github.com/mikeoverbay/CarveMakerGG`.
 - Everything up to the handoff commit `e23cc0c` is pushed. Check `git status`
   and `git log origin/master..master` for anything newer; push with
   `git push origin master` only when the user asks.
   `Samples\00717 Mandala Floral Pattern` is a git-ignored stock-art test pack.
 - Releases: GitHub Actions (`.github/workflows/release.yml`) builds Release on
-  every push and publishes `CarveMaker-Setup-<ver>.exe` on tags `v*`, with
+  every push and publishes `CarveMakerGG-Gcode-Generator-Setup-<ver>.exe` on tags `v*`, with
   `release-notes.md` as the release text. Releases so far: v1.0.0; v1.1.0 (tool
   library, pocket/profile, per-toolpath feeds, drawing tools, snapping); v1.2.0
   (movable toolbars); v1.3.0 (user guide with Help menu, click priority / Ctrl+click).
@@ -19,11 +25,11 @@ history. Read this, then `README.md` for the user-facing description.
   1. run the harness modes; 2. write `release-notes.md` for the new version;
   3. bump `<Version>` in `Directory.Build.props` and the fallback `AppVersion` in
   `Setup/Setup.iss`; 4. commit, then `dotnet build CarveMaker.sln -c Release`
-  (installer `CarveMaker-Setup-<ver>.exe` in the root; build after the commit so the
+  (installer `CarveMakerGG-Gcode-Generator-Setup-<ver>.exe` in the root; build after the commit so the
   exe's version carries the release commit's hash, not its parent's); 5.
   `git tag -a vX.Y.Z`, push master and the tag; 6. watch the Actions run for the tag and check the release has
   the installer (public pages: /actions, /releases/expanded_assets/vX.Y.Z); 7. install
-  it here (`CarveMaker-Setup-<ver>.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+  it here (`CarveMakerGG-Gcode-Generator-Setup-<ver>.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
   /CURRENTUSER`, per-user, upgrades in place) once CarveMaker is closed.
 
 ## Build and run
@@ -65,8 +71,9 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
 | `frmMachineSettings.vb` / `.Designer.vb` | Machine Settings tool window (Machine > Machine Settings, Ctrl+K), owned by the main form, hides on close |
 | `frmMain.vb` / `.Designer.vb` | UI: Text tab (editor + `pgText` text settings), Drawings tab, binds the Machine Settings window, menus, simulation bar, regenerate pipeline (`RequestRegenerate` -> 400 ms timer -> `GenerateAsync` on a worker) |
 | `Preferences.vb` | `UserPreferences`: per-user snap settings (JSON in %AppData%\CarveMaker), offered spacings and rotation steps |
-| `frmMain.Help.vb` | Partial frmMain: Help menu (User Guide F1 opens `Help\CarveMaker Help.html` next to the exe, falling back to the README online; Newer Versions; About) |
+| `frmMain.Help.vb` | Partial frmMain: Help menu (User Guide F1 opens `Help\CarveMakerGG Gcode Generator Help.html` next to the exe, falling back to the README online; Newer Versions; About) |
 | `Help\` | The user guide (HTML, self-contained CSS, light/dark) and its screenshots in `Help\images` (made by the harness `helpshots` mode); copied next to the exe and into the installer, with a Start-menu shortcut |
+| `AppInfo.vb` | `AppInfo.Name` ("CarveMakerGG Gcode Generator", the name people see) and `AppInfo.RepoUrl` |
 | `Skin.vb` | The dark look after the user's old program Code Chop: colours, `PaintButton` (Square = glossy command with a lime bar that glows; Round = toggle, yellow while on), `PaintBand` (toolbar band with a lime edge), `PaintSpacer`, `Apply` (walks a window and darkens every control; does not recurse into composite controls), `StyleToolbar` (32 px buttons, 20 px icons, text buttons padded to the same height), `SetIcon`/`Icon`/`YellowTwin` (each light icon keeps a dark twin for the yellow state), `MarkToggle`, `SkinRenderer` (+ `SkinColorTable`) for menus, toolbars and the status bar, `DarkTabControl`, DWM dark title bar, `SetWindowTheme` dark themes, owner-drawn ListBox and DropDownList ComboBox |
 | `Icons.vb` | `IconKind` and every button/menu picture, drawn in code on a 20-unit grid (light ink, or dark ink for a yellow toggle); `ToolLibrary` uses `ToolDrawing.RenderIcon` |
 | `frmMain.Skin.vb` | Partial frmMain: `SetupSkin` (skin, toolbar styling, toggles, toolbar and menu icons) and the Project toolbar (`tsProject`: `MenuButton` mirrors a menu item's click and enabled state) |

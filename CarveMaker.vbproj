@@ -11,6 +11,8 @@
     <OptionInfer>On</OptionInfer>
     <Nullable>disable</Nullable>
     <AssemblyName>CarveMaker</AssemblyName>
+    <!-- The name shown in Explorer and Task Manager; the exe keeps the old file name. -->
+    <AssemblyTitle>CarveMakerGG Gcode Generator</AssemblyTitle>
     <RootNamespace>CarveMaker</RootNamespace>
     <ApplicationIcon>CarveMaker.ico</ApplicationIcon>
     <!-- Lets the installer project publish self-contained for win-x64 from the same restore. -->

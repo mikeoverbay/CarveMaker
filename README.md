@@ -1,4 +1,8 @@
-﻿# CarveMaker
+﻿# CarveMakerGG Gcode Generator
+
+*(Formerly CarveMaker. The program file `CarveMaker.exe`, the settings folder
+`%AppData%\CarveMaker` and the installer's identity keep that name, so an installed
+CarveMaker upgrades in place and keeps its tool library and settings.)*
 
 Windows desktop app (VB.NET, .NET 8, WinForms) that turns typed text in any
 installed font into a **V-carve toolpath** for a V-bit (default 1/4" diameter,
@@ -29,15 +33,15 @@ screen scale; the Tool Library button shows a real tool.
 
 ## User guide
 
-**Help > User Guide** (F1) opens the guide (`Help/CarveMaker Help.html`, also in
+**Help > User Guide** (F1) opens the guide (`Help/CarveMakerGG Gcode Generator Help.html`, also in
 the Start menu): getting started, text, drawing, toolbars, toolpaths, the tool
 library, machine settings, the simulation, and every shortcut.
 
 ## Download
 
 Ready-made installers are on the
-[Releases page](https://github.com/mikeoverbay/CarveMaker/releases): download
-`CarveMaker-Setup-<version>.exe` and run it. Nothing else is needed; the
+[Releases page](https://github.com/mikeoverbay/CarveMakerGG/releases): download
+`CarveMakerGG-Gcode-Generator-Setup-<version>.exe` and run it. Nothing else is needed; the
 installer carries its own .NET runtime. (The exe is unsigned, so Windows
 SmartScreen may ask you to confirm the first time.)
 
@@ -319,7 +323,7 @@ values by tool type and size.
 Numbers accept decimals or fractions (`0.25`, `1/4`, `1-1/4`). Names follow the
 numbers unless you type your own. **New** adds a tool of a type, **Duplicate**
 copies one, **Delete** removes it; **Save** writes the library to
-`%AppData%CarveMakerToolLibrary.json` (the standard tools are used until then).
+`%AppData%\CarveMaker\ToolLibrary.json` (the standard tools are used until then).
 V-carving takes a V-bit. Pockets take end mills (flat, ball or bull nose).
 Profiles take end mills, or a V-bit on the line. The simulation draws whichever bit carves the job.
 Projects saved before the library open with an equivalent V-bit.
@@ -387,7 +391,7 @@ self-contained for x64 into `Setup\publish\` (no .NET install needed on the
 target PC) and compiles `Setup\Setup.iss` with the Inno Setup compiler that
 comes from the `Tools.InnoSetup` NuGet package, so no extension or separate
 download is required. The result is
-`CarveMaker-Setup-<version>.exe` in the solution root (about 48 MB).
+`CarveMakerGG-Gcode-Generator-Setup-<version>.exe` in the solution root (about 48 MB).
 
 The installer offers per-user or all-users install, Start Menu and optional
 desktop shortcuts, an uninstaller, in-place upgrades (same AppId) and adds the

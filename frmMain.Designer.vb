@@ -907,7 +907,7 @@ Partial Class frmMain
         '
         mnuHelpAbout.Name = "mnuHelpAbout"
         mnuHelpAbout.Size = New Size(220, 22)
-        mnuHelpAbout.Text = "&About CarveMaker"
+        mnuHelpAbout.Text = "&About CarveMakerGG Gcode Generator"
         '
         ' stsMain
         '
@@ -1324,13 +1324,13 @@ Partial Class frmMain
         ' dlgOpenProject
         ' 
         dlgOpenProject.DefaultExt = "prj"
-        dlgOpenProject.Filter = "CarveMaker project (*.prj)|*.prj|All files (*.*)|*.*"
+        dlgOpenProject.Filter = "CarveMakerGG Gcode Generator project (*.prj)|*.prj|All files (*.*)|*.*"
         dlgOpenProject.Title = "Open Project"
         ' 
         ' dlgSaveProject
         ' 
         dlgSaveProject.DefaultExt = "prj"
-        dlgSaveProject.Filter = "CarveMaker project (*.prj)|*.prj|All files (*.*)|*.*"
+        dlgSaveProject.Filter = "CarveMakerGG Gcode Generator project (*.prj)|*.prj|All files (*.*)|*.*"
         dlgSaveProject.Title = "Save Project"
         ' 
         ' dlgSvg
@@ -1355,7 +1355,7 @@ Partial Class frmMain
         MinimumSize = New Size(800, 500)
         Name = "frmMain"
         StartPosition = FormStartPosition.CenterScreen
-        Text = "CarveMaker"
+        Text = "CarveMakerGG Gcode Generator"
         mnuMain.ResumeLayout(False)
         mnuMain.PerformLayout()
         stsMain.ResumeLayout(False)

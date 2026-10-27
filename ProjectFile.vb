@@ -31,8 +31,9 @@ End Class
 Public Class ProjectFile
     Public Const CurrentVersion As Integer = 2
     Public Const Extension As String = ".prj"
-    Public Const Filter As String = "CarveMaker project (*.prj)|*.prj|All files (*.*)|*.*"
+    Public Const Filter As String = AppInfo.Name & " project (*.prj)|*.prj|All files (*.*)|*.*"
 
+    ' The file marker keeps the old name: older versions check it.
     Public Property App As String = "CarveMaker"
     Public Property Version As Integer = CurrentVersion
     Public Property Settings As CarveSettings = New CarveSettings()
@@ -96,7 +97,7 @@ Public Class ProjectFile
     Public Shared Function Load(path As String) As ProjectFile
         Dim json = File.ReadAllText(path)
         Dim pf As ProjectFile = JsonSerializer.Deserialize(Of ProjectFile)(json, Options)
-        If pf Is Nothing Then Throw New InvalidDataException("The file is not a CarveMaker project.")
+        If pf Is Nothing Then Throw New InvalidDataException("The file is not a " & AppInfo.Name & " project.")
         If pf.Version > CurrentVersion Then
             Throw New InvalidDataException("This project was saved by a newer version of the program (file version " & pf.Version & ").")
         End If

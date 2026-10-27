@@ -2,9 +2,9 @@
   <!-- Shared by the app and the installer project: bump the version here. -->
   <PropertyGroup>
     <Version>1.3.0</Version>
-    <Product>CarveMaker</Product>
-    <Company>CarveMaker</Company>
+    <Product>CarveMakerGG Gcode Generator</Product>
+    <Company>CarveMakerGG Gcode Generator</Company>
     <Copyright>Copyright © 2026</Copyright>
-    <Description>CarveMaker turns text in any installed font into a V-carve CNC toolpath with a live OpenGL preview and material-removal simulation.</Description>
+    <Description>CarveMakerGG Gcode Generator turns text, drawings, SVG files and 3D models into CNC toolpaths and G-code, with a live OpenGL preview and material-removal simulation.</Description>
   </PropertyGroup>
 </Project>

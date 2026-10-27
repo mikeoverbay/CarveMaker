@@ -2,7 +2,7 @@
   Setup.vbproj - builds the Windows installer (Release configuration only).
   1. Publishes the app self-contained for win-x64 into Setup\publish\
   2. Compiles Setup.iss with the Inno Setup compiler from the Tools.InnoSetup
-     NuGet package into CarveMaker-Setup-<version>.exe in the solution root
+     NuGet package into CarveMakerGG-Gcode-Generator-Setup-<version>.exe in the solution root
   No Visual Studio extension is required; "dotnet build -c Release" or a
   Release build in Visual Studio produces the installer.
 -->
@@ -31,7 +31,7 @@
     <Error Condition="!Exists('$(PkgTools_InnoSetup)\tools\ISCC.exe')" Text="Inno Setup compiler not found at $(PkgTools_InnoSetup)\tools\ISCC.exe (restore the Tools.InnoSetup package)." />
     <MakeDir Directories="$(InstallerDir)" />
     <Exec Command="&quot;$(PkgTools_InnoSetup)\tools\ISCC.exe&quot; /Q /DAppVersion=$(Version) &quot;/DSourceDir=$(PublishDir.TrimEnd('\'))&quot; &quot;/DOutputDir=$(InstallerDir.TrimEnd('\'))&quot; &quot;$(MSBuildThisFileDirectory)Setup.iss&quot;" />
-    <Message Importance="high" Text="Installer written to $(InstallerDir)CarveMaker-Setup-$(Version).exe" />
+    <Message Importance="high" Text="Installer written to $(InstallerDir)CarveMakerGG-Gcode-Generator-Setup-$(Version).exe" />
   </Target>
 
 </Project>

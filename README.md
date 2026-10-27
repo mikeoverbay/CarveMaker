@@ -289,10 +289,17 @@ above, so overhangs are filled in.
 - **No gouging**: drop-cutter against the cell columns; finishing refines between
   points where the surface bends or rises steeply, turns the finest steep steps
   into staircases, simplifies one-sidedly (a line may replace points only if it
-  stays above all of them) and sits 0.0001" above the computed surface; roughing
+  stays above all of them) and sits 0.0001" above the computed surface, checked at
+  several points per model cell (more on cliffs and with small or sharp tips); roughing
   widens every drop by the allowance and a node diagonal so straight runs,
   spiral stretches (samples half a node apart), boundary loops and links between
   nodes stay clear.
+- **Links between finishing passes**: when the next pass starts within 1" or 8 tool diameters,
+  whichever is more (3" when the finishing pass takes the material down in levels
+  because roughing is off), the tool follows the surface to it; when the way there
+  leaves the machine area for a moment (a spiral grazing the outline), and only
+  as far out as the passes there already cut the stock top, it goes up, across
+  above everything and back down; otherwise it lifts to the clearance height. On the 15" dragon a roughed spiral finish lifts 47 times.
 - The toolpaths are computed in the model's frame and cached, so moving or
   rotating the model does not compute them again. Generation runs on a worker
   with a busy bar and **Abort** (Shift+F5).

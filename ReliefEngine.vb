@@ -194,6 +194,18 @@ Public Module ReliefEngine
             Return s
         End Function
 
+        ''' <summary>How far from the axis the tool cuts at height h above its tip: the largest r with Eval(r) &lt;= h (0 below the tip).</summary>
+        Public Function RadiusAt(h As Double) As Double
+            If Eval(0) > h Then Return 0
+            If Eval(Reach) <= h Then Return Reach
+            Dim lo = 0.0, hi = Reach
+            For k = 1 To 40
+                Dim m = (lo + hi) / 2
+                If Eval(m) <= h Then lo = m Else hi = m
+            Next
+            Return lo
+        End Function
+
         ''' <summary>How far from the axis the grown tool reaches.</summary>
         Public ReadOnly Property Reach As Double
             Get
@@ -325,6 +337,100 @@ Public Module ReliefEngine
             Return best
         End Function
 
+        ''' <summary>
+        ''' Drop(px, py, sh) > z, found without the exact drop: blocks and columns that stay below z are
+        ''' skipped, and the first that reaches above it answers.
+        ''' </summary>
+        Public Function Above(px As Double, py As Double, sh As ToolShape, z As Double) As Boolean
+            Dim lower = sh.Lower
+            ' The base (outside the grid, or with no column in reach) is the drop's floor: when it lies above z,
+            ' ask the drop itself.
+            If BaseZ + lower > z Then Return Drop(px, py, sh) > z
+            Dim reach = sh.Reach
+            Dim i0 = CInt(Math.Floor((px - reach - X0) / Cx)), i1 = CInt(Math.Floor((px + reach - X0) / Cx))
+            Dim j0 = CInt(Math.Floor((py - reach - Y0) / Cy)), j1 = CInt(Math.Floor((py + reach - Y0) / Cy))
+            i0 = Math.Max(0, i0) : j0 = Math.Max(0, j0) : i1 = Math.Min(Cols - 1, i1) : j1 = Math.Min(Rows - 1, j1)
+            If i0 > i1 OrElse j0 > j1 Then Return False
+            For bj = j0 \ BlockSize To j1 \ BlockSize
+                For bi = i0 \ BlockSize To i1 \ BlockSize
+                    If BlockDrop(px, py, sh, bi, bj, i0, i1, j0, j1, z, lower) > z Then Return True
+                Next
+            Next
+            Return False
+        End Function
+
+        ''' <summary>
+        ''' The highest drop anywhere on the segment from (ax, ay) to (bx, by), exactly: Eval never decreases
+        ''' outwards, so a column forces the tool highest where the segment comes nearest to it. Never below
+        ''' the base, the drop outside the grid and where no column is in reach.
+        ''' </summary>
+        Public Function SegmentDrop(ax As Double, ay As Double, bx As Double, by As Double, sh As ToolShape) As Double
+            Dim reach = sh.Reach, lower = sh.Lower
+            Dim best = BaseZ + lower
+            Dim i0 = CInt(Math.Floor((Math.Min(ax, bx) - reach - X0) / Cx)), i1 = CInt(Math.Floor((Math.Max(ax, bx) + reach - X0) / Cx))
+            Dim j0 = CInt(Math.Floor((Math.Min(ay, by) - reach - Y0) / Cy)), j1 = CInt(Math.Floor((Math.Max(ay, by) + reach - Y0) / Cy))
+            i0 = Math.Max(0, i0) : j0 = Math.Max(0, j0) : i1 = Math.Min(Cols - 1, i1) : j1 = Math.Min(Rows - 1, j1)
+            For bj = j0 \ BlockSize To j1 \ BlockSize
+                For bi = i0 \ BlockSize To i1 \ BlockSize
+                    Dim bx0 = X0 + bi * BlockSize * Cx, by0 = Y0 + bj * BlockSize * Cy
+                    Dim bx1 = X0 + Math.Min(Cols, (bi + 1) * BlockSize) * Cx, by1 = Y0 + Math.Min(Rows, (bj + 1) * BlockSize) * Cy
+                    Dim bd = SegmentToBox(ax, ay, bx, by, bx0, by0, bx1, by1)
+                    If bd > reach OrElse BMax(bj * BCols + bi) - sh.Eval(bd) <= best Then Continue For
+                    For j = Math.Max(j0, bj * BlockSize) To Math.Min(j1, bj * BlockSize + BlockSize - 1)
+                        For i = Math.Max(i0, bi * BlockSize) To Math.Min(i1, bi * BlockSize + BlockSize - 1)
+                            Dim zc As Double = Z(j * Cols + i)
+                            If zc + lower <= best Then Continue For
+                            Dim d = SegmentToBox(ax, ay, bx, by, X0 + i * Cx, Y0 + j * Cy, X0 + (i + 1) * Cx, Y0 + (j + 1) * Cy)
+                            If d > reach Then Continue For
+                            Dim v = zc - sh.Eval(d)
+                            If v > best Then best = v
+                        Next
+                    Next
+                Next
+            Next
+            Return best
+        End Function
+
+        ''' <summary>Distance from the segment (ax, ay)-(bx, by) to the box [x0, x1] x [y0, y1]; 0 where they meet.</summary>
+        Private Shared Function SegmentToBox(ax As Double, ay As Double, bx As Double, by As Double,
+                                             x0 As Double, y0 As Double, x1 As Double, y1 As Double) As Double
+            ' Do they meet? Clip the segment to the box (Liang-Barsky).
+            Dim dx = bx - ax, dy = by - ay
+            Dim t0 = 0.0, t1 = 1.0
+            If Clip(-dx, ax - x0, t0, t1) AndAlso Clip(dx, x1 - ax, t0, t1) AndAlso Clip(-dy, ay - y0, t0, t1) AndAlso Clip(dy, y1 - ay, t0, t1) Then Return 0
+            ' Apart: the nearest pair has an end of the segment or a corner of the box in it.
+            Dim d = Math.Min(PointToBox(ax, ay, x0, y0, x1, y1), PointToBox(bx, by, x0, y0, x1, y1))
+            d = Math.Min(d, Math.Min(PointToSegment(x0, y0, ax, ay, bx, by), PointToSegment(x1, y0, ax, ay, bx, by)))
+            Return Math.Min(d, Math.Min(PointToSegment(x0, y1, ax, ay, bx, by), PointToSegment(x1, y1, ax, ay, bx, by)))
+        End Function
+
+        ''' <summary>One side of a Liang-Barsky clip: narrows [t0, t1] to where p * t &lt;= q; False when nothing is left.</summary>
+        Private Shared Function Clip(p As Double, q As Double, ByRef t0 As Double, ByRef t1 As Double) As Boolean
+            If p = 0 Then Return q >= 0
+            Dim r = q / p
+            If p < 0 Then
+                If r > t1 Then Return False
+                If r > t0 Then t0 = r
+            Else
+                If r < t0 Then Return False
+                If r < t1 Then t1 = r
+            End If
+            Return True
+        End Function
+
+        Private Shared Function PointToBox(px As Double, py As Double, x0 As Double, y0 As Double, x1 As Double, y1 As Double) As Double
+            Dim dx = Math.Max(0.0, Math.Max(x0 - px, px - x1)), dy = Math.Max(0.0, Math.Max(y0 - py, py - y1))
+            Return Math.Sqrt(dx * dx + dy * dy)
+        End Function
+
+        Private Shared Function PointToSegment(px As Double, py As Double, ax As Double, ay As Double, bx As Double, by As Double) As Double
+            Dim dx = bx - ax, dy = by - ay
+            Dim l2 = dx * dx + dy * dy
+            Dim t = If(l2 > 0, Math.Max(0.0, Math.Min(1.0, ((px - ax) * dx + (py - ay) * dy) / l2)), 0.0)
+            Dim ex = ax + dx * t - px, ey = ay + dy * t - py
+            Return Math.Sqrt(ex * ex + ey * ey)
+        End Function
+
         Private Function BlockDrop(px As Double, py As Double, sh As ToolShape, bi As Integer, bj As Integer,
                                    i0 As Integer, i1 As Integer, j0 As Integer, j1 As Integer, best As Double, lower As Double) As Double
             Dim reach = sh.Reach
@@ -359,6 +465,28 @@ Public Module ReliefEngine
     Public Function DropZ(g As ReliefGrid, t As ToolDefinition, x As Double, y As Double) As Double
         Dim p = g.MachineToLocal(x, y)
         Return Surface.FromGrid(g).Drop(p.X, p.Y, ToolShape.Of(t))
+    End Function
+
+    ''' <summary>DropZ at many machine points, on one surface.</summary>
+    Public Function DropZ(g As ReliefGrid, t As ToolDefinition, xs As Double(), ys As Double()) As Double()
+        Dim surf = Surface.FromGrid(g), sh = ToolShape.Of(t)
+        Dim z(xs.Length - 1) As Double
+        For k = 0 To xs.Length - 1
+            Dim p = g.MachineToLocal(xs(k), ys(k))
+            z(k) = surf.Drop(p.X, p.Y, sh)
+        Next
+        Return z
+    End Function
+
+    ''' <summary>The highest DropZ anywhere on each segment between machine (x0s(k), y0s(k)) and (x1s(k), y1s(k)).</summary>
+    Public Function SegmentDropZ(g As ReliefGrid, t As ToolDefinition, x0s As Double(), y0s As Double(), x1s As Double(), y1s As Double()) As Double()
+        Dim surf = Surface.FromGrid(g), sh = ToolShape.Of(t)
+        Dim z(x0s.Length - 1) As Double
+        For k = 0 To x0s.Length - 1
+            Dim a = g.MachineToLocal(x0s(k), y0s(k)), b = g.MachineToLocal(x1s(k), y1s(k))
+            z(k) = surf.SegmentDrop(a.X, a.Y, b.X, b.Y, sh)
+        Next
+        Return z
     End Function
 
     ' ================================================================ moves
@@ -502,7 +630,11 @@ Public Module ReliefEngine
         End If
         levels.Add(Double.NegativeInfinity)
         Dim above As Double = 0
-        Dim maxLink = Math.Max(1.0, 8 * o.Tool.Diameter)
+        ' Links ride the surface: never below it, nor below the level being cut. Not roughed, a level's
+        ' pieces lie farther apart, so link up to 3" there rather than lift, rapid and plunge again.
+        Dim shortLink = Math.Max(1.0, 8 * o.Tool.Diameter)
+        Dim maxLink = shortLink
+        If levels.Count > 1 Then maxLink = Math.Max(maxLink, 3.0)
         For Each level In levels
             token.ThrowIfCancellationRequested()
             For Each r In ordered
@@ -512,8 +644,21 @@ Public Module ReliefEngine
                     Dim startPt = New Pt3(first.X, first.Y, pts(0).Z)
                     ' A spiral's chords follow on from each other: one pass until the path breaks off.
                     If Not (path.Started AndAlso Math.Abs(path.Cur.X - startPt.X) < 0.0000001 AndAlso Math.Abs(path.Cur.Y - startPt.Y) < 0.0000001) Then result.PassCount += 1
-                    If path.Started AndAlso CanLink(path.Cur, startPt, maxLink, allowed) Then
-                        LinkAlongSurface(path, startPt, surf, sh, If(Double.IsNegativeInfinity(level), Double.NegativeInfinity, level))
+                    Dim link = False, leavesArea = False
+                    If path.Started Then
+                        ' Out of the machine area a link may only go where the pass ends already cut the stock
+                        ' top (a spiral grazing the outline then stays down instead of hopping): the tool's width
+                        ' at the depth of the shallower end. Going over the top, it keeps to a short link.
+                        Dim outsideReach = sh.RadiusAt(-Math.Max(path.Cur.Z, startPt.Z))
+                        link = CanLink(path.Cur, startPt, maxLink, allowed, outsideReach, leavesArea)
+                        If link AndAlso leavesArea AndAlso Math.Sqrt((startPt.X - path.Cur.X) ^ 2 + (startPt.Y - path.Cur.Y) ^ 2) > shortLink Then link = False
+                    End If
+                    If link Then
+                        If leavesArea Then
+                            LinkOverTop(path, startPt, surf, sh)
+                        Else
+                            LinkAlongSurface(path, startPt, surf, sh, If(Double.IsNegativeInfinity(level), Double.NegativeInfinity, level))
+                        End If
                     Else
                         ' What the roughing left above the surface is unknown: plunge from the clearance height.
                         path.Travel(startPt, Double.NaN)
@@ -773,12 +918,18 @@ Public Module ReliefEngine
         Dim tm = (a.T + b.T) / 2
         Dim zm = surf.Drop(r.Ox + r.Ux * tm, r.Oy + r.Uy * tm, sh) + FinishLift
         Dim bends = zm > (a.Z + b.Z) / 2 + BendTolerance
-        ' Where the surface rises a lot it can be S-shaped (a cliff, such as the model's edge with the whole
-        ' box machined): the line clears the midpoint but not a point beside it. Look at every eighth too.
-        If Not bends AndAlso rise > CliffRise AndAlso len / 2 >= MinStep Then
-            For Each f In {0.125, 0.25, 0.375, 0.625, 0.75, 0.875}
+        ' One column under the tool bends the drop smoothly, and the midpoint catches that. A second column
+        ' can raise a bump between the checked points (a cliff, such as the model's edge with the whole box
+        ' machined; a tapered tip's flank; a cell corner that only the tool's edge reaches): the line clears
+        ' the midpoint but not a point beside it. Where the step rises a lot, look at every eighth; where it
+        ' is long against the tip (len^2 > 2 EndR FinishLift: always for flat and sharp tips, on coarse grids
+        ' for small tips), at the quarter points. This narrows the gap; a bump narrower than the spacing (a
+        ' corner grazed by the very edge of the tool) can still slip between.
+        Dim longStep = len * len > 2 * sh.EndR * FinishLift
+        If Not bends AndAlso (rise > CliffRise OrElse longStep) AndAlso len / 2 >= MinStep Then
+            For Each f In If(rise > CliffRise, {0.125, 0.25, 0.375, 0.625, 0.75, 0.875}, {0.25, 0.75})
                 Dim tq = a.T + (b.T - a.T) * f
-                If surf.Drop(r.Ox + r.Ux * tq, r.Oy + r.Uy * tq, sh) + FinishLift > a.Z + (b.Z - a.Z) * f + BendTolerance Then
+                If surf.Above(r.Ox + r.Ux * tq, r.Oy + r.Uy * tq, sh, a.Z + (b.Z - a.Z) * f + BendTolerance - FinishLift) Then
                     bends = True
                     Exit For
                 End If
@@ -889,17 +1040,42 @@ Public Module ReliefEngine
         Return result
     End Function
 
-    ''' <summary>A feed link along the surface is used when the next pass starts close by, over the machine area.</summary>
-    Private Function CanLink(a As Pt3, b As Pt3, maxLink As Double, allowed As Func(Of Double, Double, Boolean)) As Boolean
+    ''' <summary>
+    ''' A feed link along the surface is used when the next pass starts close by, over the machine area
+    ''' (out of it for at most maxOutside in all: then every point of the link is within half that of the
+    ''' area's edge; leavesArea tells the caller to go over the top there).
+    ''' </summary>
+    Private Function CanLink(a As Pt3, b As Pt3, maxLink As Double, allowed As Func(Of Double, Double, Boolean),
+                             Optional maxOutside As Double = 0, Optional ByRef leavesArea As Boolean = False) As Boolean
+        leavesArea = False
         Dim len = Math.Sqrt((b.X - a.X) ^ 2 + (b.Y - a.Y) ^ 2)
         If len > maxLink Then Return False
         Dim n = Math.Max(1, CInt(Math.Ceiling(len / 0.005)))
+        Dim outside = 0.0
         For k = 0 To n
             Dim t = k / CDbl(n)
-            If Not allowed(a.X + (b.X - a.X) * t, a.Y + (b.Y - a.Y) * t) Then Return False
+            If Not allowed(a.X + (b.X - a.X) * t, a.Y + (b.Y - a.Y) * t) Then
+                leavesArea = True
+                outside += len / n
+                If outside > maxOutside Then Return False
+            End If
         Next
         Return True
     End Function
+
+    ''' <summary>
+    ''' A link that leaves the machine area for a moment (a spiral grazing the outline): straight up, across
+    ''' above the highest drop anywhere on the way (exact, SegmentDrop) and both ends, then straight down onto
+    ''' the next pass. Over the outside the tool never comes down.
+    ''' </summary>
+    Private Sub LinkOverTop(path As Path, b As Pt3, surf As Surface, sh As ToolShape)
+        Dim a = path.Cur
+        ' A hair more than the lift, for rounding.
+        Dim top = Math.Max(Math.Max(a.Z, b.Z), surf.SegmentDrop(a.X, a.Y, b.X, b.Y, sh) + FinishLift + 0.000001)
+        path.Feed(New Pt3(a.X, a.Y, top))
+        path.Feed(New Pt3(b.X, b.Y, top))
+        path.Feed(b)
+    End Sub
 
     ''' <summary>Feeds from the current point to b following the surface (refined like a pass, never lower than floorZ).</summary>
     Private Sub LinkAlongSurface(path As Path, b As Pt3, surf As Surface, sh As ToolShape, floorZ As Double)

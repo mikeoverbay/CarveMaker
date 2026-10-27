@@ -206,6 +206,31 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
    Harness `relief` checks it (see the table). Dragon 15": finishing 3.79 M moves / 23 s / 382 min / 106 MB
    (raster 3.87 M / 23 s / 394 min / 78 MB: spiral lines carry X and Y), roughing 68 k moves / 51 min vs
    58 k / 59 min; spiral roughing leaves the raster's stock (replayed on a 0.01" grid).
+17. **Fewer lifts between finishing passes.** The user saw "a bunch of rapid moves" on a spiral with the
+   roughing pass off. Causes: a spiral grazing the outline breaks into pieces a few thou apart (the gap
+   leaves the machine area, so `CanLink` refused it), and without roughing each level's pieces lie farther
+   apart than the 1" / 8 D link. Now `CanLink` lets a link leave the area for a total outside length of at
+   most `sh.RadiusAt(-max(a.Z, b.Z))` (how wide the tool cuts the stock top at the shallower end: what the
+   pass ends already cut; outside cells are BaseZ to the engine, but in ModelOutline the real stock there
+   stands at the top), sets `leavesArea`, and such a link (only up to the short 1" / 8 D length) is
+   `LinkOverTop`: feed up, across at `Surface.SegmentDrop` (the exact highest drop on the segment: Eval never
+   decreases outwards, so each column counts at its distance to the segment; `SegmentToBox` with a
+   Liang-Barsky clip) + FinishLift, down. With levels `maxLink` is 3" (machining minutes unchanged: 896 and
+   1032; roughed spiral 381 -> 371). The verifier then found a -0.000273" dip with the tapered ball on its
+   600-cell model: a bump beside the midpoint of a 0.75-cell step. `RefineSegment` now also checks the
+   quarter points when the step is long against the tip (`len^2 > 2 EndR FinishLift`; always for flat and
+   sharp tips), and every eighth over a cliff as before. Quarters on every step cost 25 -> 42 s on the
+   dragon for 0.2% more moves; with the rule the dragon (1/8" ball, 0.0037" cells) skips them and stays at
+   24 s. `Surface.Above(x, y, sh, z)` answers `Drop > z` with z as the starting bound (same moves, about 6%
+   cheaper than a Drop per check).
+   **Known limit (adversarial review, 2026-10-27):** the finishing check is a sampled one, as it always was.
+   One column's contact is always caught by the midpoint (its term is concave along the step), but a second
+   column can raise a bump between checked points: a cell corner that only the very edge of the tool
+   reaches (a spike 2 sqrt(2 R eps) wide, any tool), or a tapered tip near its ball/cone join (curvature
+   1/(EndR sin a), about 510 /in for the default tool: about 1e-4" can hide between quarter points). No fixed
+   set of points closes this; the exact fix is a per-column maximum over each step (each column's
+   zc - Eval(d(t)) - line(t) is concave in t; BMax bounds prune), not done: the overlap is microscopic
+   (sideways eps for the rim graze) and the cost unmeasured.
 12. **Picking rules and the user guide.** `PickAt` collects every object near the
    cursor (one GPU pass per nearby object, `PickAllAt`) and picks: under the cursor,
    then the smallest box, then the nearest, then the topmost. Clicks use
@@ -235,6 +260,9 @@ torture SVG folders and their expectation scripts). Build with
 | `helpshots <folder>` | Retakes the user-guide screenshots (main window, handles, simulation, tool library) into a folder, normally `C:\Text_to_CNC_path\Help\images` |
 | `draw` | Drawing: outlines of every kind (areas, tolerance, aspect), text sizing and alignment, grid rows per kind, SVG export and project round trip, carving; on screen: draw tools by mouse messages, GPU picking (holes, overlaps, edge slack), side/corner/rotation handles, text tool + typing + corner sizing, style toolbar and menu, double-click edit + Esc, area tool, Esc and Delete. `draw nogui` skips the screen part |
 | `relief` | 3D: dragon import (side, units, size), storage round trip, grid rows of a model, 15" scale + depth, roughing + finishing with an independent brute-force gouge check on sampled moves (roughing: never closer than the allowance), the toolpath cache when moving, G-code programs; then the spiral pattern: rows / key / summary / project round trip (and pre-spiral files), spiral roughing + finishing in both directions with the gouge check (every n-th move plus the long moves), where each starts and ends (radius about the centre, mean radius per tenth of the moves), finishing coverage (every covered cell within a stepover of a cut), roughing levels and stock left (flat end mill replayed on a 0.01" grid, compared with the raster; no rapid into uncut stock), a 4" whole-box spiral (corners within half a stepover), and a moves / time / G-code size table |
+| `spiralverify` | Spiral against raster on a 600-cell synthetic model (plateau, spikes, hole, island): every move sampled every 0.2 cell against the drop, rapids, roughing stock replay and engagement, coverage (with levels, stock-top points left out), link lengths, rotated / mirrored / tapered ball cases |
+| `spiralgouge` | The engine straight on the synthetic grid: raster and spiral finishing, both machine areas, two smoothing values, every move checked against an independent drop |
+| `reliefrapids` | Dragon 15": lifts, rapid length and machining time for raster and both spirals, roughed or not, with where the lifts are (radius, depth left) and the hop lengths |
 | `reliefgui` | 3D import through the form (env `SMOKE_SHOTS=1` screenshots during generation, `SMOKE_HOVER=1` hover light check, `SMOKE_STEPS=1` tab-switch steps) |
 | `reliefdemo` | Opens the window maximized, imports the dragon at 15" on a 16" blank, shows the simulation and leaves the window to the user |
 | `modelinfo <file> [dir]` | What the importer makes of a model: side, units, size, height spread, and a preview PNG per side |

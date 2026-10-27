@@ -74,6 +74,8 @@ Partial Class frmMain
         mnuDrawScale = New ToolStripMenuItem()
         mnuDrawFront = New ToolStripMenuItem()
         mnuDrawBack = New ToolStripMenuItem()
+        mnuDrawHide = New ToolStripMenuItem()
+        mnuDrawShowAll = New ToolStripMenuItem()
         mnuDrawSep3 = New ToolStripSeparator()
         mnuDrawDelete = New ToolStripMenuItem()
         mnuStyleFont = New ToolStripMenuItem()
@@ -86,6 +88,9 @@ Partial Class frmMain
         tsDrawTools = New ToolStrip()
         tsTextStyle = New ToolStrip()
         tsSnap = New ToolStrip()
+        tsView = New ToolStrip()
+        tsbHide = New ToolStripButton()
+        tsbShowAll = New ToolStripButton()
         tspTop = New ToolStripPanel()
         tspBottom = New ToolStripPanel()
         tspLeft = New ToolStripPanel()
@@ -181,6 +186,7 @@ Partial Class frmMain
         tsDrawTools.SuspendLayout()
         tsTextStyle.SuspendLayout()
         tsSnap.SuspendLayout()
+        tsView.SuspendLayout()
         splitMain.SuspendLayout()
         tlpLeft.SuspendLayout()
         pnlEditor.SuspendLayout()
@@ -418,7 +424,7 @@ Partial Class frmMain
         '
         ' mnuDraw
         '
-        mnuDraw.DropDownItems.AddRange(New ToolStripItem() {mnuDrawSelect, mnuDrawSep0, mnuDrawRectangle, mnuDrawEllipse, mnuDrawPolygon, mnuDrawStar, mnuDrawArea, mnuDrawText, mnuDrawSep1, mnuDrawEditText, mnuDrawSep2, mnuDrawScale, mnuDrawRotateLeft, mnuDrawRotateRight, mnuDrawMirror, mnuDrawFront, mnuDrawBack, mnuDrawSep4, mnuDrawSnapGrid, mnuDrawGridSpacing, mnuDrawRotationSnap, mnuDrawSep3, mnuDrawDelete})
+        mnuDraw.DropDownItems.AddRange(New ToolStripItem() {mnuDrawSelect, mnuDrawSep0, mnuDrawRectangle, mnuDrawEllipse, mnuDrawPolygon, mnuDrawStar, mnuDrawArea, mnuDrawText, mnuDrawSep1, mnuDrawEditText, mnuDrawSep2, mnuDrawScale, mnuDrawRotateLeft, mnuDrawRotateRight, mnuDrawMirror, mnuDrawFront, mnuDrawBack, mnuDrawHide, mnuDrawShowAll, mnuDrawSep4, mnuDrawSnapGrid, mnuDrawGridSpacing, mnuDrawRotationSnap, mnuDrawSep3, mnuDrawDelete})
         mnuDraw.Name = "mnuDraw"
         mnuDraw.Size = New Size(46, 20)
         mnuDraw.Text = "&Draw"
@@ -542,6 +548,20 @@ Partial Class frmMain
         mnuDrawDelete.Size = New Size(220, 22)
         mnuDrawDelete.Text = "&Delete"
         '
+        ' mnuDrawHide
+        '
+        mnuDrawHide.Name = "mnuDrawHide"
+        mnuDrawHide.ShortcutKeys = Keys.Control Or Keys.H
+        mnuDrawHide.Size = New Size(220, 22)
+        mnuDrawHide.Text = "&Hide"
+        '
+        ' mnuDrawShowAll
+        '
+        mnuDrawShowAll.Name = "mnuDrawShowAll"
+        mnuDrawShowAll.ShortcutKeys = Keys.Control Or Keys.Shift Or Keys.H
+        mnuDrawShowAll.Size = New Size(220, 22)
+        mnuDrawShowAll.Text = "Show A&ll"
+        '
         ' mnuStyle
         '
         mnuStyle.DropDownItems.AddRange(New ToolStripItem() {mnuStyleFont, mnuStyleBold, mnuStyleItalic, mnuStyleSep1, mnuStyleAlignLeft, mnuStyleAlignCenter, mnuStyleAlignRight})
@@ -619,6 +639,30 @@ Partial Class frmMain
         tsSnap.RenderMode = ToolStripRenderMode.System
         tsSnap.TabIndex = 4
         tsSnap.Text = "Snap"
+        '
+        ' tsView
+        '
+        tsView.BackColor = SystemColors.Control
+        tsView.Dock = DockStyle.None
+        tsView.Items.AddRange(New ToolStripItem() {tsbHide, tsbShowAll})
+        tsView.Name = "tsView"
+        tsView.RenderMode = ToolStripRenderMode.System
+        tsView.TabIndex = 5
+        tsView.Text = "View"
+        '
+        ' tsbHide
+        '
+        tsbHide.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText
+        tsbHide.Name = "tsbHide"
+        tsbHide.Text = "Hide"
+        tsbHide.ToolTipText = "Hide the selected drawing: it is not shown or carved until shown again (Ctrl+H)"
+        '
+        ' tsbShowAll
+        '
+        tsbShowAll.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText
+        tsbShowAll.Name = "tsbShowAll"
+        tsbShowAll.Text = "Show All"
+        tsbShowAll.ToolTipText = "Show every hidden drawing again (Ctrl+Shift+H)"
         '
         ' tspTop
         '
@@ -1315,6 +1359,8 @@ Partial Class frmMain
         tsTextStyle.PerformLayout()
         tsSnap.ResumeLayout(False)
         tsSnap.PerformLayout()
+        tsView.ResumeLayout(False)
+        tsView.PerformLayout()
         splitMain.Panel2.ResumeLayout(False)
         CType(splitMain, System.ComponentModel.ISupportInitialize).EndInit()
         splitMain.ResumeLayout(False)
@@ -1450,6 +1496,8 @@ Partial Class frmMain
     Friend WithEvents mnuDrawScale As ToolStripMenuItem
     Friend WithEvents mnuDrawFront As ToolStripMenuItem
     Friend WithEvents mnuDrawBack As ToolStripMenuItem
+    Friend WithEvents mnuDrawHide As ToolStripMenuItem
+    Friend WithEvents mnuDrawShowAll As ToolStripMenuItem
     Friend WithEvents mnuDrawSep3 As ToolStripSeparator
     Friend WithEvents mnuDrawDelete As ToolStripMenuItem
     Friend WithEvents mnuStyleFont As ToolStripMenuItem
@@ -1462,6 +1510,9 @@ Partial Class frmMain
     Friend WithEvents tsDrawTools As ToolStrip
     Friend WithEvents tsTextStyle As ToolStrip
     Friend WithEvents tsSnap As ToolStrip
+    Friend WithEvents tsView As ToolStrip
+    Friend WithEvents tsbHide As ToolStripButton
+    Friend WithEvents tsbShowAll As ToolStripButton
     Friend WithEvents tspTop As ToolStripPanel
     Friend WithEvents tspBottom As ToolStripPanel
     Friend WithEvents tspLeft As ToolStripPanel

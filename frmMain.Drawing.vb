@@ -89,6 +89,10 @@ Partial Class frmMain
         _prefs = UserPreferences.Load()
         tsbSnapGrid.Image = SnapIcon()
         mnuDrawSnapGrid.Image = tsbSnapGrid.Image
+        tsbHide.Image = EyeIcon(crossed:=True)
+        tsbShowAll.Image = EyeIcon(crossed:=False)
+        mnuDrawHide.Image = tsbHide.Image
+        mnuDrawShowAll.Image = tsbShowAll.Image
         For Each spacing In UserPreferences.GridSpacings
             Dim value = spacing
             tscSnapGrid.Items.Add(UserPreferences.SpacingText(value))
@@ -224,6 +228,10 @@ Partial Class frmMain
         mnuDrawFront.Enabled = has AndAlso _glView.SelectedObject < _objects.Count - 1
         mnuDrawBack.Enabled = has AndAlso _glView.SelectedObject > 0
         mnuDrawDelete.Enabled = has
+        Dim canHide = has AndAlso SelectedDrawing().Visible
+        Dim anyHidden = _objects.Any(Function(o) Not o.Visible)
+        mnuDrawHide.Enabled = canHide : tsbHide.Enabled = canHide
+        mnuDrawShowAll.Enabled = anyHidden : tsbShowAll.Enabled = anyHidden
     End Sub
 
     ''' <summary>Picks a draw tool from the menu or toolbar and hands the keyboard to the view.</summary>
@@ -726,6 +734,33 @@ Partial Class frmMain
         RequestRegenerate(immediate:=True)
     End Sub
 
+    ''' <summary>Hides the selected drawing: not shown, picked or carved until shown again.</summary>
+    Private Sub HideSelected_Click(sender As Object, e As EventArgs) Handles mnuDrawHide.Click, tsbHide.Click
+        Dim o = SelectedDrawing()
+        If o Is Nothing OrElse Not o.Visible Then Return
+        EndTextEdit(commit:=True, focusView:=False)
+        o.Visible = False
+        RefreshObjectList(-1)
+        _statusNote = o.Name & " is hidden: Show All (Ctrl+Shift+H) shows it again."
+        lblStatus.Text = _statusNote
+        MarkDirty()
+        RequestRegenerate(immediate:=True)
+    End Sub
+
+    ''' <summary>Shows every hidden drawing again.</summary>
+    Private Sub ShowAll_Click(sender As Object, e As EventArgs) Handles mnuDrawShowAll.Click, tsbShowAll.Click
+        Dim hidden = _objects.Where(Function(o) Not o.Visible).ToList()
+        If hidden.Count = 0 Then Return
+        For Each o In hidden
+            o.Visible = True
+        Next
+        RefreshObjectList(_glView.SelectedObject)
+        _statusNote = If(hidden.Count = 1, hidden(0).Name & " is shown again.", hidden.Count & " drawings are shown again.")
+        lblStatus.Text = _statusNote
+        MarkDirty()
+        RequestRegenerate(immediate:=True)
+    End Sub
+
     Private Sub mnuDrawDelete_Click(sender As Object, e As EventArgs) Handles mnuDrawDelete.Click
         RemoveDrawingAt(_glView.SelectedObject, selectNext:=False)
     End Sub
@@ -792,6 +827,25 @@ Partial Class frmMain
                                    g.DrawPolygon(p, arrow)
                                End Sub)
         End Select
+    End Function
+
+    ''' <summary>An eye; crossed out for Hide.</summary>
+    Private Shared Function EyeIcon(crossed As Boolean) As Bitmap
+        Return NewIcon(Sub(g, p)
+                           Using path As New GraphicsPath()
+                               path.AddBezier(1.5F, 8, 4.5F, 3, 11.5F, 3, 14.5F, 8)
+                               path.AddBezier(14.5F, 8, 11.5F, 13, 4.5F, 13, 1.5F, 8)
+                               g.DrawPath(p, path)
+                           End Using
+                           Using b As New SolidBrush(Color.FromArgb(40, 110, 210))
+                               g.FillEllipse(b, 5.5F, 5.5F, 5, 5)
+                           End Using
+                           If crossed Then
+                               Using red As New Pen(Color.FromArgb(200, 40, 40), 1.8F)
+                                   g.DrawLine(red, 2, 14, 14, 2)
+                               End Using
+                           End If
+                       End Sub)
     End Function
 
     ''' <summary>A grid of dots with a corner square sitting on one of them.</summary>

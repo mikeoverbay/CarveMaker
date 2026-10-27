@@ -1,6 +1,6 @@
 ' ============================================================================
 '  frmMain.Toolbars.vb
-'  The toolbars over the view (Draw Tools, Text Style, Snap). Each can be
+'  The toolbars over the view (Draw Tools, Text Style, Snap, View). Each can be
 '  docked on any edge of the view (drag it by its grip), floated in a small
 '  window (drag it off the view, or right-click > Float), and hidden; View >
 '  Toolbars shows them again or puts them all back along the top. Where each
@@ -18,7 +18,7 @@ Partial Class frmMain
     ''' <summary>The movable toolbars, in their default order along the top.</summary>
     Private ReadOnly Property ViewToolbars As ToolStrip()
         Get
-            Return {tsDrawTools, tsTextStyle, tsSnap}
+            Return {tsDrawTools, tsTextStyle, tsSnap, tsView}
         End Get
     End Property
 

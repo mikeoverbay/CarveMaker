@@ -160,9 +160,10 @@ snap (**Alt** turns it freely). **Draw > Scale** sets an exact size or
 percentage.
 Arrow keys nudge by 0.01" (0.1" with Shift), **Delete** removes the drawing.
 **Draw** also has Rotate 90 degrees left/right, Mirror, Bring to Front and Send
-to Back.
+to Back, **Hide** (Ctrl+H: not shown, picked or carved) and **Show All**
+(Ctrl+Shift+H); both are also on the *View* toolbar.
 
-**Toolbars**: *Draw Tools*, *Text Style* and *Snap* start side by side over the
+**Toolbars**: *Draw Tools*, *Text Style*, *Snap* and *View* start side by side over the
 view. Drag one by its grip to any edge of the view (top, bottom, left or right,
 in rows), or off the view to float it in its own small window (double-click
 that window's title to dock it again). Right-click a toolbar to dock it on an

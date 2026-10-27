@@ -89,6 +89,10 @@ Partial Class frmMain
         _prefs = UserPreferences.Load()
         tsbSnapGrid.Image = SnapIcon()
         mnuDrawSnapGrid.Image = tsbSnapGrid.Image
+        _simIcon = BoardIcon()
+        _pathIcon = PathIcon()
+        tsbSimToggle.Image = _pathIcon
+        tsbSimToggle.Text = "Toolpath"
         tsbHide.Image = EyeIcon(crossed:=True)
         tsbShowAll.Image = EyeIcon(crossed:=False)
         mnuDrawHide.Image = tsbHide.Image
@@ -827,6 +831,34 @@ Partial Class frmMain
                                    g.DrawPolygon(p, arrow)
                                End Sub)
         End Select
+    End Function
+
+    ' Pictures of the View toolbar's switch: the carved board, or toolpath lines.
+    Private _simIcon, _pathIcon As Bitmap
+
+    ''' <summary>A board with a carved groove.</summary>
+    Private Shared Function BoardIcon() As Bitmap
+        Return NewIcon(Sub(g, p)
+                           Using wood As New SolidBrush(Color.FromArgb(214, 170, 110))
+                               g.FillRectangle(wood, 1, 4, 14, 9)
+                           End Using
+                           Using groove As New SolidBrush(Color.FromArgb(120, 80, 40))
+                               g.FillEllipse(groove, 4, 6, 8, 5)
+                           End Using
+                           g.DrawRectangle(p, 1, 4, 14, 9)
+                       End Sub)
+    End Function
+
+    ''' <summary>Zig-zag toolpath lines.</summary>
+    Private Shared Function PathIcon() As Bitmap
+        Return NewIcon(Sub(g, p)
+                           Using cyan As New Pen(Color.FromArgb(30, 150, 200), 1.4F)
+                               g.DrawLines(cyan, {New PointF(2, 3), New PointF(14, 3), New PointF(14, 7), New PointF(2, 7), New PointF(2, 11), New PointF(14, 11)})
+                           End Using
+                           Using red As New Pen(Color.FromArgb(200, 60, 50), 1.0F) With {.DashStyle = DashStyle.Dash}
+                               g.DrawLine(red, 2, 14, 14, 14)
+                           End Using
+                       End Sub)
     End Function
 
     ''' <summary>An eye; crossed out for Hide.</summary>

@@ -314,6 +314,10 @@ Projects saved before the library open with an equivalent V-bit.
 
 ## Simulation
 
+The switch at the start of the *View* toolbar (it reads *Toolpath* or
+*Simulation*, whichever is shown) and **View > Show Simulation** (Ctrl+M) flip
+between the toolpath lines and the carved board.
+
 **View > Show Simulation** (Ctrl+M) replaces the line drawing with the carved
 board. The blank becomes a float heightmap texture on the GPU (one cell =
 *Precision* under *Machine Settings > 4. Simulation*: 0.003", 0.005" or 0.010"), automatically

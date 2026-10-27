@@ -89,6 +89,8 @@ Partial Class frmMain
         tsTextStyle = New ToolStrip()
         tsSnap = New ToolStrip()
         tsView = New ToolStrip()
+        tsbSimToggle = New ToolStripButton()
+        tssView1 = New ToolStripSeparator()
         tsbHide = New ToolStripButton()
         tsbShowAll = New ToolStripButton()
         tspTop = New ToolStripPanel()
@@ -644,11 +646,23 @@ Partial Class frmMain
         '
         tsView.BackColor = SystemColors.Control
         tsView.Dock = DockStyle.None
-        tsView.Items.AddRange(New ToolStripItem() {tsbHide, tsbShowAll})
+        tsView.Items.AddRange(New ToolStripItem() {tsbSimToggle, tssView1, tsbHide, tsbShowAll})
         tsView.Name = "tsView"
         tsView.RenderMode = ToolStripRenderMode.System
         tsView.TabIndex = 5
         tsView.Text = "View"
+        '
+        ' tsbSimToggle
+        '
+        tsbSimToggle.CheckOnClick = True
+        tsbSimToggle.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText
+        tsbSimToggle.Name = "tsbSimToggle"
+        tsbSimToggle.Text = "Simulation"
+        tsbSimToggle.ToolTipText = "Switch between the simulated carving and the toolpath lines (Ctrl+M)"
+        '
+        ' tssView1
+        '
+        tssView1.Name = "tssView1"
         '
         ' tsbHide
         '
@@ -1511,6 +1525,8 @@ Partial Class frmMain
     Friend WithEvents tsTextStyle As ToolStrip
     Friend WithEvents tsSnap As ToolStrip
     Friend WithEvents tsView As ToolStrip
+    Friend WithEvents tsbSimToggle As ToolStripButton
+    Friend WithEvents tssView1 As ToolStripSeparator
     Friend WithEvents tsbHide As ToolStripButton
     Friend WithEvents tsbShowAll As ToolStripButton
     Friend WithEvents tspTop As ToolStripPanel

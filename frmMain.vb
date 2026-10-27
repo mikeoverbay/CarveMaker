@@ -1300,6 +1300,15 @@ Public Class frmMain
         If _glView Is Nothing Then Return
         pnlSim.Visible = mnuViewSim.Checked
         _glView.ShowSimulation = mnuViewSim.Checked
+        ' The View toolbar's switch shows the same state.
+        If tsbSimToggle.Checked <> mnuViewSim.Checked Then tsbSimToggle.Checked = mnuViewSim.Checked
+        tsbSimToggle.Text = If(mnuViewSim.Checked, "Simulation", "Toolpath")
+        tsbSimToggle.Image = If(mnuViewSim.Checked, _simIcon, _pathIcon)
+    End Sub
+
+    ''' <summary>The View toolbar's switch between the simulated carving and the toolpath lines.</summary>
+    Private Sub tsbSimToggle_CheckedChanged(sender As Object, e As EventArgs) Handles tsbSimToggle.CheckedChanged
+        If mnuViewSim.Checked <> tsbSimToggle.Checked Then mnuViewSim.Checked = tsbSimToggle.Checked
     End Sub
 
     Private Shared Function FormatClock(seconds As Double) As String

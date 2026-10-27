@@ -193,7 +193,7 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
    spiral, Raster angle only for a raster finishing pass), part of `Key()` (cache, regeneration, Equals) and
    `Summary`, saved in the .prj as strings (missing or out of range = Raster / Inside out, `RepairModel`);
    `ReliefPassOptions.Pattern` / `.Direction`. Engine: `SpiralVertices` (r = stepover * theta / 2 pi about
-   the grid centre, out to the farthest corner + half a pitch, clockwise going out so both directions climb;
+   the grid centre, out to the farthest corner + half a pitch, clockwise going out (anticlockwise coming in; the verifier noted the app's Climb convention may be inverted for an M3 spindle, so no climb claim is made);
    chords by sagitta <= tolerance, <= 0.25", <= 1/8 turn). Finishing: every chord goes through the same
    `SampleRuns` as a raster line (sample at 0.75 cell, clip, Refine); with `WholeBox` a lap along the box
    sides follows (the box clips the outer turns, which left edge strips up to a stepover wide: the harness

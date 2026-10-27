@@ -234,7 +234,7 @@ Public Class Machining
     Public Property Pattern As ReliefPattern = ReliefPattern.Raster
 
     <DisplayName("Spiral direction"), TypeConverter(GetType(SpiralDirectionConverter)),
-     Description("Inside out: the spiral starts at the centre of the model and works out to the edge. Outside in: it starts at the edge and works in to the centre. Both are climb cuts.")>
+     Description("Inside out: the spiral starts at the centre of the model and works out to the edge. Outside in: it starts at the edge and works in to the centre. The spiral turns clockwise going out (anticlockwise coming in).")>
     Public Property SpiralDirection As SpiralDirection = Global.CarveMaker.SpiralDirection.InsideOut
 
     <DisplayName("Raster angle (deg)"), Description("Direction of the finishing passes on the model: 0 runs along the model's width, 90 along its height. Passes turned with the model when it is rotated.")>
@@ -492,8 +492,13 @@ Public Class Machining
            Append(SpindleRpm.ToString("R", Ci)).Append("|").Append(FeedRate.ToString("R", Ci)).Append("|").Append(PlungeRate.ToString("R", Ci))
         If Is3D Then
             sb.Append("|").Append(Enabled).Append("|").Append(Allowance.ToString("R", Ci)).Append("|").
-               Append(RasterAngle.ToString("R", Ci)).Append("|").Append(Tolerance.ToString("R", Ci)).Append("|").
-               Append(Pattern).Append("|").Append(SpiralDirection)
+               Append(Tolerance.ToString("R", Ci)).Append("|").Append(Pattern)
+            ' Only what the pattern uses: a hidden setting must not make a cached pass look different.
+            If Pattern = ReliefPattern.Spiral Then
+                sb.Append("|").Append(SpiralDirection)
+            ElseIf Operation = CutOperation.Finishing3D Then
+                sb.Append("|").Append(RasterAngle.ToString("R", Ci))
+            End If
         End If
         If Tool IsNot Nothing Then
             sb.Append("|").Append(Tool.Type).Append("|").Append(Tool.Diameter.ToString("R", Ci)).Append("|").

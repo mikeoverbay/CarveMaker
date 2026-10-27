@@ -275,8 +275,8 @@ above, so overhangs are filled in.
   the model's centre, *Stepover* between its turns, out to the farthest corner of
   the model's box. **Spiral direction** (shown for a spiral): *Inside out* starts
   at the centre and works out to the edge, *Outside in* starts at the edge and
-  works in (the same spiral travelled backwards; it turns so that both are climb
-  cuts). The spiral is made of straight chords, short near the centre, at most
+  works in (the same spiral travelled backwards: it turns clockwise going out,
+  anticlockwise coming in). The spiral is made of straight chords, short near the centre, at most
   0.25" long and within the *Smoothing* of the true curve (0.0005" when
   roughing). Finishing treats each chord exactly like a raster line (with *The
   whole box* as machine area it adds a lap along the box's sides, last going

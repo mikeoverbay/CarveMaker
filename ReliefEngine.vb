@@ -37,7 +37,7 @@
 '  cuts the stretches of the spiral that are clear at each level (every
 '  sample within half a node of the next), then the same boundary loops.
 '  Outside in is the same path travelled backwards. The spiral turns
-'  clockwise going out, so both directions are climb cuts.
+'  clockwise going out (anticlockwise coming in).
 '
 '  Coordinates: the engines work in the grid's own frame (origin at its
 '  centre); moves are returned in machine coordinates (LocalToMachine).
@@ -142,6 +142,8 @@ Public Module ReliefEngine
     Private Const SteepSlope As Double = 1.5
     ''' <summary>Bend of the surface between two points that is refined away (inches).</summary>
     Private Const BendTolerance As Double = 0.00001
+    ''' <summary>A rise this large between two points is also checked at every eighth (S-shaped cliffs).</summary>
+    Private Const CliffRise As Double = 0.002
     ''' <summary>
     ''' The finishing path sits this much above the computed surface: between two computed points
     ''' the tool's rounded side can bulge a few millionths of an inch past a straight line where
@@ -654,8 +656,7 @@ Public Module ReliefEngine
     ''' <summary>
     ''' Vertices of the Archimedean spiral r = pitch * theta / (2 pi) about the local origin (the grid's
     ''' centre), from the centre out to the farthest corner of the rectangle plus half a pitch (so every point
-    ''' of the rectangle is within half a pitch of a turn). It turns clockwise going out: with a clockwise
-    ''' spindle the uncut side is then on the left (climb), and travelled backwards (outside in) too.
+    ''' of the rectangle is within half a pitch of a turn). It turns clockwise going out.
     ''' Each chord is as long as a sagitta of tol allows on the curve there (short near the centre, where
     ''' the spiral bends most), at most MaxChord and an eighth of a turn.
     ''' </summary>
@@ -670,7 +671,8 @@ Public Module ReliefEngine
             ' Radius of curvature of r = a theta: (r^2 + a^2)^1.5 / (r^2 + 2 a^2); a / 2 at the centre, growing outwards,
             ' so the curvature where a chord starts bounds its sagitta: chord^2 / (8 rho).
             Dim rho = (r2 + a2) * Math.Sqrt(r2 + a2) / (r2 + 2 * a2)
-            Dim chord = Math.Min(MaxChord, Math.Sqrt(8 * rho * tol))
+            ' 0.9: the radius (and so the arc) grows along the chord, which the start's curvature does not see.
+            Dim chord = Math.Min(MaxChord, 0.9 * Math.Sqrt(8 * rho * tol))
             th = Math.Min(thEnd, th + Math.Min(Math.PI / 4, chord / Math.Sqrt(r2 + a2)))
             Dim r = a * th
             pts.Add(New Pt2(r * Math.Cos(th), -r * Math.Sin(th)))
@@ -771,6 +773,17 @@ Public Module ReliefEngine
         Dim tm = (a.T + b.T) / 2
         Dim zm = surf.Drop(r.Ox + r.Ux * tm, r.Oy + r.Uy * tm, sh) + FinishLift
         Dim bends = zm > (a.Z + b.Z) / 2 + BendTolerance
+        ' Where the surface rises a lot it can be S-shaped (a cliff, such as the model's edge with the whole
+        ' box machined): the line clears the midpoint but not a point beside it. Look at every eighth too.
+        If Not bends AndAlso rise > CliffRise AndAlso len / 2 >= MinStep Then
+            For Each f In {0.125, 0.25, 0.375, 0.625, 0.75, 0.875}
+                Dim tq = a.T + (b.T - a.T) * f
+                If surf.Drop(r.Ox + r.Ux * tq, r.Oy + r.Uy * tq, sh) + FinishLift > a.Z + (b.Z - a.Z) * f + BendTolerance Then
+                    bends = True
+                    Exit For
+                End If
+            Next
+        End If
         Dim steep = rise > SteepSlope * len + 0.0005
         If Not bends AndAlso Not steep Then Return
         If len / 2 >= MinStep AndAlso depth < 24 Then

@@ -2,10 +2,14 @@
 '  ToolpathView.vb
 '  OpenTK GLControl subclass that draws the blank, the glyph outline, the
 '  V-carve passes (coloured by depth), rapid moves and a 1" grid.
-'  Orthographic camera with pan (left/middle drag), orbit (right drag) and
-'  zoom (wheel, about the cursor). Drawings are picked through an offscreen
-'  ID buffer, moved, scaled and rotated with handles, and new shapes, areas
-'  and text are drawn with the draw tools (ActiveTool).
+'  Orthographic camera with pan (left or middle drag), orbit (right drag) and
+'  zoom (wheel, about the cursor). With the select tool a plain left drag always
+'  pans: drawings are selected, moved, scaled and rotated only with Shift held
+'  at the press (Shift+Ctrl+click steps through overlapping drawings). The
+'  drawing under the mouse lights up, so it is clear what a Shift+click takes. They are
+'  picked through an offscreen ID buffer, and new shapes, areas and text are
+'  drawn with the draw tools (ActiveTool). 3D models show as a
+'  shaded picture of their relief on the blank (one texture per model).
 '
 '  Lifecycle notes (OpenTK.GLControl 4.0.2): the GL context is created inside
 '  OnHandleCreated and destroyed inside OnHandleDestroyed, and MakeCurrent()
@@ -26,6 +30,11 @@ Public Class ToolpathView
     ' ---- GL objects -------------------------------------------------------
     Private _program As Integer
     Private _mvpLoc As Integer
+    ' 3D model pictures: a textured-quad program and one texture per model heightmap (by ModelKey).
+    Private _texProgram As Integer
+    Private _texMvpLoc As Integer
+    Private _quadVao, _quadVbo As Integer
+    Private ReadOnly _modelTextures As New Dictionary(Of String, Integer)
     Private _initialized As Boolean
     Private _initError As String
     Private _contextFailed As Boolean
@@ -61,6 +70,7 @@ Public Class ToolpathView
         Set(value As List(Of DesignObject))
             _objects = If(value, New List(Of DesignObject))
             If _selected >= _objects.Count Then _selected = -1
+            If _hovered >= _objects.Count Then _hovered = -1
             _pickDirty = True
             RebuildSelectionLayer()
             Invalidate()
@@ -204,7 +214,30 @@ Public Class ToolpathView
             _altDuringDrag = False
             Return
         End If
+        ' Shift and Ctrl as they were at the press (the message carries them), for the select tool.
+        If m.Msg = WM_LBUTTONDOWN OrElse m.Msg = WM_LBUTTONDBLCLK Then
+            Dim keysAtPress = m.WParam.ToInt64()
+            _pressShift = (keysAtPress And MK_SHIFT) <> 0
+            _pressCtrl = (keysAtPress And MK_CONTROL) <> 0
+        End If
         MyBase.WndProc(m)
+    End Sub
+
+    Private Const WM_LBUTTONDOWN As Integer = &H201
+    Private Const WM_LBUTTONDBLCLK As Integer = &H203
+    Private Const MK_SHIFT As Long = &H4
+    Private Const MK_CONTROL As Long = &H8
+    Private _pressShift As Boolean
+    Private _pressCtrl As Boolean
+    ' The drawing under the mouse (lit up), TextSelection for the text block, or -1.
+    Private _hovered As Integer = -1
+
+    ''' <summary>Lights up what is under the mouse (select tool, no button down); -1 for nothing.</summary>
+    Private Sub SetHovered(id As Integer)
+        If id = _hovered Then Return
+        _hovered = id
+        RebuildSelectionLayer()
+        Invalidate()
     End Sub
 
     ''' <summary>The kind of drawing a draw tool makes.</summary>
@@ -420,7 +453,10 @@ Public Class ToolpathView
         Return _rotateCursor
     End Function
 
-    ''' <summary>Highlight of the selected object (with live drag preview), its handles, and any shape being drawn.</summary>
+    ''' <summary>
+    ''' The drawing under the mouse lit up, the selected object (with live drag preview) and its
+    ''' handles, and any shape being drawn.
+    ''' </summary>
     Private Sub RebuildSelectionLayer()
         Dim buf As New List(Of Single)
         Dim hr As Single = 1.0F, hg As Single = 0.85F, hb As Single = 0.2F
@@ -473,9 +509,52 @@ Public Class ToolpathView
                 Next
             End If
         End If
+        AddHoverLight(buf)
         If _mode = DragMode.Create Then AddCreatePreview(buf)
         If _areaPoints.Count > 0 Then AddAreaPreview(buf)
         SetPending(_selectionLayer, buf)
+    End Sub
+
+    ''' <summary>
+    ''' The drawing under the mouse lit up (over the selection, so a selected drawing lights up too):
+    ''' its outline and the box it is picked by, drawn a pixel wide to each side so it stands out.
+    ''' Not while dragging.
+    ''' </summary>
+    Private Sub AddHoverLight(buf As List(Of Single))
+        If _mode <> DragMode.None OrElse _tool <> DrawTool.Select Then Return
+        Const lr As Single = 0.75F, lg As Single = 1.0F, lb As Single = 1.0F
+        Dim px = _unitsPerPixel
+        Dim lit = Sub(x0 As Double, y0 As Double, x1 As Double, y1 As Double)
+                      AddLine(buf, x0, y0, 0.003, x1, y1, 0.003, lr, lg, lb)
+                      AddLine(buf, x0 + px, y0, 0.003, x1 + px, y1, 0.003, lr, lg, lb)
+                      AddLine(buf, x0, y0 + px, 0.003, x1, y1 + px, 0.003, lr, lg, lb)
+                  End Sub
+        If _hovered >= 0 AndAlso _hovered < _objects.Count Then
+            Dim ho = _objects(_hovered)
+            For Each path In ho.PlacedPaths(_curveTolerance)
+                For i = 0 To path.Count - 1
+                    Dim a = path(i), c = path((i + 1) Mod path.Count)
+                    lit(a.x, a.y, c.x, c.y)
+                Next
+            Next
+            ' Drawings are picked anywhere in their box: light the box up too.
+            Dim hc = ho.Corners()
+            For i = 0 To 3
+                lit(hc(i).X, hc(i).Y, hc((i + 1) Mod 4).X, hc((i + 1) Mod 4).Y)
+            Next
+        ElseIf _hovered = TextSelection AndAlso HasText() Then
+            Dim tp = _toolpath
+            For Each poly In tp.Outline
+                For i = 0 To poly.Count - 1
+                    Dim a = poly(i), b = poly((i + 1) Mod poly.Count)
+                    If a.X >= tp.TextMinX - 0.001 AndAlso a.X <= tp.TextMaxX + 0.001 AndAlso a.Y >= tp.TextMinY - 0.001 AndAlso a.Y <= tp.TextMaxY + 0.001 Then
+                        lit(a.X, a.Y, b.X, b.Y)
+                    End If
+                Next
+            Next
+            lit(tp.TextMinX, tp.TextMinY, tp.TextMaxX, tp.TextMinY) : lit(tp.TextMaxX, tp.TextMinY, tp.TextMaxX, tp.TextMaxY)
+            lit(tp.TextMaxX, tp.TextMaxY, tp.TextMinX, tp.TextMaxY) : lit(tp.TextMinX, tp.TextMaxY, tp.TextMinX, tp.TextMinY)
+        End If
     End Sub
 
     Private Shared Sub AddPaths(buf As List(Of Single), paths As Clipper2Lib.PathsD, z As Double, r As Single, g As Single, b As Single)
@@ -722,14 +801,19 @@ Public Class ToolpathView
         RefreshDragForModifiers(e.KeyCode)
     End Sub
 
-    ''' <summary>Shift / Ctrl change the shape being drawn or the rotation snap, Alt the grid snap: update the preview now.</summary>
+    ''' <summary>
+    ''' Shift / Ctrl change the shape being drawn, Alt the grid and rotation snap: update the preview
+    ''' now. Without a drag, Shift changes what the select tool's cursor offers.
+    ''' </summary>
     Private Sub RefreshDragForModifiers(key As Keys)
         If key = Keys.Menu AndAlso _mode <> DragMode.None Then _altDuringDrag = True
-        Dim affects = ((key = Keys.ShiftKey OrElse key = Keys.ControlKey) AndAlso (_mode = DragMode.Create OrElse _mode = DragMode.Rotate)) OrElse
-                      (key = Keys.Menu AndAlso (_mode = DragMode.Create OrElse _mode = DragMode.MoveObject OrElse _mode = DragMode.MoveText OrElse _mode = DragMode.Resize))
+        Dim affects = ((key = Keys.ShiftKey OrElse key = Keys.ControlKey) AndAlso _mode = DragMode.Create) OrElse
+                      (key = Keys.Menu AndAlso (_mode = DragMode.Create OrElse _mode = DragMode.MoveObject OrElse _mode = DragMode.MoveText OrElse _mode = DragMode.Resize OrElse _mode = DragMode.Rotate))
         If affects Then
             UpdateDrag(PointToClient(MousePosition))
             Invalidate()
+        ElseIf key = Keys.ShiftKey AndAlso _mode = DragMode.None AndAlso _dragButton = MouseButtons.None AndAlso ClientRectangle.Contains(PointToClient(MousePosition)) Then
+            UpdateHoverCursor(PointToClient(MousePosition))
         End If
     End Sub
 
@@ -805,8 +889,8 @@ Public Class ToolpathView
     ' contour's triangle fan inverts the stencil (inside = odd count, so holes stay
     ' empty), then a cover quad paints the colour where the stencil is set and clears
     ' it. Later drawings paint over earlier ones, so the topmost one wins, exactly as
-    ' the drawings overlap on screen. Text drawings and the text block are picked
-    ' anywhere in their box, so the gaps between letters count too.
+    ' the drawings overlap on screen. Every drawing (and the text block) is picked
+    ' anywhere in its box, so the gaps between letters and the holes of a ring count too.
 
     Private Const PickRadius As Integer = 4        ' pixels around the cursor (thin strokes are easy to hit)
     Private Const PickBufferSize As Integer = 16   ' the buffer only ever holds the cursor's neighbourhood
@@ -1081,14 +1165,8 @@ Public Class ToolpathView
         For i = 0 To _objects.Count - 1
             Dim o = _objects(i)
             If Not o.Visible Then Continue For
-            Dim paths = If(o.Kind = DrawingKind.Text, Nothing, o.PlacedPaths(_curveTolerance))
-            If paths IsNot Nothing AndAlso paths.Count > 0 Then
-                Dim b = Clipper2Lib.Clipper.GetBounds(paths)
-                AddPickItem(v, i, paths, {New Pt2(b.left, b.top), New Pt2(b.right, b.top), New Pt2(b.right, b.bottom), New Pt2(b.left, b.bottom)}, o.Width * o.Height)
-            Else
-                ' Text, or a drawing without an outline: its whole box.
-                AddPickItem(v, i, Nothing, o.Corners(), o.Width * o.Height)
-            End If
+            ' Every drawing is picked anywhere in its (rotated) box, the box its hover light shows.
+            AddPickItem(v, i, Nothing, o.Corners(), o.Width * o.Height)
         Next
         Dim data = v.ToArray()
         GL.BindBuffer(BufferTarget.ArrayBuffer, _pickVbo)
@@ -1134,6 +1212,7 @@ Public Class ToolpathView
 
     ' ---- scene ------------------------------------------------------------
     Private _toolpath As Toolpath
+    Private _lines As ToolpathLines              ' vertex data of _toolpath's layers
     Private _sceneMin As New Vector3(-1, -1, 0)
     Private _sceneMax As New Vector3(1, 1, 0)
 
@@ -1312,8 +1391,17 @@ Public Class ToolpathView
 
     ''' <summary>Replaces the toolpath; the settings drive the simulation (tool, blank, precision).</summary>
     Public Sub SetToolpath(tp As Toolpath, settings As CarveSettings)
+        SetToolpath(tp, settings, Nothing)
+    End Sub
+
+    ''' <summary>
+    ''' Replaces the toolpath with its line vertex data already built (PrepareLines on a worker
+    ''' thread): the UI thread only hands the arrays to the GPU.
+    ''' </summary>
+    Public Sub SetToolpath(tp As Toolpath, settings As CarveSettings, lines As ToolpathLines)
         Dim firstTime As Boolean = (_toolpath Is Nothing)
         _toolpath = tp
+        _lines = If(lines IsNot Nothing AndAlso lines.Toolpath Is tp, lines, Nothing)
         If settings IsNot Nothing Then _simSettings = settings
         _simNeedsSetup = True
         _pickDirty = True
@@ -1494,8 +1582,17 @@ Public Class ToolpathView
     End Sub
 
     Public Sub ZoomToFit()
-        Dim size As Vector3 = _sceneMax - _sceneMin
-        _target = (_sceneMin + _sceneMax) / 2.0F
+        ' The toolpath's scene plus every drawing (a new drawing is shown before its toolpath exists).
+        Dim mn = _sceneMin, mx = _sceneMax
+        For Each o In _objects
+            If Not o.Visible Then Continue For
+            For Each c In o.Corners()
+                mn.X = Math.Min(mn.X, CSng(c.X)) : mn.Y = Math.Min(mn.Y, CSng(c.Y))
+                mx.X = Math.Max(mx.X, CSng(c.X)) : mx.Y = Math.Max(mx.Y, CSng(c.Y))
+            Next
+        Next
+        Dim size As Vector3 = mx - mn
+        _target = (mn + mx) / 2.0F
         Dim w As Double = Math.Max(size.X, 0.5)
         Dim h As Double = Math.Max(size.Y, 0.5)
         Dim pw As Integer = Math.Max(ClientSize.Width, 1)
@@ -1508,31 +1605,47 @@ Public Class ToolpathView
 
     ' --------------------------------------------------------------- buffers
 
+    ''' <summary>Gives the line layers the current toolpath's vertex data (made here if the worker did not).</summary>
     Private Sub BuildBuffers()
-        Dim blank As New List(Of Single)
-        Dim outline As New List(Of Single)
-        Dim cuts As New List(Of Single)
-        Dim rapids As New List(Of Single)
+        Dim l = _lines
+        If l Is Nothing OrElse l.Toolpath IsNot _toolpath Then
+            l = PrepareLines(_toolpath)
+            _lines = l
+        End If
+        _sceneMin = New Vector3(CSng(l.MinX), CSng(l.MinY), CSng(l.MinZ))
+        _sceneMax = New Vector3(CSng(l.MaxX), CSng(l.MaxY), 0)
+        _gridMinX = l.MinX : _gridMinY = l.MinY : _gridMaxX = l.MaxX : _gridMaxY = l.MaxY
+        BuildGridLayer()
+        SetPending(_blank, l.Blank)
+        SetPending(_outline, l.Outline)
+        SetPending(_cuts, l.Cuts)
+        SetPending(_rapids, l.Rapids)
+        Invalidate()
+    End Sub
 
-        Dim minX As Double = -1, minY As Double = -1, maxX As Double = 1, maxY As Double = 1, minZ As Double = 0
-        Dim tp = _toolpath
+    ''' <summary>
+    ''' Vertex data (position + colour, 6 floats per vertex, 2 vertices per line) of a toolpath's
+    ''' blank, outline, cut and rapid layers, and the scene bounds. Touches no GL or control state,
+    ''' so the generation worker builds it next to the toolpath; a 3D finish has millions of moves.
+    ''' </summary>
+    Public Shared Function PrepareLines(tp As Toolpath) As ToolpathLines
+        Dim l As New ToolpathLines With {.Toolpath = tp, .MinX = -1, .MinY = -1, .MaxX = 1, .MaxY = 1, .MinZ = 0}
         Dim haveBlank As Boolean = tp IsNot Nothing AndAlso tp.BlankMaxX > tp.BlankMinX AndAlso tp.BlankMaxY > tp.BlankMinY
         If haveBlank Then
-            minX = tp.BlankMinX : maxX = tp.BlankMaxX : minY = tp.BlankMinY : maxY = tp.BlankMaxY
+            l.MinX = tp.BlankMinX : l.MaxX = tp.BlankMaxX : l.MinY = tp.BlankMinY : l.MaxY = tp.BlankMaxY
         End If
         If tp IsNot Nothing AndAlso tp.Outline.Count > 0 Then
             If haveBlank Then
-                minX = Math.Min(minX, tp.MinX) : maxX = Math.Max(maxX, tp.MaxX)
-                minY = Math.Min(minY, tp.MinY) : maxY = Math.Max(maxY, tp.MaxY)
+                l.MinX = Math.Min(l.MinX, tp.MinX) : l.MaxX = Math.Max(l.MaxX, tp.MaxX)
+                l.MinY = Math.Min(l.MinY, tp.MinY) : l.MaxY = Math.Max(l.MaxY, tp.MaxY)
             Else
-                minX = tp.MinX : maxX = tp.MaxX : minY = tp.MinY : maxY = tp.MaxY
+                l.MinX = tp.MinX : l.MaxX = tp.MaxX : l.MinY = tp.MinY : l.MaxY = tp.MaxY
             End If
-            minZ = tp.MinZ
+            l.MinZ = tp.MinZ
         End If
-        _sceneMin = New Vector3(CSng(minX), CSng(minY), CSng(minZ))
-        _sceneMax = New Vector3(CSng(maxX), CSng(maxY), 0)
 
         ' Blank (stock) outline at Z = 0.
+        Dim blank As New List(Of Single)
         If haveBlank Then
             Dim bx0 = tp.BlankMinX, by0 = tp.BlankMinY, bx1 = tp.BlankMaxX, by1 = tp.BlankMaxY
             AddLine(blank, bx0, by0, 0, bx1, by0, 0, 0.9F, 0.78F, 0.5F)
@@ -1540,10 +1653,9 @@ Public Class ToolpathView
             AddLine(blank, bx1, by1, 0, bx0, by1, 0, 0.9F, 0.78F, 0.5F)
             AddLine(blank, bx0, by1, 0, bx0, by0, 0, 0.9F, 0.78F, 0.5F)
         End If
+        l.Blank = blank.ToArray()
 
-        _gridMinX = minX : _gridMinY = minY : _gridMaxX = maxX : _gridMaxY = maxY
-        BuildGridLayer()
-
+        Dim outline As New List(Of Single)
         If tp IsNot Nothing Then
             For Each poly In tp.Outline
                 For i = 0 To poly.Count - 1
@@ -1552,33 +1664,42 @@ Public Class ToolpathView
                     AddLine(outline, a.X, a.Y, 0, b.X, b.Y, 0, 0.75F, 0.75F, 0.78F)
                 Next
             Next
+        End If
+        l.Outline = outline.ToArray()
 
-            Dim depthRange As Double = Math.Max(-tp.MinZ, 0.0001)
-            Dim prev As Pt3 = New Pt3(0, 0, 0)
-            Dim havePrev As Boolean = False
-            For Each mv In tp.Moves
-                If havePrev Then
-                    If mv.Kind = MoveKind.Rapid Then
-                        AddLine(rapids, prev.X, prev.Y, prev.Z, mv.Target.X, mv.Target.Y, mv.Target.Z, 0.85F, 0.25F, 0.2F)
-                    Else
-                        Dim t As Double = Math.Min(1.0, Math.Max(0.0, -mv.Target.Z / depthRange))
-                        ' Shallow = cyan, deep = yellow/orange.
-                        Dim r As Single = CSng(0.25 + 0.75 * t)
-                        Dim gg As Single = CSng(0.85 - 0.2 * t)
-                        Dim bb As Single = CSng(1.0 - 0.9 * t)
-                        AddLine(cuts, prev.X, prev.Y, prev.Z, mv.Target.X, mv.Target.Y, mv.Target.Z, r, gg, bb)
-                    End If
-                End If
-                prev = mv.Target
-                havePrev = True
+        ' Cuts and rapids straight into arrays of the right size (no growing lists of millions of floats).
+        Dim nCut = 0, nRapid = 0
+        If tp IsNot Nothing Then
+            For i = 1 To tp.Moves.Count - 1
+                If tp.Moves(i).Kind = MoveKind.Rapid Then nRapid += 1 Else nCut += 1
             Next
         End If
+        Dim cuts(nCut * 12 - 1) As Single, rapids(nRapid * 12 - 1) As Single
+        If tp IsNot Nothing Then
+            Dim depthRange As Double = Math.Max(-tp.MinZ, 0.0001)
+            Dim ci = 0, ri = 0
+            For i = 1 To tp.Moves.Count - 1
+                Dim a = tp.Moves(i - 1).Target, mv = tp.Moves(i)
+                Dim b = mv.Target
+                If mv.Kind = MoveKind.Rapid Then
+                    PutLine(rapids, ri, a, b, 0.85F, 0.25F, 0.2F)
+                    ri += 12
+                Else
+                    ' Shallow = cyan, deep = yellow/orange.
+                    Dim t As Double = Math.Min(1.0, Math.Max(0.0, -b.Z / depthRange))
+                    PutLine(cuts, ci, a, b, CSng(0.25 + 0.75 * t), CSng(0.85 - 0.2 * t), CSng(1.0 - 0.9 * t))
+                    ci += 12
+                End If
+            Next
+        End If
+        l.Cuts = cuts
+        l.Rapids = rapids
+        Return l
+    End Function
 
-        SetPending(_blank, blank)
-        SetPending(_outline, outline)
-        SetPending(_cuts, cuts)
-        SetPending(_rapids, rapids)
-        Invalidate()
+    Private Shared Sub PutLine(buf As Single(), at As Integer, a As Pt3, b As Pt3, r As Single, g As Single, bl As Single)
+        buf(at) = CSng(a.X) : buf(at + 1) = CSng(a.Y) : buf(at + 2) = CSng(a.Z) : buf(at + 3) = r : buf(at + 4) = g : buf(at + 5) = bl
+        buf(at + 6) = CSng(b.X) : buf(at + 7) = CSng(b.Y) : buf(at + 8) = CSng(b.Z) : buf(at + 9) = r : buf(at + 10) = g : buf(at + 11) = bl
     End Sub
 
     ''' <summary>
@@ -1633,6 +1754,11 @@ Public Class ToolpathView
         layer.Dirty = True
     End Sub
 
+    Private Shared Sub SetPending(layer As LineLayer, data As Single())
+        layer.Data = data
+        layer.Dirty = True
+    End Sub
+
     Private Sub UploadIfDirty(layer As LineLayer)
         If Not layer.Dirty Then Return
         layer.Dirty = False
@@ -1683,6 +1809,7 @@ Public Class ToolpathView
                     If layer.Vao <> 0 Then GL.DeleteVertexArray(layer.Vao)
                 Next
                 If _program <> 0 Then GL.DeleteProgram(_program)
+                ReleaseModelPictures(deleteObjects:=True)
                 ReleasePicking(deleteObjects:=True)
             Catch
                 ' Context already gone: the driver frees the objects with it.
@@ -1695,6 +1822,7 @@ Public Class ToolpathView
             layer.Dirty = True
         Next
         _program = 0
+        ReleaseModelPictures(deleteObjects:=False)
         ReleasePicking(deleteObjects:=False)
         _initialized = False
         MyBase.OnHandleDestroyed(e)
@@ -1894,6 +2022,7 @@ Public Class ToolpathView
         GL.DepthMask(False)
         If _showGrid Then DrawLayer(_grid)
         DrawLayer(_blank)
+        If Not _showSimulation Then DrawModelPictures(mvp)
         GL.DepthMask(True)
         If _showOutline AndAlso Not _showSimulation Then DrawLayer(_outline)
         If Not _showSimulation Then DrawLayer(_cuts)
@@ -1906,6 +2035,131 @@ Public Class ToolpathView
         GL.BindVertexArray(0)
         GL.UseProgram(0)
         SwapBuffers()
+    End Sub
+
+    ' ------------------------------------------------------- model pictures
+
+    ''' <summary>Draws each visible 3D model's shaded relief in its placed (rotated, mirrored) box.</summary>
+    Private Sub DrawModelPictures(mvp As Matrix4)
+        Dim models = _objects.Where(Function(o) o.Visible AndAlso o.Kind = DrawingKind.Model AndAlso o.Relief IsNot Nothing).ToList()
+        ' Forget pictures of models that are gone.
+        Dim used As New HashSet(Of String)(models.Select(Function(o) o.ModelKey()))
+        For Each k In _modelTextures.Keys.Where(Function(x) Not used.Contains(x)).ToList()
+            If _modelTextures(k) <> 0 Then GL.DeleteTexture(_modelTextures(k))
+            _modelTextures.Remove(k)
+        Next
+        If models.Count = 0 Then Return
+        If _texProgram = 0 Then
+            Dim v = CompileShader(ShaderType.VertexShader,
+                "#version 330 core" & vbLf &
+                "layout(location = 0) in vec3 aPos;" & vbLf &
+                "layout(location = 1) in vec2 aUV;" & vbLf &
+                "uniform mat4 uMvp;" & vbLf &
+                "out vec2 vUV;" & vbLf &
+                "void main() { gl_Position = uMvp * vec4(aPos, 1.0); vUV = aUV; }" & vbLf)
+            Dim f = CompileShader(ShaderType.FragmentShader,
+                "#version 330 core" & vbLf &
+                "in vec2 vUV;" & vbLf &
+                "uniform sampler2D uTex;" & vbLf &
+                "uniform float uLight;" & vbLf &
+                "out vec4 FragColor;" & vbLf &
+                "void main() { vec4 c = texture(uTex, vUV); if (c.a < 0.5) discard; FragColor = vec4(min(c.rgb * uLight, vec3(1.0)), 1.0); }" & vbLf)
+            _texProgram = GL.CreateProgram()
+            GL.AttachShader(_texProgram, v)
+            GL.AttachShader(_texProgram, f)
+            GL.LinkProgram(_texProgram)
+            GL.DetachShader(_texProgram, v)
+            GL.DetachShader(_texProgram, f)
+            GL.DeleteShader(v)
+            GL.DeleteShader(f)
+            _texMvpLoc = GL.GetUniformLocation(_texProgram, "uMvp")
+            _quadVao = GL.GenVertexArray()
+            _quadVbo = GL.GenBuffer()
+            GL.BindVertexArray(_quadVao)
+            GL.BindBuffer(BufferTarget.ArrayBuffer, _quadVbo)
+            GL.BufferData(BufferTarget.ArrayBuffer, 6 * 5 * 4, IntPtr.Zero, BufferUsageHint.DynamicDraw)
+            GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, False, 20, 0)
+            GL.EnableVertexAttribArray(0)
+            GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, False, 20, 12)
+            GL.EnableVertexAttribArray(1)
+            GL.BindVertexArray(0)
+        End If
+        GL.UseProgram(_texProgram)
+        GL.UniformMatrix4(_texMvpLoc, False, mvp)
+        GL.Uniform1(GL.GetUniformLocation(_texProgram, "uTex"), 0)
+        GL.ActiveTexture(TextureUnit.Texture0)
+        GL.BindVertexArray(_quadVao)
+        GL.BindBuffer(BufferTarget.ArrayBuffer, _quadVbo)
+        For Each o In models
+            Dim tex = ModelTexture(o)
+            If tex = 0 Then Continue For
+            GL.BindTexture(TextureTarget.Texture2D, tex)
+            ' The model under the mouse lights up.
+            GL.Uniform1(GL.GetUniformLocation(_texProgram, "uLight"), If(_objects.IndexOf(o) = _hovered AndAlso _mode = DragMode.None, 1.15F, 0.8F))
+            ' Corners counter-clockwise from the lower-left; the picture's first row is its top.
+            Dim c = o.Corners()
+            Dim u0 As Single = If(o.Mirror, 1.0F, 0.0F), u1 As Single = 1.0F - u0
+            Const z As Single = -0.0005F
+            Dim q As Single() = {
+                CSng(c(0).X), CSng(c(0).Y), z, u0, 1.0F,
+                CSng(c(1).X), CSng(c(1).Y), z, u1, 1.0F,
+                CSng(c(2).X), CSng(c(2).Y), z, u1, 0.0F,
+                CSng(c(0).X), CSng(c(0).Y), z, u0, 1.0F,
+                CSng(c(2).X), CSng(c(2).Y), z, u1, 0.0F,
+                CSng(c(3).X), CSng(c(3).Y), z, u0, 0.0F}
+            GL.BufferSubData(BufferTarget.ArrayBuffer, IntPtr.Zero, q.Length * 4, q)
+            GL.DrawArrays(PrimitiveType.Triangles, 0, 6)
+        Next
+        GL.BindTexture(TextureTarget.Texture2D, 0)
+        GL.BindVertexArray(0)
+        GL.UseProgram(_program)
+    End Sub
+
+    ''' <summary>The model's picture as a texture (made on first use; 0 when it cannot be made).</summary>
+    Private Function ModelTexture(o As DesignObject) As Integer
+        Dim key = o.ModelKey()
+        Dim tex As Integer
+        If _modelTextures.TryGetValue(key, tex) Then Return tex
+        tex = 0
+        Try
+            Using bmp = o.Relief.CreatePreview(1024)
+                Dim data = bmp.LockBits(New Rectangle(0, 0, bmp.Width, bmp.Height), System.Drawing.Imaging.ImageLockMode.ReadOnly,
+                                        System.Drawing.Imaging.PixelFormat.Format32bppArgb)
+                Try
+                    tex = GL.GenTexture()
+                    GL.BindTexture(TextureTarget.Texture2D, tex)
+                    GL.PixelStore(PixelStoreParameter.UnpackAlignment, 4)
+                    GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, bmp.Width, bmp.Height, 0, PixelFormat.Bgra, PixelType.UnsignedByte, data.Scan0)
+                    GL.GenerateMipmap(GenerateMipmapTarget.Texture2D)
+                    GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, CInt(TextureMinFilter.LinearMipmapLinear))
+                    GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Linear))
+                    GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
+                    GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
+                    GL.BindTexture(TextureTarget.Texture2D, 0)
+                Finally
+                    bmp.UnlockBits(data)
+                End Try
+            End Using
+        Catch
+            ' No picture (out of memory, broken model): the outline still shows.
+            If tex <> 0 Then GL.DeleteTexture(tex)
+            tex = 0
+        End Try
+        _modelTextures(key) = tex
+        Return tex
+    End Function
+
+    Private Sub ReleaseModelPictures(deleteObjects As Boolean)
+        If deleteObjects Then
+            For Each t In _modelTextures.Values
+                If t <> 0 Then GL.DeleteTexture(t)
+            Next
+            If _quadVbo <> 0 Then GL.DeleteBuffer(_quadVbo)
+            If _quadVao <> 0 Then GL.DeleteVertexArray(_quadVao)
+            If _texProgram <> 0 Then GL.DeleteProgram(_texProgram)
+        End If
+        _modelTextures.Clear()
+        _quadVbo = 0 : _quadVao = 0 : _texProgram = 0
     End Sub
 
     Private Sub DrawLayer(layer As LineLayer)
@@ -1945,7 +2199,8 @@ Public Class ToolpathView
             _dragDx = 0 : _dragDy = 0
             Select Case _tool
                 Case DrawTool.Select
-                    BeginSelectDrag(e.Location, w)
+                    ' A plain left drag moves the view; Shift selects and edits drawings.
+                    If _pressShift Then BeginSelectDrag(e.Location, w) Else _mode = DragMode.Pan
                 Case DrawTool.Area
                     AddAreaPoint(e.Location)
                 Case Else
@@ -1980,7 +2235,7 @@ Public Class ToolpathView
             Cursor = HandleCursor(handle)
             Return
         End If
-        Dim hit = PickToSelect(p, cycle:=(ModifierKeys And Keys.Control) = Keys.Control)
+        Dim hit = PickToSelect(p, cycle:=_pressCtrl)
         SelectedObject = hit
         If hit >= 0 Then
             _mode = DragMode.MoveObject
@@ -2010,6 +2265,11 @@ Public Class ToolpathView
             _dragButton = MouseButtons.None
             FinishCreate(e.Location)
             Return
+        End If
+        If mode = DragMode.Pan AndAlso e.Button = MouseButtons.Left AndAlso _tool = DrawTool.Select AndAlso Not _pressShift AndAlso
+           Math.Abs(e.X - _pressPoint.X) <= SystemInformation.DragSize.Width \ 2 AndAlso Math.Abs(e.Y - _pressPoint.Y) <= SystemInformation.DragSize.Height \ 2 AndAlso
+           HoverPick(e.Location) <> -1 Then
+            RaiseFeedback("Shift+click to select a drawing (Shift+drag moves it). A plain drag moves the view.")
         End If
         _mode = DragMode.None
         _dragButton = MouseButtons.None
@@ -2145,8 +2405,8 @@ Public Class ToolpathView
                     If Math.Sqrt(CDbl(p.X - cs.X) ^ 2 + CDbl(p.Y - cs.Y) ^ 2) < RotateDeadZonePixels Then Return
                     Dim a = Math.Atan2(w.Y - c.Y, w.X - c.X)
                     Dim deg = _startRot + (a - _rotStartAngle) * 180 / Math.PI
-                    ' Snaps to the rotation step; Shift turns freely.
-                    Dim stepDeg = If((ModifierKeys And Keys.Shift) = Keys.Shift, 0.0, _rotationSnapDeg)
+                    ' Snaps to the rotation step; Alt (no snapping) turns freely.
+                    Dim stepDeg = If((ModifierKeys And Keys.Alt) = Keys.Alt, 0.0, _rotationSnapDeg)
                     If stepDeg > 0 Then deg = Math.Round(deg / stepDeg) * stepDeg
                     _rotDeg = NormalizeAngle(deg)
                     RebuildSelectionLayer()
@@ -2161,18 +2421,29 @@ Public Class ToolpathView
         End Select
     End Sub
 
-    ''' <summary>Cursor feedback without a button down: tool, handle, or something to pick.</summary>
+    ''' <summary>Cursor feedback without a button down: tool, handle, or something to pick (with Shift down).</summary>
     Private Sub UpdateHoverCursor(p As Point)
         If _tool <> DrawTool.Select Then
             Cursor = ToolCursor()
+            Return
+        End If
+        Dim under = HoverPick(p)
+        SetHovered(under)
+        If (ModifierKeys And Keys.Shift) <> Keys.Shift Then
+            Cursor = Cursors.Default
             Return
         End If
         Dim h = HandleHitTest(p)
         If h >= 0 Then
             Cursor = HandleCursor(h)
         Else
-            Cursor = If(HoverPick(p) <> -1, Cursors.Hand, Cursors.Default)
+            Cursor = If(under <> -1, Cursors.Hand, Cursors.Default)
         End If
+    End Sub
+
+    Protected Overrides Sub OnMouseLeave(e As EventArgs)
+        MyBase.OnMouseLeave(e)
+        SetHovered(-1)
     End Sub
 
     ''' <summary>
@@ -2248,6 +2519,20 @@ Public Class ToolpathView
         End If
         ZoomToFit()
     End Sub
+End Class
+
+''' <summary>Vertex data of a toolpath's line layers and the scene bounds (ToolpathView.PrepareLines).</summary>
+Public NotInheritable Class ToolpathLines
+    Public Property Toolpath As Toolpath
+    Public Property Blank As Single()
+    Public Property Outline As Single()
+    Public Property Cuts As Single()
+    Public Property Rapids As Single()
+    Public Property MinX As Double
+    Public Property MinY As Double
+    Public Property MaxX As Double
+    Public Property MaxY As Double
+    Public Property MinZ As Double
 End Class
 
 ''' <summary>What a left drag in the view does.</summary>

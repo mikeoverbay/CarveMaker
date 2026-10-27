@@ -4,6 +4,9 @@
 '  slot and alignment). Stored as indented JSON so it is readable and easy to
 '  edit or version. Sizes are stored as slot names (Large/Medium/Small) rather
 '  than inches, so changing a slot's inch value later still applies to the text.
+'  File version 2 = the project holds a 3D model (its heightmap is embedded as
+'  base64); projects without one are still written as version 1, so older
+'  CarveMaker versions keep opening them.
 ' ============================================================================
 
 Imports System.IO
@@ -26,7 +29,7 @@ Public Class ProjectLine
 End Class
 
 Public Class ProjectFile
-    Public Const CurrentVersion As Integer = 1
+    Public Const CurrentVersion As Integer = 2
     Public Const Extension As String = ".prj"
     Public Const Filter As String = "CarveMaker project (*.prj)|*.prj|All files (*.*)|*.*"
 
@@ -51,6 +54,8 @@ Public Class ProjectFile
     End Function
 
     Public Sub Save(path As String)
+        ' Older versions cannot read 3D models: they refuse the file with a clear message instead.
+        Version = If(Objects IsNot Nothing AndAlso Objects.Any(Function(o) o IsNot Nothing AndAlso o.Kind = DrawingKind.Model), 2, 1)
         MirrorForOlderVersions()
         File.WriteAllText(path, JsonSerializer.Serialize(Me, Options))
     End Sub
@@ -184,7 +189,7 @@ Public Class ProjectFile
             If o.Machining Is Nothing Then o.Machining = New Machining()
             If i >= objectHasFeeds.Count OrElse Not objectHasFeeds(i) Then AdoptJobWide(o.Machining, s)
         Next
-        For Each m In {s.TextMachining}.Concat(pf.Objects.Select(Function(o) o.Machining))
+        For Each m In {s.TextMachining}.Concat(pf.Objects.Select(Function(o) o.Machining)).Concat(pf.Objects.Where(Function(o) o.FinishMachining IsNot Nothing).Select(Function(o) o.FinishMachining))
             If m.Tool Is Nothing Then m.Tool = Machining.DefaultToolFor(m.Operation)
             If String.IsNullOrWhiteSpace(m.Tool.Id) Then m.Tool.Id = ToolDefinition.NewId()
             If m.Tool.Name Is Nothing Then m.Tool.Name = ""

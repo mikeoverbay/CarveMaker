@@ -95,6 +95,7 @@ Public Class frmMain
         AddHandler _glView.TextMoved, AddressOf OnViewTextMoved
         _glView.Objects = _objects
         SetupDrawing()
+        SetupGenerationUi()
         _glView.CurveTolerance = _settings.CurveTolerance
         tscSimSpeed.SelectedIndex = 3      ' 10x
 
@@ -104,14 +105,12 @@ Public Class frmMain
         BindSettingsGrids()
         UpdateSizeButtonCaptions()
 
-        ' Sample text: one large centred line.
+        ' An empty editor, ready for one large centred line.
         _suppressEditorEvents = True
         rtbText.Font = EditorFontFor(SizeSlot.Large)
-        rtbText.Text = "Hello"
-        rtbText.SelectAll()
+        rtbText.Text = ""
         rtbText.SelectionFont = EditorFontFor(SizeSlot.Large)
         rtbText.SelectionAlignment = HorizontalAlignment.Center
-        rtbText.Select(rtbText.TextLength, 0)
         _suppressEditorEvents = False
 
         UpdateFormatButtons()
@@ -186,12 +185,14 @@ Public Class frmMain
 
     ' ---------------------------------------------------------- drawings
 
-    ''' <summary>Placed polygons of every visible drawing (computed on the UI thread, cached parse).</summary>
     ''' <summary>Visible drawings with their machining (copies: the worker thread uses them).</summary>
     Private Function PlacedItems() As List(Of MachiningItem)
         Dim list As New List(Of MachiningItem)
         For Each o In _objects
-            If o.Visible Then list.Add(New MachiningItem(o.Name, o.PlacedPaths(_settings.CurveTolerance), If(o.Machining?.Clone(), New Machining())))
+            If Not o.Visible Then Continue For
+            Dim it As New MachiningItem(o.Name, o.PlacedPaths(_settings.CurveTolerance), If(o.Machining?.Clone(), New Machining()))
+            If o.Kind = DrawingKind.Model Then it.Model = o.Clone()
+            list.Add(it)
         Next
         Return list
     End Function
@@ -205,13 +206,18 @@ Public Class frmMain
                Append(o.Width.ToString("R", ci)).Append("|").Append(o.Height.ToString("R", ci)).Append("|").Append(o.RotationDeg.ToString("R", ci)).
                Append("|").Append(o.Mirror).Append("|").Append(o.Visible).Append("|").Append(If(o.SvgContent, "").Length).
                Append("|").Append(o.Kind).Append("|").Append(o.ShapeKey(0)).
-               Append("|").Append(If(o.Machining?.Key(), "")).Append(ControlChars.Lf)
+               Append("|").Append(If(o.Machining?.Key(), "")).Append("|").Append(If(o.FinishMachining?.Key(), ""))
+            If o.Kind = DrawingKind.Model Then
+                sb.Append("|").Append(o.Depth.ToString("R", ci)).Append("|").Append(o.TopOffset.ToString("R", ci)).Append("|").Append(o.MachineArea)
+            End If
+            sb.Append(ControlChars.Lf)
         Next
         Return sb.ToString()
     End Function
 
     Private Shared Function ObjectListText(o As DesignObject) As String
         Dim op = If(o.Machining Is Nothing OrElse o.Machining.Operation = CutOperation.VCarve, "", "   [" & If(o.Machining.Operation = CutOperation.Pocket, "pocket", "profile") & "]")
+        If o.Kind = DrawingKind.Model Then op = "   [3D model]"
         Return If(o.Visible, "", "(hidden) ") & o.Name & op
     End Function
 
@@ -376,6 +382,10 @@ Public Class frmMain
         If o Is Nothing Then Return
         Dim name = If(e.ChangedItem?.PropertyDescriptor?.Name, "")
         If name = NameOf(Machining.Tool) AndAlso SyncToolsFromLibrary() Then RefreshSettingsGrids()   ' the picker may have edited library entries
+        If o.Kind = DrawingKind.Model AndAlso Not ModelPropertyChanged(o, name, e.OldValue) Then
+            pgObject.Refresh()
+            Return
+        End If
         Dim shapeBefore = o.Shape        ' the outline the box was sized for (not rebuilt yet)
         Dim isSize = name = NameOf(DesignObject.Width) OrElse name = NameOf(DesignObject.Height)
         Dim oldSize = If(isSize AndAlso TypeOf e.OldValue Is Double, CDbl(e.OldValue), 0.0)
@@ -398,7 +408,7 @@ Public Class frmMain
             End If
             o.FitTextBox(_settings.CurveTolerance, shapeBefore)
         ElseIf o.LockAspect AndAlso isSize Then
-            If o.Kind = DrawingKind.Svg OrElse oldSize <= 0 Then
+            If o.Kind = DrawingKind.Svg OrElse o.Kind = DrawingKind.Model OrElse oldSize <= 0 Then
                 If name = NameOf(DesignObject.Width) Then o.Height = Math.Round(o.Width / o.NaturalAspect, 4)
                 If name = NameOf(DesignObject.Height) Then o.Width = Math.Round(o.Height * o.NaturalAspect, 4)
             ElseIf name = NameOf(DesignObject.Width) Then
@@ -816,8 +826,7 @@ Public Class frmMain
             ' Stop any in-flight run so it cannot publish a stale result over the message.
             _genCts?.Cancel()
             _genVersion += 1
-            _running = False
-            UseWaitCursor = False
+            SetGenerating(False)
             lblStatus.Text = "Settings: " & String.Join(" ", problems)
             _statusNote = Nothing
             Return
@@ -828,48 +837,92 @@ Public Class frmMain
         Dim token = _genCts.Token
         _genVersion += 1
         Dim myVersion = _genVersion
-        _running = True
-        lblStatus.Text = "Generating toolpath..."
-        UseWaitCursor = True
+        SetGenerating(True)
+        lblStatus.Text = If(items.Any(Function(i) i.Model IsNot Nothing), "Generating toolpath (3D models take a while; Abort stops it)...", "Generating toolpath...")
 
-        Task.Run(Function() JobBuilder.Generate(lines, items, snapshot, token), token).
+        ' The worker computes the toolpath AND the vertex data of its lines; the UI thread only
+        ' hands finished arrays to the view. The result is posted to the window itself.
+        Task.Run(Function()
+                     Dim tp = JobBuilder.Generate(lines, items, snapshot, token)
+                     token.ThrowIfCancellationRequested()
+                     Return ToolpathView.PrepareLines(tp)
+                 End Function, token).
             ContinueWith(
-                Sub(t As Task(Of Toolpath))
-                    If IsDisposed OrElse myVersion <> _genVersion Then Return
-                    _running = False
-                    UseWaitCursor = False
-                    If t.IsCanceled Then Return
-                    If t.IsFaulted Then
-                        Dim ex As Exception = t.Exception
-                        If TypeOf ex Is AggregateException Then ex = DirectCast(ex, AggregateException).GetBaseException()
-                        lblStatus.Text = "Error: " & ex.Message
-                        _statusNote = Nothing
-                        Return
-                    End If
-                    _toolpath = t.Result
-                    _lastLinesKey = contentKey
-                    ' The precision may have changed while the worker ran; it does not affect the toolpath.
-                    CopySimulationOnlySettings(_settings, snapshot)
-                    _lastSettings = snapshot
-                    _glView.SetToolpath(_toolpath, snapshot)
-                    UpdateStats(_toolpath)
-                    Dim notes = itemNotes.Concat(_toolpath.Warnings).ToList()
-                    If notes.Count > 0 Then
-                        lblStatus.Text = String.Join("  |  ", notes)
-                    ElseIf _toolpath.IsEmpty Then
-                        lblStatus.Text = "Nothing to cut - type some text."
-                    ElseIf _editingObject IsNot Nothing Then
-                        lblStatus.Text = TypingHint
-                    ElseIf _statusNote IsNot Nothing Then
-                        lblStatus.Text = _statusNote
-                    Else
-                        lblStatus.Text = "Ready"
-                    End If
-                    _statusNote = Nothing
-                End Sub,
-                CancellationToken.None,
-                TaskContinuationOptions.None,
-                TaskScheduler.FromCurrentSynchronizationContext())
+                Sub(t As Task(Of ToolpathLines))
+                    If IsDisposed OrElse Not IsHandleCreated Then Return
+                    Try
+                        BeginInvoke(New Action(Sub() PublishToolpath(t, myVersion, contentKey, snapshot, itemNotes)))
+                    Catch ex As InvalidOperationException
+                        ' The window is closing.
+                    End Try
+                End Sub, TaskScheduler.Default)
+    End Sub
+
+    ''' <summary>Shows a finished generation (UI thread). Older runs and cancelled runs are dropped.</summary>
+    Private Sub PublishToolpath(t As Task(Of ToolpathLines), myVersion As Integer, contentKey As String, snapshot As CarveSettings, itemNotes As List(Of String))
+        If IsDisposed OrElse myVersion <> _genVersion Then Return
+        SetGenerating(False)
+        If t.IsCanceled Then
+            lblStatus.Text = "Toolpath generation stopped; the toolpath shown is the last one finished."
+            _statusNote = Nothing
+            Return
+        End If
+        If t.IsFaulted Then
+            Dim ex As Exception = t.Exception
+            If TypeOf ex Is AggregateException Then ex = DirectCast(ex, AggregateException).GetBaseException()
+            lblStatus.Text = "Error: " & ex.Message
+            _statusNote = Nothing
+            Return
+        End If
+        _toolpath = t.Result.Toolpath
+        _lastLinesKey = contentKey
+        ' The precision may have changed while the worker ran; it does not affect the toolpath.
+        CopySimulationOnlySettings(_settings, snapshot)
+        _lastSettings = snapshot
+        _glView.SetToolpath(_toolpath, snapshot, t.Result)
+        UpdateStats(_toolpath)
+        Dim notes = itemNotes.Concat(_toolpath.Warnings).ToList()
+        If notes.Count > 0 Then
+            lblStatus.Text = String.Join("  |  ", notes)
+        ElseIf _toolpath.IsEmpty Then
+            lblStatus.Text = "Nothing to cut yet: type some text, draw, or import a drawing or 3D model."
+        ElseIf _editingObject IsNot Nothing Then
+            lblStatus.Text = TypingHint
+        ElseIf _statusNote IsNot Nothing Then
+            lblStatus.Text = _statusNote
+        Else
+            lblStatus.Text = "Ready"
+        End If
+        _statusNote = Nothing
+    End Sub
+
+    ''' <summary>
+    ''' While a toolpath is being computed: nothing that needs the finished toolpath (generate again,
+    ''' export, simulation) can be started, and Abort is offered.
+    ''' </summary>
+    Private Sub SetGenerating(running As Boolean)
+        _running = running
+        UseWaitCursor = False
+        mnuToolpathGenerate.Enabled = Not running
+        mnuFileSaveGcode.Enabled = Not running
+        tsbSimPlay.Enabled = Not running
+        tsbSimReset.Enabled = Not running
+        tbSim.Enabled = Not running
+        If _mnuToolpathAbort IsNot Nothing Then _mnuToolpathAbort.Enabled = running
+        If _tsbAbort IsNot Nothing Then
+            _tsbAbort.Visible = running
+            _tspGenerating.Visible = running
+        End If
+    End Sub
+
+    ''' <summary>Stops the toolpath being computed (Abort); the last finished toolpath stays.</summary>
+    Private Sub AbortGeneration()
+        If Not _running Then Return
+        _genCts?.Cancel()
+        _genVersion += 1
+        SetGenerating(False)
+        lblStatus.Text = "Toolpath generation stopped; the toolpath shown is the last one finished. Generate Now (F5) starts it again."
+        _statusNote = Nothing
     End Sub
 
     Private Sub UpdateStats(tp As Toolpath)
@@ -878,9 +931,10 @@ Public Class frmMain
             Return
         End If
         Dim ci = CultureInfo.InvariantCulture
+        Dim letters = If(tp.RegionCount > 0, tp.RegionCount.ToString(ci) & " letters, ", "")
         lblStats.Text = String.Format(ci,
-            "{0} letters, {1} passes | {2:0.0}"" x {3:0.00}"" | depth {4:0.000}"" | cut {5:0.0}"" | ~{6:0.0} min",
-            tp.RegionCount, tp.Contours.Count, tp.Width, tp.Height, -tp.MinZ, tp.CutLength, tp.EstimatedMinutes)
+            "{0}{1} passes | {2:0.0}"" x {3:0.00}"" | depth {4:0.000}"" | cut {5:0.0}"" | ~{6:0.0} min",
+            letters, tp.Contours.Count + tp.ReliefPassCount, tp.Width, tp.Height, -tp.MinZ, tp.CutLength, tp.EstimatedMinutes)
         Dim tools = GCodeWriter.ToolGroups(tp).Count
         If tools > 1 Then lblStats.Text &= " | " & tools & " tools, one program each"
     End Sub
@@ -1085,7 +1139,11 @@ Public Class frmMain
             If String.IsNullOrEmpty(ext) Then ext = ".nc"
             Dim report As New Text.StringBuilder()
             report.AppendLine("This job uses " & groups.Count & " tools, so it was saved as " & groups.Count & " programs.")
-            report.AppendLine("Run them in this order. Before each one, fit its tool and re-zero Z on the top of the stock:")
+            If tp.Segments.Any(Function(sg) sg.Operation = CutOperation.Roughing3D) Then
+                report.AppendLine("Run them in this order. Before each one, fit its tool and re-zero Z on the top of the stock, on a part the roughing has not cut away (a corner of the board):")
+            Else
+                report.AppendLine("Run them in this order. Before each one, fit its tool and re-zero Z on the top of the stock:")
+            End If
             report.AppendLine()
             For i = 0 To groups.Count - 1
                 Dim g = groups(i)
@@ -1129,6 +1187,7 @@ Public Class frmMain
         Dim updated As New List(Of String)
         Dim machinings As New List(Of Machining) From {_settings.TextMachining}
         machinings.AddRange(_objects.Select(Function(o) o.Machining))
+        machinings.AddRange(_objects.Where(Function(o) o.FinishMachining IsNot Nothing).Select(Function(o) o.FinishMachining))
         For Each m In machinings
             If m?.Tool Is Nothing Then Continue For
             Dim inLibrary = library.FindById(m.Tool.Id)

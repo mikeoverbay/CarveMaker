@@ -117,7 +117,7 @@ every painted shape is carved. Overlapping shapes merge.
 Each imported drawing is an object with X/Y, width/height (aspect locked by
 default), rotation, mirror and visibility, editable in the tab or directly in
 the view (see *Drawing on the blank* below for the handles). The text block can
-be dragged the same way (it updates *Text offset X/Y*). Drawings are embedded in
+be Shift+dragged the same way (it updates *Text offset X/Y*). Drawings are embedded in
 the `.prj` file.
 
 Sample files live in the `Samples` solution folder (basic shapes, Bézier
@@ -133,7 +133,7 @@ toolpath (V-carve, pocket or profile), just like an imported SVG.
 
 | Tool | Key | How |
 |---|---|---|
-| Select | V, Esc | click to pick, drag to move |
+| Select | V, Esc | Shift+click to pick, Shift+drag to move; a plain drag pans the view |
 | Rectangle | R | drag a box; *Corner radius* rounds it |
 | Ellipse | E | drag a box |
 | Polygon | P | drag a box; *Sides* (3 to 64) |
@@ -145,11 +145,19 @@ While dragging out a shape, **Shift** keeps its own proportions (square,
 circle, regular polygon) and **Ctrl** draws from the centre; **Esc** cancels. A
 plain click makes a 1" shape. The keys work when the view has the focus.
 
-**Handles** of the selected drawing: the corner squares scale it evenly about
-the opposite corner, the side squares stretch it one way (shown when *Lock
-aspect ratio* is off; drawn shapes start unlocked), and the round knob above
-the top edge rotates it about its centre in steps of the rotation snap
-(**Shift** turns it freely).
+**Shift works on drawings; a plain drag moves the view.** With the select tool
+a plain left drag always pans, even over a drawing, so panning never moves
+anything by accident. Hold **Shift** when pressing the button to select
+(Shift+click), move (Shift+drag) or use the handles; Shift+click on empty space
+or **Esc** deselects. A plain click on a drawing only shows this hint in the
+status bar. Double-clicking a text drawing still opens it for typing.
+
+**Handles** of the selected drawing (Shift+drag them): the corner squares scale
+it evenly about the opposite corner, the side squares stretch it one way (shown
+when *Lock aspect ratio* is off; drawn shapes start unlocked), and the round
+knob above the top edge rotates it about its centre in steps of the rotation
+snap (**Alt** turns it freely). **Draw > Scale** sets an exact size or
+percentage.
 Arrow keys nudge by 0.01" (0.1" with Shift), **Delete** removes the drawing.
 **Draw** also has Rotate 90 degrees left/right, Mirror, Bring to Front and Send
 to Back.
@@ -174,7 +182,7 @@ Rotation Snap**):
   on grid points. Hold **Alt** while dragging to place something freely.
 - *Rotation snap* (15 degrees by default; Off, 1, 5, 15, 30, 45 or 90): the knob
   turns in those steps, and close to the centre it holds still instead of
-  spinning. Hold **Shift** to turn freely.
+  spinning. Hold **Alt** to turn freely.
 
 Both are remembered for the next start (`%AppData%\CarveMaker\Preferences.json`);
 they are not part of the project.
@@ -182,20 +190,19 @@ they are not part of the project.
 **Text drawings**: after drawing the box an editor opens under the text: type
 (Enter starts a new line), then **Ctrl+Enter** or click elsewhere; **Esc**
 cancels. Double-click a text drawing (or **Draw > Edit Text**) to change it.
-Its size is the *Letter height* (height of a capital letter): dragging a corner
+Its size is the *Letter height* (height of a capital letter): Shift+dragging a corner
 of the text resizes the lettering and updates the letter height. The **Style**
 menu and the toolbar set the font, **bold**, *italic* and the alignment of the
 lines; with no text selected they set the style for the next text. Text
 drawings are separate from the main text on the Text tab.
 
-**Picking**: clicks are resolved on the GPU from an offscreen ID buffer, so a
-click selects the shape that is actually under the mouse: holes and the empty
-corners of round shapes pick nothing, and thin strokes are caught within 4
-pixels. Where drawings overlap, the smallest one under the mouse wins (text
-inside a frame picks the text). The selected drawing keeps the click wherever
+**Picking**: Shift+clicks are resolved on the GPU from an offscreen ID buffer in
+which every drawing is its (rotated) box, so a click anywhere in a drawing's box
+takes it, and edges are caught within 4 pixels. Where boxes overlap, the
+smallest one under the mouse wins (text inside a frame picks the text). The selected drawing keeps the click wherever
 it is under the mouse, so it can be moved, scaled or rotated where others
-overlap it; **Ctrl+click** steps to the next drawing under the mouse. Text drawings and the main text are
-picked anywhere in their box. Without a working OpenGL view picking falls back
+overlap it; **Shift+Ctrl+click** steps to the next drawing under the mouse. The drawing under the mouse
+lights up, outline and box, before any click, so it is clear what a Shift+click will take. Without a working OpenGL view picking falls back
 to bounding boxes.
 
 A project file also stores each drawn shape's outline as SVG. Older CarveMaker
@@ -203,6 +210,39 @@ versions, which only know imported drawings, carve that outline; and a text
 drawing opened on a PC without its font carves the stored outline too (the
 status bar says so) until its words, font or style are changed. A drawing
 that cannot be carved at all is named in the status bar.
+
+## 3D models
+
+**File > Import 3D Model / Depth Image** (Ctrl+Shift+I) or **Import 3D** on the
+Drawings tab reads STL (binary or ASCII), OBJ, PLY (ASCII, binary little and big
+endian), 3MF (units, components and build transforms) and OFF models, and
+grayscale depth images (light is high). The model is kept as a **relief**: its
+surface seen from one side, as a heightmap embedded in the project (about 12 MB
+for a 4096 x 4096 heightmap). A 3-axis router reaches only what it sees from
+above, so overhangs are filled in.
+
+- **Carved side** is detected (the non-flat face of a thin relief; else the top,
+  or the side with the most relief when the top is flat) and can be changed in
+  the Relief rows (the model file is read again).
+- Each heightmap cell holds the **highest** point of the model over the whole
+  cell (triangle corners in the cell, cell corners in the triangle and edge /
+  grid-line crossings give the exact maximum), so a tool kept clear of these
+  columns is clear of the model.
+- Size by Width / Height / **Scale (%)**, **Draw > Scale** or the handles;
+  **Depth** follows the size until typed; **Top below stock** lowers it.
+- Two toolpaths, each with its own tool and feeds: **3D roughing** (flat levels,
+  raster runs plus each level's boundary, leaving an allowance) and **3D
+  finishing** (parallel passes at a raster angle). Any tool but a drill; exact
+  tool shapes for flat, ball, bull nose, V-bit and tapered ball nose.
+- **No gouging**: drop-cutter against the cell columns; finishing refines between
+  points where the surface bends or rises steeply, turns the finest steep steps
+  into staircases, simplifies one-sidedly (a line may replace points only if it
+  stays above all of them) and sits 0.0001" above the computed surface; roughing
+  widens every drop by the allowance and a node diagonal so straight runs,
+  boundary loops and links between nodes stay clear.
+- The toolpaths are computed in the model's frame and cached, so moving or
+  rotating the model does not compute them again. Generation runs on a worker
+  with a busy bar and **Abort** (Shift+F5).
 
 ## Pocket and profile toolpaths
 

@@ -84,7 +84,12 @@ Public Class GCodeWriter
         sb.AppendLine("%")
         If count > 1 Then
             sb.AppendLine("(CarveMaker job, program " & index.ToString(Ci) & " of " & count.ToString(Ci) & ")")
-            sb.AppendLine("(Fit this tool and re-zero Z on the top of the stock before running)")
+            If tp.Segments.Any(Function(sg) sg.Operation = CutOperation.Roughing3D) Then
+                ' The roughing removes the top over the model: zero where the stock is still whole.
+                sb.AppendLine("(Fit this tool and re-zero Z on an uncut part of the stock top before running)")
+            Else
+                sb.AppendLine("(Fit this tool and re-zero Z on the top of the stock before running)")
+            End If
         Else
             sb.AppendLine(If(hasVCarve AndAlso tp.Segments.Count <= 1, "(CarveMaker V-carve)", "(CarveMaker job)"))
         End If

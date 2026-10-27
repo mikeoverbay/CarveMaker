@@ -2,12 +2,17 @@
 '  CarveSimulation.vb
 '  GPU material-removal simulation. The stock blank is a float heightmap
 '  texture (one cell = SimCellSize inches, value = depth cut, 0 = untouched).
-'  Material is removed by rendering instances of the revolved tool model from
-'  straight above into that texture with MAX blending, so every texel keeps the
-'  deepest point of the tool that ever passed over it. Stamps are placed every
-'  half cell along each cutting move, so the sweep is exact to the cell size.
+'  Material is removed by stamping the tool from straight above into that
+'  texture with MAX blending, so every texel keeps the deepest point of the
+'  tool that ever passed over it. A stamp is one instanced quad over the
+'  tool's footprint; its fragment shader evaluates the tool's exact profile
+'  (flat, ball, bull nose, V-bit, tapered ball nose, drill, and the shank
+'  above the flutes) at the distance from the tip to the texel centre.
+'  Stamps are placed every half cell along each cutting move and streamed to
+'  the GPU in bounded chunks, so jobs with millions of moves stay fast.
 '  A second program draws the carved top surface as a displaced grid with
 '  normals derived from neighbouring texels, plus the sides of the board.
+'  The revolved tool mesh (ToolModel) only draws the tool above the board.
 '
 '  All methods must be called with the view's GL context current.
 ' ============================================================================
@@ -24,7 +29,8 @@ Public Class CarveSimulation
     Private _blankX0, _blankY0, _blankW, _blankH As Double
     Private _thickness As Double
     Private _tool As ToolModel                  ' first tool (kept for callers that ask for "the" tool)
-    Private _tools As New List(Of ToolModel)    ' one per distinct tool in the job
+    Private _tools As New List(Of ToolModel)    ' one per distinct tool in the job (drawn above the board)
+    Private _toolDefs As New List(Of ToolDefinition)   ' the same tools: shapes of the stamps
     Private _toolVaos As New List(Of Integer), _toolVbos As New List(Of Integer)
     Private _moveTool As Integer()              ' tool index of every move
     Private _thicknessForDraw As Single
@@ -34,7 +40,7 @@ Public Class CarveSimulation
     Private _tex As Integer
     Private _fbo As Integer
     Private _stampProg, _surfProg, _meshProg As Integer
-    Private _toolVao, _toolVbo, _instVbo As Integer
+    Private _stampVao, _quadVbo, _instVbo As Integer
     Private _surfVao, _surfVbo, _surfEbo As Integer
     Private _surfIndexCount As Integer
     Private _surfGx, _surfGy As Integer            ' display mesh cells
@@ -51,6 +57,14 @@ Public Class CarveSimulation
     Private _appliedMove As Integer = -1    ' last move (partially) applied
     Private _appliedFrac As Double = 0      ' fraction of that move applied
     Private _appliedTime As Double = 0
+
+    ' ---- stamp stream -------------------------------------------------------
+    Private Const FirstStampCapacity As Integer = 4096
+    Private Const MaxStampsPerFlush As Integer = 1048576        ' 12 MB of tip positions per upload
+    Private Const FragmentsPerDraw As Double = 268435456.0      ' bounds the work of one draw call
+    Private _stamps As Single() = New Single(3 * FirstStampCapacity - 1) {}   ' x, y, z of each pending stamp
+    Private _stampCount As Integer
+    Private _stampTool As Integer = -1          ' tool index of the pending stamps
 
     ''' <summary>Non-empty when the simulation could not be set up.</summary>
     Public ReadOnly Property SetupError As String
@@ -136,9 +150,10 @@ Public Class CarveSimulation
         _blankW = Math.Max(0.01, tp.BlankMaxX - tp.BlankMinX)
         _blankH = Math.Max(0.01, tp.BlankMaxY - tp.BlankMinY)
         _thickness = Math.Max(0.05, Math.Min(s.StockThickness, 2.0))
-        ' One mesh per distinct tool; every move knows which one cuts it.
+        ' One shape and mesh per distinct tool; every move knows which one cuts it.
         _tools.Clear()
-        Dim defs As New List(Of ToolDefinition)
+        _toolDefs.Clear()
+        Dim defs = _toolDefs
         _moveTool = New Integer(Math.Max(0, tp.Moves.Count - 1)) {}
         If tp.Segments.Count = 0 Then
             defs.Add(If(s.CarveTool, ToolDefinition.DefaultVBit()))
@@ -225,9 +240,24 @@ Public Class CarveSimulation
     End Sub
 
     Private Sub CreateToolBuffers()
+        ' Stamps: a unit quad (triangle strip of its corners) instanced once per tip position.
+        _stampVao = GL.GenVertexArray()
+        _quadVbo = GL.GenBuffer()
         _instVbo = GL.GenBuffer()
+        GL.BindVertexArray(_stampVao)
+        GL.BindBuffer(BufferTarget.ArrayBuffer, _quadVbo)
+        Dim corners As Single() = {-1.0F, -1.0F, 1.0F, -1.0F, -1.0F, 1.0F, 1.0F, 1.0F}
+        GL.BufferData(BufferTarget.ArrayBuffer, corners.Length * 4, corners, BufferUsageHint.StaticDraw)
+        GL.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, False, 8, 0)
+        GL.EnableVertexAttribArray(0)
         GL.BindBuffer(BufferTarget.ArrayBuffer, _instVbo)
         GL.BufferData(BufferTarget.ArrayBuffer, 12, IntPtr.Zero, BufferUsageHint.StreamDraw)
+        GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, False, 12, 0)
+        GL.EnableVertexAttribArray(1)
+        GL.VertexAttribDivisor(1, 1)
+        GL.BindVertexArray(0)
+
+        ' The tools drawn above the board: revolved meshes (position + normal).
         _toolVaos.Clear()
         _toolVbos.Clear()
         For Each tm In _tools
@@ -240,16 +270,10 @@ Public Class CarveSimulation
             GL.EnableVertexAttribArray(0)
             GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, False, 24, 12)
             GL.EnableVertexAttribArray(1)
-            GL.BindBuffer(BufferTarget.ArrayBuffer, _instVbo)
-            GL.VertexAttribPointer(2, 3, VertexAttribPointerType.Float, False, 12, 0)
-            GL.EnableVertexAttribArray(2)
-            GL.VertexAttribDivisor(2, 1)
             GL.BindVertexArray(0)
             _toolVaos.Add(vao)
             _toolVbos.Add(vbo)
         Next
-        _toolVao = _toolVaos(0)
-        _toolVbo = _toolVbos(0)
     End Sub
 
     Private Sub CreateSurfaceGrid()
@@ -328,19 +352,42 @@ Public Class CarveSimulation
     End Sub
 
     Private Sub CreatePrograms()
-        ' Stamp: tool instances from above into the heightmap, output = depth below Z0.
+        ' Stamp: one quad per tip position over the tool's footprint; each texel inside the tool's
+        ' radius gets the depth of the tool's lowest point above its centre, output = depth below Z0.
+        ' Profile height h(r) above the tip (r = distance from the axis, R = radius):
+        '   flat / ball / bull nose: 0 out to the flat radius R - e, then the corner arc e - sqrt(e^2 - (r - (R - e))^2);
+        '   V-bit / drill / tapered ball nose: tip ball e - sqrt(e^2 - r^2) out to the join, then the cone;
+        '   above the flute length the shank (radius R), so h never exceeds it.
         _stampProg = Link(
             "#version 330 core" & vbLf &
-            "layout(location = 0) in vec3 aPos;" & vbLf &
-            "layout(location = 1) in vec3 aNormal;" & vbLf &
-            "layout(location = 2) in vec3 aTip;" & vbLf &
+            "layout(location = 0) in vec2 aCorner;" & vbLf &   ' quad corner, -1..1
+            "layout(location = 1) in vec3 aTip;" & vbLf &      ' per stamp: tool tip position
             "uniform mat4 uOrtho;" & vbLf &
-            "out float vDepth;" & vbLf &
-            "void main() { vec3 w = aTip + aPos; gl_Position = uOrtho * vec4(w.x, w.y, 0.0, 1.0); vDepth = -w.z; }" & vbLf,
+            "uniform float uReach;" & vbLf &                   ' half the quad: tool radius plus half a cell
+            "flat out vec3 vTip;" & vbLf &
+            "void main() { vTip = aTip; gl_Position = uOrtho * vec4(aTip.xy + aCorner * uReach, 0.0, 1.0); }" & vbLf,
             "#version 330 core" & vbLf &
-            "in float vDepth;" & vbLf &
+            "flat in vec3 vTip;" & vbLf &
+            "uniform vec2 uOrigin;" & vbLf &                   ' blank corner: texel (0, 0) starts here
+            "uniform vec2 uTexelSize;" & vbLf &                ' inches per texel along X and Y
+            "uniform int uAngled;" & vbLf &                    ' 1: tip ball + cone (V-bit, drill, tapered ball nose)
+            "uniform float uRadius;" & vbLf &                  ' half the diameter
+            "uniform float uEnd;" & vbLf &                     ' ball, corner or tip-ball radius (0 when none)
+            "uniform float uFlatR;" & vbLf &                   ' radius of the flat bottom (end mills)
+            "uniform float uTanA;" & vbLf &                    ' tangent of the cone's half angle
+            "uniform vec2 uJoin;" & vbLf &                     ' (r, h) where the tip ball meets the cone
+            "uniform float uFlute;" & vbLf &                   ' flute length: the shank starts there
             "out float oDepth;" & vbLf &
-            "void main() { oDepth = max(vDepth, 0.0); }" & vbLf)
+            "float arcRise(float e, float x) { return x * x / max(e + sqrt(max(e * e - x * x, 0.0)), 1e-20); }" & vbLf &   ' e - sqrt(e^2 - x^2) without cancellation
+            "void main() {" & vbLf &
+            "  vec2 p = uOrigin + gl_FragCoord.xy * uTexelSize;" & vbLf &                   ' texel centre
+            "  float r = distance(p, vTip.xy);" & vbLf &
+            "  if (r > uRadius) discard;" & vbLf &
+            "  float h;" & vbLf &
+            "  if (uAngled == 1) h = r <= uJoin.x ? arcRise(uEnd, r) : uJoin.y + (r - uJoin.x) / uTanA;" & vbLf &
+            "  else h = r <= uFlatR ? 0.0 : arcRise(uEnd, r - uFlatR);" & vbLf &
+            "  oDepth = max(-(vTip.z + min(h, uFlute)), 0.0);" & vbLf &
+            "}" & vbLf)
 
         ' Surface: displaced grid with normals from neighbouring texels.
         _surfProg = Link(
@@ -459,26 +506,24 @@ Public Class CarveSimulation
         If t < _appliedTime - 0.000001 Then ClearHeightmap()
         If t <= _appliedTime + 0.000001 AndAlso _appliedMove >= 0 Then Return
 
-        Dim stampsByTool As New Dictionary(Of Integer, List(Of Single))
         Dim moves = _tp.Moves
-        Dim prev As Pt3 = If(_appliedMove >= 0, moves(_appliedMove).Target, New Pt3(0, 0, 0))
         Dim startMove As Integer = Math.Max(0, _appliedMove)
         Dim startFrac As Double = If(_appliedMove >= 0, _appliedFrac, 0.0)
         Dim i As Integer = startMove
         While i < moves.Count AndAlso _moveStart(i) < t
             Dim mv = moves(i)
-            Dim from As Pt3 = If(i = 0, New Pt3(0, 0, 0), moves(i - 1).Target)
             Dim dur = Math.Max(0.0, mv.Seconds)
             Dim f1 As Double = If(dur <= 0, 1.0, Math.Min(1.0, (t - _moveStart(i)) / dur))
             Dim f0 As Double = If(i = startMove, startFrac, 0.0)
             If f1 > f0 AndAlso mv.Kind <> MoveKind.Rapid Then
-                Dim ti = If(_moveTool IsNot Nothing AndAlso i < _moveTool.Length, _moveTool(i), 0)
-                Dim stamps As List(Of Single) = Nothing
-                If Not stampsByTool.TryGetValue(ti, stamps) Then
-                    stamps = New List(Of Single)
-                    stampsByTool(ti) = stamps
+                Dim from As Pt3 = If(i = 0, New Pt3(0, 0, 0), moves(i - 1).Target)
+                ' A move that stays at or above the stock top removes nothing.
+                If Math.Min(from.Z, mv.Target.Z) < 0 Then
+                    Dim ti = MoveTool(i)
+                    ' The start is already stamped when it was the end of the previous cut with this tool.
+                    Dim startDone = f0 > 0 OrElse (i > 0 AndAlso moves(i - 1).Kind <> MoveKind.Rapid AndAlso MoveTool(i - 1) = ti)
+                    AddStamps(ti, from, mv.Target, f0, f1, startDone)
                 End If
-                AddStamps(stamps, from, mv.Target, f0, f1)
             End If
             _appliedMove = i
             _appliedFrac = f1
@@ -486,49 +531,72 @@ Public Class CarveSimulation
             i += 1
         End While
         _appliedTime = t
-        For Each kv In stampsByTool
-            If kv.Value.Count > 0 Then Stamp(kv.Value.ToArray(), kv.Key)
-        Next
+        FlushStamps()
     End Sub
 
-    ''' <summary>Tool tip positions along a move from fraction f0 to f1, every half cell.</summary>
-    Private Sub AddStamps(stamps As List(Of Single), a As Pt3, b As Pt3, f0 As Double, f1 As Double)
+    Private Function MoveTool(i As Integer) As Integer
+        Return If(_moveTool IsNot Nothing AndAlso i < _moveTool.Length, _moveTool(i), 0)
+    End Function
+
+    ''' <summary>
+    ''' Queues tool tip positions along a move from fraction f0 to f1, every half cell
+    ''' (the start point too unless it is already stamped). Full queues go to the GPU.
+    ''' </summary>
+    Private Sub AddStamps(toolIndex As Integer, a As Pt3, b As Pt3, f0 As Double, f1 As Double, skipStart As Boolean)
+        If toolIndex <> _stampTool Then
+            FlushStamps()
+            _stampTool = toolIndex
+        End If
         Dim len = a.DistanceTo(b)
         Dim stepLen = _cell * 0.5
         Dim n As Integer = Math.Max(1, CInt(Math.Ceiling((f1 - f0) * len / stepLen)))
-        For k = 0 To n
+        For k = If(skipStart, 1, 0) To n
+            If _stampCount = MaxStampsPerFlush Then FlushStamps()
+            If _stampCount * 3 = _stamps.Length Then Array.Resize(_stamps, _stamps.Length * 2)
             Dim f = f0 + (f1 - f0) * k / n
-            If k = 0 AndAlso f0 > 0 Then Continue For      ' already stamped at the previous call
-            stamps.Add(CSng(a.X + (b.X - a.X) * f))
-            stamps.Add(CSng(a.Y + (b.Y - a.Y) * f))
-            stamps.Add(CSng(a.Z + (b.Z - a.Z) * f))
+            Dim j = _stampCount * 3
+            _stamps(j) = CSng(a.X + (b.X - a.X) * f)
+            _stamps(j + 1) = CSng(a.Y + (b.Y - a.Y) * f)
+            _stamps(j + 2) = CSng(a.Z + (b.Z - a.Z) * f)
+            _stampCount += 1
         Next
     End Sub
 
-    ''' <summary>Renders the tool at every stamp position into the heightmap with MAX blending.</summary>
-    Private Sub Stamp(data As Single(), toolIndex As Integer)
-        Dim count As Integer = data.Length \ 3
+    ''' <summary>Renders the queued stamps into the heightmap.</summary>
+    Private Sub FlushStamps()
+        If _stampCount > 0 Then Stamp(_stamps, _stampCount, _stampTool)
+        _stampCount = 0
+    End Sub
+
+    ''' <summary>Renders the tool at the first count stamp positions into the heightmap with MAX blending.</summary>
+    Private Sub Stamp(data As Single(), count As Integer, toolIndex As Integer)
+        Dim ti = Math.Max(0, Math.Min(_toolDefs.Count - 1, toolIndex))
+        Dim texelX = _blankW / _texW, texelY = _blankH / _texH
+        Dim radius = SetStampTool(_toolDefs(ti))
+        Dim reach = radius + 0.5 * Math.Max(texelX, texelY)
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo)
         GL.Viewport(0, 0, _texW, _texH)
         GL.Disable(EnableCap.DepthTest)
         GL.Enable(EnableCap.Blend)
         GL.BlendEquation(BlendEquationMode.Max)
         GL.BlendFunc(BlendingFactor.One, BlendingFactor.One)
-        GL.UseProgram(_stampProg)
         Dim ortho As Matrix4 = Matrix4.CreateOrthographicOffCenter(CSng(_blankX0), CSng(_blankX0 + _blankW), CSng(_blankY0), CSng(_blankY0 + _blankH), -1.0F, 1.0F)
         GL.UniformMatrix4(GL.GetUniformLocation(_stampProg, "uOrtho"), False, ortho)
-        Dim ti = Math.Max(0, Math.Min(_tools.Count - 1, toolIndex))
-        GL.BindVertexArray(_toolVaos(ti))
+        GL.Uniform1(GL.GetUniformLocation(_stampProg, "uReach"), CSng(reach))
+        GL.Uniform2(GL.GetUniformLocation(_stampProg, "uOrigin"), CSng(_blankX0), CSng(_blankY0))
+        GL.Uniform2(GL.GetUniformLocation(_stampProg, "uTexelSize"), CSng(texelX), CSng(texelY))
+        GL.BindVertexArray(_stampVao)
         GL.BindBuffer(BufferTarget.ArrayBuffer, _instVbo)
-        Const Chunk As Integer = 50000
-        Dim offset As Integer = 0
-        While offset < count
-            Dim n As Integer = Math.Min(Chunk, count - offset)
-            Dim part(n * 3 - 1) As Single
-            Array.Copy(data, offset * 3, part, 0, n * 3)
-            GL.BufferData(BufferTarget.ArrayBuffer, part.Length * 4, part, BufferUsageHint.StreamDraw)
-            GL.DrawArraysInstanced(PrimitiveType.Triangles, 0, _tools(ti).VertexCount, n)
-            offset += n
+        GL.BufferData(BufferTarget.ArrayBuffer, count * 12, data, BufferUsageHint.StreamDraw)
+        ' Several draw calls when the stamps are large (a big tool at a fine cell covers many texels each).
+        Dim texelsPerStamp = (2 * reach / texelX + 1) * (2 * reach / texelY + 1)
+        Dim perDraw As Integer = CInt(Math.Min(count, Math.Max(1024.0, FragmentsPerDraw / texelsPerStamp)))
+        Dim first As Integer = 0
+        While first < count
+            Dim n As Integer = Math.Min(perDraw, count - first)
+            GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, False, 12, first * 12)
+            GL.DrawArraysInstanced(PrimitiveType.TriangleStrip, 0, 4, n)
+            first += n
         End While
         GL.BindVertexArray(0)
         GL.UseProgram(0)
@@ -538,16 +606,48 @@ Public Class CarveSimulation
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0)
     End Sub
 
-    ''' <summary>Index of the tool cutting at simulated time t.</summary>
-    Public Function ToolIndexAt(t As Double) As Integer
-        If _tp Is Nothing OrElse _tp.Moves.Count = 0 OrElse _moveTool Is Nothing Then Return 0
-        t = Math.Max(0.0, Math.Min(t, _total))
+    ''' <summary>
+    ''' Makes the stamp program current with the profile of a tool (the same numbers and limits
+    ''' as ToolDefinition.FluteProfile). Returns the tool radius.
+    ''' </summary>
+    Private Function SetStampTool(d As ToolDefinition) As Double
+        Dim radius = Math.Max(0.0001, d.Diameter / 2.0)
+        Dim endR As Double, flatR As Double = 0, tanA As Double = 1, joinR As Double = 0, joinH As Double = 0
+        If d.UsesAngle Then
+            Dim a = Math.Max(0.1, Math.Min(179.9, d.AngleDeg)) * Math.PI / 360.0
+            tanA = Math.Tan(a)
+            endR = d.EffectiveEndRadius
+            joinR = endR * Math.Cos(a)
+            joinH = endR * (1 - Math.Sin(a))
+        Else
+            endR = Math.Min(d.EffectiveEndRadius, radius)
+            flatR = radius - endR
+        End If
+        GL.UseProgram(_stampProg)
+        GL.Uniform1(GL.GetUniformLocation(_stampProg, "uAngled"), If(d.UsesAngle, 1, 0))
+        GL.Uniform1(GL.GetUniformLocation(_stampProg, "uRadius"), CSng(radius))
+        GL.Uniform1(GL.GetUniformLocation(_stampProg, "uEnd"), CSng(endR))
+        GL.Uniform1(GL.GetUniformLocation(_stampProg, "uFlatR"), CSng(flatR))
+        GL.Uniform1(GL.GetUniformLocation(_stampProg, "uTanA"), CSng(tanA))
+        GL.Uniform2(GL.GetUniformLocation(_stampProg, "uJoin"), CSng(joinR), CSng(joinH))
+        GL.Uniform1(GL.GetUniformLocation(_stampProg, "uFlute"), CSng(Math.Max(0.0001, d.Length)))
+        Return radius
+    End Function
+
+    ''' <summary>Index of the move running at simulated time t (the last move after the end).</summary>
+    Private Function MoveAt(t As Double) As Integer
         Dim lo = 0, hi = _tp.Moves.Count - 1
         While lo < hi
             Dim mid = (lo + hi) \ 2
             If _moveStart(mid + 1) < t Then lo = mid + 1 Else hi = mid
         End While
-        Return If(lo < _moveTool.Length, _moveTool(lo), 0)
+        Return lo
+    End Function
+
+    ''' <summary>Index of the tool cutting at simulated time t.</summary>
+    Public Function ToolIndexAt(t As Double) As Integer
+        If _tp Is Nothing OrElse _tp.Moves.Count = 0 OrElse _moveTool Is Nothing Then Return 0
+        Return MoveTool(MoveAt(Math.Max(0.0, Math.Min(t, _total))))
     End Function
 
     ''' <summary>Tool tip position at simulated time t (for drawing the tool).</summary>
@@ -555,15 +655,12 @@ Public Class CarveSimulation
         If _tp Is Nothing OrElse _tp.Moves.Count = 0 Then Return New Pt3(0, 0, 0)
         t = Math.Max(0.0, Math.Min(t, _total))
         Dim moves = _tp.Moves
-        For i = 0 To moves.Count - 1
-            If t <= _moveStart(i + 1) OrElse i = moves.Count - 1 Then
-                Dim from As Pt3 = If(i = 0, New Pt3(0, 0, 0), moves(i - 1).Target)
-                Dim dur = Math.Max(0.000001, moves(i).Seconds)
-                Dim f = Math.Max(0.0, Math.Min(1.0, (t - _moveStart(i)) / dur))
-                Return New Pt3(from.X + (moves(i).Target.X - from.X) * f, from.Y + (moves(i).Target.Y - from.Y) * f, from.Z + (moves(i).Target.Z - from.Z) * f)
-            End If
-        Next
-        Return moves(moves.Count - 1).Target
+        Dim i = MoveAt(t)
+        Dim from As Pt3 = If(i = 0, New Pt3(0, 0, 0), moves(i - 1).Target)
+        Dim [to] = moves(i).Target
+        Dim dur = Math.Max(0.000001, moves(i).Seconds)
+        Dim f = Math.Max(0.0, Math.Min(1.0, (t - _moveStart(i)) / dur))
+        Return New Pt3(from.X + ([to].X - from.X) * f, from.Y + ([to].Y - from.Y) * f, from.Z + ([to].Z - from.Z) * f)
     End Function
 
     ' =====================================================================
@@ -639,6 +736,8 @@ Public Class CarveSimulation
                 If a <> 0 Then GL.DeleteVertexArray(a)
             Next
             If _instVbo <> 0 Then GL.DeleteBuffer(_instVbo)
+            If _quadVbo <> 0 Then GL.DeleteBuffer(_quadVbo)
+            If _stampVao <> 0 Then GL.DeleteVertexArray(_stampVao)
             If _surfVbo <> 0 Then GL.DeleteBuffer(_surfVbo)
             If _surfEbo <> 0 Then GL.DeleteBuffer(_surfEbo)
             If _surfVao <> 0 Then GL.DeleteVertexArray(_surfVao)
@@ -649,7 +748,8 @@ Public Class CarveSimulation
             If _meshProg <> 0 Then GL.DeleteProgram(_meshProg)
         Catch
         End Try
-        _fbo = 0 : _tex = 0 : _toolVbo = 0 : _instVbo = 0 : _toolVao = 0
+        _fbo = 0 : _tex = 0 : _instVbo = 0 : _quadVbo = 0 : _stampVao = 0
+        _stampCount = 0 : _stampTool = -1
         _toolVaos.Clear() : _toolVbos.Clear()
         _surfVbo = 0 : _surfEbo = 0 : _surfVao = 0 : _wallVbo = 0 : _wallVao = 0
         _stampProg = 0 : _surfProg = 0 : _meshProg = 0
@@ -658,7 +758,8 @@ Public Class CarveSimulation
     ''' <summary>Forget GL objects without deleting them (the context is already gone).</summary>
     Public Sub Forget()
         _ready = False
-        _fbo = 0 : _tex = 0 : _toolVbo = 0 : _instVbo = 0 : _toolVao = 0
+        _fbo = 0 : _tex = 0 : _instVbo = 0 : _quadVbo = 0 : _stampVao = 0
+        _stampCount = 0 : _stampTool = -1
         _toolVaos.Clear() : _toolVbos.Clear()
         _surfVbo = 0 : _surfEbo = 0 : _surfVao = 0 : _wallVbo = 0 : _wallVao = 0
         _stampProg = 0 : _surfProg = 0 : _meshProg = 0

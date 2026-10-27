@@ -180,6 +180,9 @@ Public Class Toolpath
     Public Property MaxY As Double
     Public Property MinZ As Double
 
+    ''' <summary>Cutting passes of 3D models (raster runs and contour loops), for the statistics.</summary>
+    Public Property ReliefPassCount As Integer
+
     ''' <summary>Total length of feed/plunge moves (inches).</summary>
     Public Property CutLength As Double
     ''' <summary>Total length of rapid moves (inches).</summary>
@@ -368,18 +371,21 @@ Public Enum DrawingKind
     Star
     Area
     Text
+    ''' <summary>An imported 3D model or depth image, carved as a relief (Relief.vb).</summary>
+    Model
 End Enum
 
 ''' <summary>
 ''' A drawing placed on the blank: an imported SVG (its text embedded so the project
-''' file is self-contained) or a shape or text drawn in the view. Either way the
-''' natural outline (Shape) is cached per instance and scaled into the placed box.
+''' file is self-contained), a shape or text drawn in the view, or a 3D model (its
+''' heightmap embedded; the 3D members are in Relief.vb). Either way the natural
+''' outline (Shape) is cached per instance and scaled into the placed box.
 ''' </summary>
 Public Class DesignObject
     <Category("Object"), DisplayName("Name")>
     Public Property Name As String = "Drawing"
 
-    <Category("Object"), DisplayName("Type"), [ReadOnly](True), Description("An imported SVG drawing, or a shape or text drawn on the blank.")>
+    <Category("Object"), DisplayName("Type"), [ReadOnly](True), Description("An imported SVG drawing, a shape or text drawn on the blank, or an imported 3D model.")>
     Public Property Kind As DrawingKind = DrawingKind.Svg
 
     <Category("Object"), DisplayName("Source file"), [ReadOnly](True)>
@@ -494,14 +500,14 @@ Public Class DesignObject
     <Browsable(False), JsonIgnore>
     Public ReadOnly Property IsDrawn As Boolean
         Get
-            Return Kind <> DrawingKind.Svg
+            Return Kind <> DrawingKind.Svg AndAlso Kind <> DrawingKind.Model
         End Get
     End Property
 
     ''' <summary>Which rows the Drawings tab shows for this kind of drawing.</summary>
     Public Function ShowsProperty(propertyName As String) As Boolean
         Select Case propertyName
-            Case NameOf(SvgFileName) : Return Kind = DrawingKind.Svg
+            Case NameOf(SvgFileName) : Return Kind = DrawingKind.Svg OrElse Kind = DrawingKind.Model
             Case NameOf(CornerRadius) : Return Kind = DrawingKind.Rectangle
             Case NameOf(Sides) : Return Kind = DrawingKind.Polygon
             Case NameOf(StarPoints), NameOf(StarInnerPercent) : Return Kind = DrawingKind.Star
@@ -509,6 +515,7 @@ Public Class DesignObject
                 Return Kind = DrawingKind.Text
             Case NameOf(LockAspect) : Return Kind <> DrawingKind.Text   ' text always scales evenly
         End Select
+        If ModelPropertyNames.Contains(propertyName) Then Return Kind = DrawingKind.Model
         Return True
     End Function
 
@@ -533,6 +540,8 @@ Public Class DesignObject
                 Return "area|" & String.Join(",", If(AreaPoints, New List(Of Double)).Select(Function(v) v.ToString("R", ci)))
             Case DrawingKind.Text
                 Return String.Join("|", "text", tol, If(FontName, ""), Bold, Italic, Align, LetterHeight.ToString("R", ci), LineSpacing.ToString("R", ci), TextWithLf())
+            Case DrawingKind.Model
+                Return String.Join("|", "model", ModelKey(), ModelUnits)
             Case Else
                 Return "svg|" & tol
         End Select
@@ -565,7 +574,11 @@ Public Class DesignObject
         ParseError = Nothing
         _usesSavedOutline = False
         Try
-            Shape = If(Kind = DrawingKind.Svg, SvgImport.Parse(SvgContent, tol), DrawingShapes.Build(Me, tol))
+            Select Case Kind
+                Case DrawingKind.Svg : Shape = SvgImport.Parse(SvgContent, tol)
+                Case DrawingKind.Model : Shape = BuildModelShape()
+                Case Else : Shape = DrawingShapes.Build(Me, tol)
+            End Select
         Catch ex As Exception
             ParseError = ex.Message
             ' A drawn shape that cannot be built on this PC (a font it lacks) carves the outline
@@ -615,6 +628,7 @@ Public Class DesignObject
         If Not Double.IsFinite(StarInnerPercent) Then StarInnerPercent = 50
         If Not Double.IsFinite(LetterHeight) Then LetterHeight = 1
         If Not Double.IsFinite(LineSpacing) Then LineSpacing = 1
+        RepairModel()
     End Sub
 
     Public Sub Normalize()
@@ -769,6 +783,7 @@ Public Class DesignObject
     Public Function Clone() As DesignObject
         Dim o = DirectCast(MemberwiseClone(), DesignObject)
         o.Machining = If(Machining?.Clone(), New Machining())
+        o.FinishMachining = FinishMachining?.Clone()
         o.AreaPoints = New List(Of Double)(If(AreaPoints, New List(Of Double)))
         Return o
     End Function

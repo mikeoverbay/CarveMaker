@@ -1,4 +1,4 @@
-# CarveMaker handoff (updated 2026-10-22: drawing tools, text drawings, GPU picking)
+# CarveMaker handoff (updated 2026-10-26: 3D models / relief carving, Shift to select)
 
 Written so any session (or person) can pick the project up without the chat
 history. Read this, then `README.md` for the user-facing description.
@@ -18,9 +18,10 @@ history. Read this, then `README.md` for the user-facing description.
 - Shipping a release is the whole job, done in one go (the user asked for that):
   1. run the harness modes; 2. write `release-notes.md` for the new version;
   3. bump `<Version>` in `Directory.Build.props` and the fallback `AppVersion` in
-  `Setup/Setup.iss`; 4. `dotnet build CarveMaker.sln -c Release` (installer
-  `CarveMaker-Setup-<ver>.exe` in the root); 5. commit, `git tag -a vX.Y.Z`, push
-  master and the tag; 6. watch the Actions run for the tag and check the release has
+  `Setup/Setup.iss`; 4. commit, then `dotnet build CarveMaker.sln -c Release`
+  (installer `CarveMaker-Setup-<ver>.exe` in the root; build after the commit so the
+  exe's version carries the release commit's hash, not its parent's); 5.
+  `git tag -a vX.Y.Z`, push master and the tag; 6. watch the Actions run for the tag and check the release has
   the installer (public pages: /actions, /releases/expanded_assets/vX.Y.Z); 7. install
   it here (`CarveMaker-Setup-<ver>.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
   /CURRENTUSER`, per-user, upgrades in place) once CarveMaker is closed.
@@ -48,7 +49,11 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
 | `GCodeWriter.vb` | FluidNC-style program: `G0 G53 Z0`, `G54`, `M8`, `S M3`, `G4 P`, first move `G0 X Y` then `G0 Z`, footer `G0 G53 Z0`, `M5`, `M9`, `M30` |
 | `ToolpathView.vb` | OpenTK GLControl: layers, camera, back-buffer picking (`PickAt`, ID colours + stencil fill in a 16x16 FBO), handles (uniform corners, one-way sides, rotation knob), draw tools (`ActiveTool`, `ShapeDrawn` event), simulation playback API (`SetToolpath`, `UpdateSimulationSettings`, `SimulationInfo`) |
 | `DrawingShapes.vb` | Natural outlines of drawn kinds (rounded rectangle, ellipse, polygon, star, free-form area, text via `GlyphOutline` on a huge temporary blank), normalized like an SVG import; `ToSvg` |
-| `CarveSimulation.vb` | GPU material removal: R32F heightmap FBO, instanced tool stamps with MAX blend every half cell, surface mesh (one vertex per cell up to the Display mesh budget, triangle strips, texel-centre sampling), board walls |
+| `CarveSimulation.vb` | GPU material removal: R32F heightmap FBO; every half cell along each cut one instanced QUAD stamp whose fragment shader evaluates the tool's exact profile (flat/ball/bull/V/tapered ball, capped at the flute length) and MAX-blends the depth; stamps streamed in bounded chunks (millions of 3D moves); surface mesh (one vertex per cell up to the Display mesh budget, triangle strips, texel-centre sampling), board walls; ToolModel meshes only draw the tool |
+| `ModelImport.vb` | 3D models and depth images: readers (STL bin/ASCII, OBJ, PLY ascii/LE/BE, 3MF with units + transforms, OFF, images), `DetectUp` (thin axis -> its non-flat side; else +Z, or the side with the most relief when +Z is flat), `Orient` (right-handed, never mirrored), conservative `Rasterize` (cell = max of the model over the cell), `ReliefModel` (Heights 0..1 / NaN, natural size, `ToBytes`/`FromBytes` UInt16 rounded up + row deltas + zlib, `Footprint`, `CreatePreview`) |
+| `ReliefEngine.vb` | `ReliefGrid` (absolute-Z cell columns), drop cutter with block-max pruning, `Finishing` (raster in a rotated frame, Refine/staircases, one-sided Simplify, FinishLift 0.0001", links along the surface, level clamping when not roughed), `Roughing` (widened drop on a node grid: allowance + node diagonal; levels; raster runs + marching-squares boundary loops; rapid down to the level above + 0.02 on row nodes) |
+| `Relief.vb` | `DesignObject` partial for `DrawingKind.Model` (ModelData, ScalePercent, Depth/ModelDepth/DepthFollowsSize, TopOffset, ModelUnits, ModelUp, MachineArea, FinishMachining, `FromModel`, `ReplaceModel`) and `ReliefJob` (JobBuilder step 0: problems, roughing of every model then finishing, cache of compact local toolpaths keyed by everything but position/rotation, `Layout`/`BuildGrid` with max-pooling below 0.002" cells, `Trace` hook for tests) |
+| `frmMain.Relief.vb` | Import 3D (async, hops back to the UI thread if the await resumed elsewhere), the busy bar / Abort / Stop Generating controls, carved side and units edits, Draw > Scale dialog (`frmScale`) |
 | `ToolModel.vb` | Revolved mesh of any library tool (`ToolDefinition.FullProfile`: flutes + one-diameter shank stub) |
 | `ToolLibrary.vb` | `ToolType`, `ToolDefinition` (diameter, flute length, end radius, included angle; profile, validation, auto names), `ToolLibrary` (JSON in %AppData%\CarveMaker, standard inch tools), `InchFormat` (fractions), `ToolPickerEditor` (V-bit-only picker, no longer on any grid row; toolpath rows use `MachiningToolEditor` in Machining.vb) |
 | `ToolDrawing.vb` | Scale side view of a tool with dimensions; tree icons |
@@ -151,6 +156,20 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
    (frmMain.Toolbars.vb): docked in `tspTop/Bottom/Left/Right` around the GL view (grip
    drag between edges), floating in `ToolbarWindow` (drag off the view or right-click >
    Float; closing hides, title double-click docks), View > Toolbars to show/hide/reset.
+13. **3D models (reliefs).** See the file map. A model is a `DesignObject` of kind Model whose
+   `Machining` is its roughing and `FinishMachining` its finishing (`CutOperation.Roughing3D` /
+   `Finishing3D`; the Drawings grid shows both flat via `FilteredView`'s second Machining, matched by
+   descriptor REFERENCE: descriptors of the same property compare equal until their category is read).
+   Projects with a model are file version 2 (older versions refuse them cleanly). Generation now runs
+   `JobBuilder.Generate` AND `ToolpathView.PrepareLines` (line vertex arrays) on the worker and posts the
+   result with `BeginInvoke`; `SetGenerating` disables Generate / Export / simulation controls and shows
+   Abort. Verified on the dragon (3.2M triangles): import 2.7 s, 15" toolpaths ~21 s (roughing 58k moves,
+   finishing 3.9M moves / 78 MB G-code), independent brute-force gouge check: roughing never closer
+   than the 0.010" allowance, finishing >= 0.00008" above the columns.
+14. **Shift to select, hover light, box picking.** With the select tool a plain left drag always pans;
+   Shift at the press (read from the mouse message, MK_SHIFT) selects / moves / uses handles,
+   Shift+Ctrl+click cycles, Alt turns freely (was Shift). The drawing under the mouse lights up
+   (`AddHoverLight`, model pictures brighten). Every drawing is picked anywhere in its rotated box.
 12. **Picking rules and the user guide.** `PickAt` collects every object near the
    cursor (one GPU pass per nearby object, `PickAllAt`) and picks: under the cursor,
    then the smallest box, then the nearest, then the topmost. Clicks use
@@ -179,6 +198,10 @@ torture SVG folders and their expectation scripts). Build with
 | `mill` | Pocket and profile: wall gouge and floor coverage, island clearance, 90% stepover clean-up, profile offsets and direction, through cut + tabs, refused tools, job order and tool groups, per-tool G-code, project round trip, and the form + multi-tool simulation on screen. `mill nogui` skips the screen part |
 | `helpshots <folder>` | Retakes the user-guide screenshots (main window, handles, simulation, tool library) into a folder, normally `C:\Text_to_CNC_path\Help\images` |
 | `draw` | Drawing: outlines of every kind (areas, tolerance, aspect), text sizing and alignment, grid rows per kind, SVG export and project round trip, carving; on screen: draw tools by mouse messages, GPU picking (holes, overlaps, edge slack), side/corner/rotation handles, text tool + typing + corner sizing, style toolbar and menu, double-click edit + Esc, area tool, Esc and Delete. `draw nogui` skips the screen part |
+| `relief` | 3D: dragon import (side, units, size), storage round trip, grid rows of a model, 15" scale + depth, roughing + finishing with an independent brute-force gouge check on sampled moves, the toolpath cache when moving, G-code programs |
+| `reliefgui` | 3D import through the form (env `SMOKE_SHOTS=1` screenshots during generation, `SMOKE_HOVER=1` hover light check, `SMOKE_STEPS=1` tab-switch steps) |
+| `reliefdemo` | Opens the window maximized, imports the dragon at 15" on a 16" blank, shows the simulation and leaves the window to the user |
+| `modelinfo <file> [dir]` | What the importer makes of a model: side, units, size, height spread, and a preview PNG per side |
 | `tools` | Tool library: profiles and meshes of all standard tools, inch parsing, validation, settings/project migration, library file, the dialog (edits, type switch, save, pick mode) and the simulation tool, with screenshots. `tools nogui` skips the screen part |
 
 The torture expectations (`svg-torture-transforms-expect.js`,
@@ -208,6 +231,16 @@ The torture expectations (`svg-torture-transforms-expect.js`,
   hides a function `F`.
 - The harness sets `UserPreferences.FilePath` to a temp file in `Program.Main`: GUI
   modes would otherwise read and overwrite the user's snap settings and toolbar layout.
+- The harness installs a `WindowsFormsSynchronizationContext` in `Program.Main` (after
+  `SetCompatibleTextRenderingDefault`): without it an `Await` in the form resumes on a pool thread,
+  because the tests pump with `DoEvents` instead of `Application.Run` (that broke the Drawings tab and
+  lost generation results until found). The app itself also hops back with `InvokeRequired`.
+- A running Debug CarveMaker locks `bin\Debug`: build the app with `-p:OutDir=<scratch>` and copy that
+  CarveMaker.dll over the harness's copy (harness built with its own `-p:OutDir`) instead of killing it.
+- Agent worktrees live under `.claude\worktrees`; `CarveMaker.vbproj` excludes `.claude\**` from
+  compilation so their .vb files never get globbed into the app.
+- Handle cursors only show while the real Shift key is down, so tests find handles with
+  `view.WorldToScreen` of the drawing's corners, and send `MK_LBUTTON Or MK_SHIFT` for select drags.
 - Toolbar layout is saved as row + order, not pixels: restoring pixel positions during
   Load (before the toolbars have their final widths) scrambled the order.
 - Harness mouse drags are window messages; the real mouse moving over the window

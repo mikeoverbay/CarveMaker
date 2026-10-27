@@ -32,6 +32,7 @@ Partial Class frmMain
         mnuFileSep0 = New ToolStripSeparator()
         mnuFileImportText = New ToolStripMenuItem()
         mnuFileImportSvg = New ToolStripMenuItem()
+        mnuFileImportModel = New ToolStripMenuItem()
         mnuFileSaveGcode = New ToolStripMenuItem()
         mnuFileSep1 = New ToolStripSeparator()
         mnuFileExit = New ToolStripMenuItem()
@@ -70,6 +71,7 @@ Partial Class frmMain
         mnuDrawRotateLeft = New ToolStripMenuItem()
         mnuDrawRotateRight = New ToolStripMenuItem()
         mnuDrawMirror = New ToolStripMenuItem()
+        mnuDrawScale = New ToolStripMenuItem()
         mnuDrawFront = New ToolStripMenuItem()
         mnuDrawBack = New ToolStripMenuItem()
         mnuDrawSep3 = New ToolStripSeparator()
@@ -129,6 +131,7 @@ Partial Class frmMain
         tabObjects = New TabPage()
         tsObjects = New ToolStrip()
         tsbObjImport = New ToolStripButton()
+        tsbObjImportModel = New ToolStripButton()
         tsbObjRemove = New ToolStripButton()
         tsbObjFit = New ToolStripButton()
         tsbObjCenter = New ToolStripButton()
@@ -165,6 +168,7 @@ Partial Class frmMain
         dlgOpenProject = New OpenFileDialog()
         dlgSaveProject = New SaveFileDialog()
         dlgSvg = New OpenFileDialog()
+        dlgModel = New OpenFileDialog()
         mnuMain.SuspendLayout()
         stsMain.SuspendLayout()
         CType(splitMain, System.ComponentModel.ISupportInitialize).BeginInit()
@@ -202,7 +206,7 @@ Partial Class frmMain
         '
         ' mnuFile
         '
-        mnuFile.DropDownItems.AddRange(New ToolStripItem() {mnuFileNew, mnuFileOpenProject, mnuFileSaveProject, mnuFileSaveProjectAs, mnuFileSep0, mnuFileImportText, mnuFileImportSvg, mnuFileSaveGcode, mnuFileSep1, mnuFileExit})
+        mnuFile.DropDownItems.AddRange(New ToolStripItem() {mnuFileNew, mnuFileOpenProject, mnuFileSaveProject, mnuFileSaveProjectAs, mnuFileSep0, mnuFileImportText, mnuFileImportSvg, mnuFileImportModel, mnuFileSaveGcode, mnuFileSep1, mnuFileExit})
         mnuFile.Name = "mnuFile"
         mnuFile.Size = New Size(37, 20)
         mnuFile.Text = "&File"
@@ -250,6 +254,13 @@ Partial Class frmMain
         mnuFileImportSvg.Name = "mnuFileImportSvg"
         mnuFileImportSvg.Size = New Size(230, 22)
         mnuFileImportSvg.Text = "Import SVG &Drawing..."
+        '
+        ' mnuFileImportModel
+        '
+        mnuFileImportModel.Name = "mnuFileImportModel"
+        mnuFileImportModel.ShortcutKeys = Keys.Control Or Keys.Shift Or Keys.I
+        mnuFileImportModel.Size = New Size(230, 22)
+        mnuFileImportModel.Text = "Import 3D &Model / Depth Image..."
         ' 
         ' mnuFileSaveGcode
         ' 
@@ -407,7 +418,7 @@ Partial Class frmMain
         '
         ' mnuDraw
         '
-        mnuDraw.DropDownItems.AddRange(New ToolStripItem() {mnuDrawSelect, mnuDrawSep0, mnuDrawRectangle, mnuDrawEllipse, mnuDrawPolygon, mnuDrawStar, mnuDrawArea, mnuDrawText, mnuDrawSep1, mnuDrawEditText, mnuDrawSep2, mnuDrawRotateLeft, mnuDrawRotateRight, mnuDrawMirror, mnuDrawFront, mnuDrawBack, mnuDrawSep4, mnuDrawSnapGrid, mnuDrawGridSpacing, mnuDrawRotationSnap, mnuDrawSep3, mnuDrawDelete})
+        mnuDraw.DropDownItems.AddRange(New ToolStripItem() {mnuDrawSelect, mnuDrawSep0, mnuDrawRectangle, mnuDrawEllipse, mnuDrawPolygon, mnuDrawStar, mnuDrawArea, mnuDrawText, mnuDrawSep1, mnuDrawEditText, mnuDrawSep2, mnuDrawScale, mnuDrawRotateLeft, mnuDrawRotateRight, mnuDrawMirror, mnuDrawFront, mnuDrawBack, mnuDrawSep4, mnuDrawSnapGrid, mnuDrawGridSpacing, mnuDrawRotationSnap, mnuDrawSep3, mnuDrawDelete})
         mnuDraw.Name = "mnuDraw"
         mnuDraw.Size = New Size(46, 20)
         mnuDraw.Text = "&Draw"
@@ -500,6 +511,12 @@ Partial Class frmMain
         mnuDrawMirror.Name = "mnuDrawMirror"
         mnuDrawMirror.Size = New Size(220, 22)
         mnuDrawMirror.Text = "&Mirror"
+        '
+        ' mnuDrawScale
+        '
+        mnuDrawScale.Name = "mnuDrawScale"
+        mnuDrawScale.Size = New Size(220, 22)
+        mnuDrawScale.Text = "Scal&e..."
         '
         ' mnuDrawFront
         '
@@ -928,7 +945,7 @@ Partial Class frmMain
         ' tsObjects
         ' 
         tsObjects.GripStyle = ToolStripGripStyle.Hidden
-        tsObjects.Items.AddRange(New ToolStripItem() {tsbObjImport, tsbObjRemove, tsbObjFit, tsbObjCenter})
+        tsObjects.Items.AddRange(New ToolStripItem() {tsbObjImport, tsbObjImportModel, tsbObjRemove, tsbObjFit, tsbObjCenter})
         tsObjects.Location = New Point(3, 3)
         tsObjects.Name = "tsObjects"
         tsObjects.RenderMode = ToolStripRenderMode.System
@@ -942,6 +959,14 @@ Partial Class frmMain
         tsbObjImport.Size = New Size(78, 22)
         tsbObjImport.Text = "Import SVG..."
         tsbObjImport.ToolTipText = "Add an SVG drawing to the blank"
+        '
+        ' tsbObjImportModel
+        '
+        tsbObjImportModel.DisplayStyle = ToolStripItemDisplayStyle.Text
+        tsbObjImportModel.Name = "tsbObjImportModel"
+        tsbObjImportModel.Size = New Size(72, 22)
+        tsbObjImportModel.Text = "Import 3D..."
+        tsbObjImportModel.ToolTipText = "Add a 3D model (STL, OBJ, PLY, 3MF, OFF) or a depth image to the blank, carved as a relief"
         ' 
         ' tsbObjRemove
         ' 
@@ -1256,6 +1281,10 @@ Partial Class frmMain
         dlgSvg.Filter = "SVG drawings (*.svg)|*.svg|All files (*.*)|*.*"
         dlgSvg.Title = "Import SVG"
         '
+        ' dlgModel
+        '
+        dlgModel.Title = "Import 3D Model or Depth Image"
+        '
         ' frmMain
         '
         AutoScaleDimensions = New SizeF(7.0F, 15.0F)
@@ -1317,6 +1346,7 @@ Partial Class frmMain
     Friend WithEvents mnuFileSep0 As ToolStripSeparator
     Friend WithEvents mnuFileImportText As ToolStripMenuItem
     Friend WithEvents mnuFileImportSvg As ToolStripMenuItem
+    Friend WithEvents mnuFileImportModel As ToolStripMenuItem
     Friend WithEvents mnuFileSaveGcode As ToolStripMenuItem
     Friend WithEvents mnuFileSep1 As ToolStripSeparator
     Friend WithEvents mnuFileExit As ToolStripMenuItem
@@ -1350,6 +1380,7 @@ Partial Class frmMain
     Friend WithEvents tabObjects As TabPage
     Friend WithEvents tsObjects As ToolStrip
     Friend WithEvents tsbObjImport As ToolStripButton
+    Friend WithEvents tsbObjImportModel As ToolStripButton
     Friend WithEvents tsbObjRemove As ToolStripButton
     Friend WithEvents tsbObjFit As ToolStripButton
     Friend WithEvents tsbObjCenter As ToolStripButton
@@ -1386,6 +1417,7 @@ Partial Class frmMain
     Friend WithEvents dlgOpenProject As OpenFileDialog
     Friend WithEvents dlgSaveProject As SaveFileDialog
     Friend WithEvents dlgSvg As OpenFileDialog
+    Friend WithEvents dlgModel As OpenFileDialog
     Friend WithEvents mnuHelp As ToolStripMenuItem
     Friend WithEvents mnuHelpGuide As ToolStripMenuItem
     Friend WithEvents mnuHelpReleases As ToolStripMenuItem
@@ -1415,6 +1447,7 @@ Partial Class frmMain
     Friend WithEvents mnuDrawRotateLeft As ToolStripMenuItem
     Friend WithEvents mnuDrawRotateRight As ToolStripMenuItem
     Friend WithEvents mnuDrawMirror As ToolStripMenuItem
+    Friend WithEvents mnuDrawScale As ToolStripMenuItem
     Friend WithEvents mnuDrawFront As ToolStripMenuItem
     Friend WithEvents mnuDrawBack As ToolStripMenuItem
     Friend WithEvents mnuDrawSep3 As ToolStripSeparator

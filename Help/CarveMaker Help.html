@@ -63,6 +63,7 @@
   <a class="sub" href="#select">Selecting and editing</a>
   <a class="sub" href="#snap">Snapping</a>
   <a class="sub" href="#svg">Importing SVG</a>
+  <a href="#models">3D models</a>
   <a href="#toolbars">Toolbars</a>
   <a href="#toolpaths">Toolpaths</a>
   <a href="#tools">Tool library</a>
@@ -109,7 +110,7 @@
 <ul>
   <li><b>Size</b> buttons: Large, Medium and Small. Their inch sizes are in the settings below the editor (<i>1. Sizes and fonts</i>), and each size has its own font: expand <i>Size 1 - Large font</i> to pick the family, bold and italic, or put the caret on a line and use <span class="menu">Font &gt; Choose Font for Current Line's Size</span> (<kbd>Ctrl</kbd>+<kbd>F</kbd>).</li>
   <li><b>Align</b> buttons: Left starts at the left margin, Center centres on the blank, Right ends at the right margin.</li>
-  <li><i>2. Placement on the blank</i>: Top, Middle or Bottom, plus a <i>Text offset</i> to nudge the block. You can also drag the text block in the view.</li>
+  <li><i>2. Placement on the blank</i>: Top, Middle or Bottom, plus a <i>Text offset</i> to nudge the block. You can also <kbd>Shift</kbd>+drag the text block in the view.</li>
   <li><i>3. Toolpath</i>: how the text is cut (see <a href="#toolpaths">Toolpaths</a>).</li>
 </ul>
 <p>By default sizes mean the height of a capital letter (<i>Size means: CapHeight</i>).</p>
@@ -121,7 +122,7 @@
 <p>Pick a tool on the <i>Draw Tools</i> toolbar or in the <span class="menu">Draw</span> menu. With the view focused you can also press its key.</p>
 <table>
   <tr><th>Tool</th><th>Key</th><th>How to use it</th></tr>
-  <tr><td>Select</td><td><kbd>V</kbd> / <kbd>Esc</kbd></td><td>Click to select, drag to move.</td></tr>
+  <tr><td>Select</td><td><kbd>V</kbd> / <kbd>Esc</kbd></td><td><kbd>Shift</kbd>+click to select, <kbd>Shift</kbd>+drag to move. A plain drag moves the view.</td></tr>
   <tr><td>Rectangle</td><td><kbd>R</kbd></td><td>Drag a box. <i>Corner radius</i> rounds the corners.</td></tr>
   <tr><td>Ellipse</td><td><kbd>E</kbd></td><td>Drag a box.</td></tr>
   <tr><td>Polygon</td><td><kbd>P</kbd></td><td>Drag a box; set <i>Sides</i> (3 to 64).</td></tr>
@@ -136,7 +137,7 @@
 <ul>
   <li>After drawing the box an editor opens under the text. Type; <kbd>Enter</kbd> starts a new line; <kbd>Ctrl</kbd>+<kbd>Enter</kbd> or a click elsewhere finishes; <kbd>Esc</kbd> cancels.</li>
   <li>To change the words later, double-click the text, or use <span class="menu">Draw &gt; Edit Text</span>.</li>
-  <li>The size is the <i>Letter height</i> (height of a capital letter). Dragging a corner of the text resizes the lettering.</li>
+  <li>The size is the <i>Letter height</i> (height of a capital letter). <kbd>Shift</kbd>+dragging a corner of the text resizes the lettering.</li>
   <li>The <i>Text Style</i> toolbar and the <span class="menu">Style</span> menu set the font, <b>bold</b>, <i>italic</i> and the alignment of the lines. With no text drawing selected they set the style for the next one.</li>
 </ul>
 
@@ -145,12 +146,14 @@
   <img src="images/handles.png" alt="A selected star with its handles and rotation knob">
   <figcaption>A selected drawing: the box with corner handles, and the round rotation knob above it.</figcaption>
 </figure>
+<p class="tip"><b>Hold <kbd>Shift</kbd> to work on drawings.</b> With the Select tool a plain left drag always moves the view, even over a drawing, so you can pan freely without moving anything by accident. Holding <kbd>Shift</kbd> when you press the mouse button selects, moves, scales and rotates. (While <kbd>Shift</kbd> is held the cursor shows what a press would do.)</p>
 <ul>
-  <li><b>Click</b> a drawing to select it, or pick it in the list on the Drawings tab. Clicks follow the actual outline: the inside of a ring or the empty corners around a circle select nothing.</li>
-  <li><b>Where drawings overlap</b>, a click picks the smallest one under the mouse (text inside a frame picks the text). Once something is selected, pressing anywhere on it keeps it: it is moved, scaled or rotated even where other drawings lie over it. <b><kbd>Ctrl</kbd>+click</b> steps to the next drawing under the mouse, so you can reach one that lies behind or around another.</li>
-  <li><b>Move</b> by dragging, or nudge with the arrow keys (0.01", or 0.1" with <kbd>Shift</kbd>).</li>
-  <li><b>Scale</b> with the corner handles; they scale evenly about the opposite corner. The side handles stretch one way and appear when <i>Lock aspect ratio</i> is off (drawn shapes start unlocked).</li>
-  <li><b>Rotate</b> with the round knob above the box. It turns in steps (15 degrees by default); hold <kbd>Shift</kbd> to turn freely.</li>
+  <li><b><kbd>Shift</kbd>+click</b> a drawing to select it, or pick it in the list on the Drawings tab. A drawing is picked anywhere in its box. The drawing under the mouse lights up (its outline and box) as you move over it, so you can see what a <kbd>Shift</kbd>+click will take. <kbd>Shift</kbd>+click on empty space, or <kbd>Esc</kbd>, deselects.</li>
+  <li><b>Where drawings overlap</b>, a <kbd>Shift</kbd>+click picks the one with the smallest box under the mouse (text inside a frame picks the text). Once something is selected, a <kbd>Shift</kbd>+press anywhere on it keeps it: it is moved, scaled or rotated even where other drawings lie over it. <b><kbd>Shift</kbd>+<kbd>Ctrl</kbd>+click</b> steps to the next drawing under the mouse, so you can reach one that lies behind or around another.</li>
+  <li><b>Move</b> by <kbd>Shift</kbd>+dragging the drawing, or nudge the selection with the arrow keys (0.01", or 0.1" with <kbd>Shift</kbd>).</li>
+  <li><b>Scale</b> by <kbd>Shift</kbd>+dragging the corner handles; they scale evenly about the opposite corner. The side handles stretch one way and appear when <i>Lock aspect ratio</i> is off (drawn shapes start unlocked). <span class="menu">Draw &gt; Scale</span> sets an exact size or percentage.</li>
+  <li><b>Rotate</b> by <kbd>Shift</kbd>+dragging the round knob above the box. It turns in steps (15 degrees by default); add <kbd>Alt</kbd> to turn freely.</li>
+  <li>A plain double-click on a text drawing still opens it for typing; a plain double-click on empty space fits the view.</li>
   <li><span class="menu">Draw</span> also has Rotate 90&deg; Left/Right, Mirror, Bring to Front, Send to Back and Delete (<kbd>Delete</kbd> key).</li>
   <li>Exact values (position, size, rotation, shape and text settings) can be typed on the Drawings tab.</li>
 </ul>
@@ -159,13 +162,33 @@
 <ul>
   <li><b>Snap to grid</b>: the grid button on the <i>Snap</i> toolbar or <span class="menu">Draw &gt; Snap to Grid</span>. Pick the spacing (1" down to 1/32", 0.1" or 0.05"); picking one turns snapping on. A finer grid is drawn at that spacing.</li>
   <li>Moving lines up the nearest box corner or the centre of the drawing with the grid. Side handles put that side on the grid; corner handles scale until the corner reaches a grid line. New shapes, text and area corners land on grid points.</li>
-  <li>Hold <kbd>Alt</kbd> while dragging to place something freely.</li>
+  <li>Hold <kbd>Alt</kbd> while dragging to place something freely (and to turn freely while rotating).</li>
   <li><b>Rotation snap</b> (<i>Rotate</i> list on the Snap toolbar, or <span class="menu">Draw &gt; Rotation Snap</span>): Off, 1, 5, 15, 30, 45 or 90 degrees.</li>
   <li>Snap settings are remembered for the next start.</li>
 </ul>
 
 <h3 id="svg">Importing SVG</h3>
 <p><span class="menu">File &gt; Import SVG Drawing</span> or <b>Import SVG</b> on the Drawings tab. Logos, clipart and line art are carved like text. Paths, basic shapes, groups, transforms, symbols, styles and strokes are supported; <code>&lt;text&gt;</code> must be converted to paths in your drawing program first. The drawing is placed in the centre of the blank, shrunk to fit if needed. <b>Fit to Blank</b> and <b>Center</b> on the Drawings tab size and place it. Sample files are in the <i>Samples</i> folder next to the program.</p>
+
+<h2 id="models">3D models</h2>
+<p><span class="menu">File &gt; Import 3D Model / Depth Image</span> (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd>) or <b>Import 3D</b> on the Drawings tab reads <b>STL</b> (binary or text), <b>OBJ</b>, <b>PLY</b>, <b>3MF</b> and <b>OFF</b> models, and grayscale <b>depth images</b> (PNG, JPG, BMP, GIF, TIFF: light is high). A big file takes a few seconds; the window stays usable meanwhile.</p>
+<p>A router reaches only what it sees from straight above, so a model is carved as its <b>relief</b>: its surface seen from one side. Anything hidden under an overhang is filled in, never cut into.</p>
+<ul>
+  <li><b>Carved side</b> (Relief rows on the Drawings tab): which side of the model faces the cutter. It is found on import: for a relief, the face that is not flat; for anything else the top, unless the top is flat, then the side with the most relief (the status bar says so). Pick another side here if needed; this reads the model file again.</li>
+  <li><b>Size</b>: type the <i>Width</i> or <i>Height</i>, the <i>Scale (%)</i> of the model's own size, use <span class="menu">Draw &gt; Scale</span>, or <kbd>Shift</kbd>+drag a corner handle. <b>Fit to Blank</b> and <b>Center</b> on the Drawings tab work too.</li>
+  <li><b>Depth</b>: how deep the relief is from its lowest to its highest point. It follows the size (the model keeps its proportions) until you type a depth. <i>Top below stock</i> lowers the whole relief under the stock top.</li>
+  <li><b>Model units</b>: STL and OBJ files do not say their units. Millimetres are assumed for a large model; change it if the size is wrong (the scale percentage stays).</li>
+  <li><b>Machine area</b>: <i>Inside the model's outline</i> keeps the tool centre over the model (its edge still cuts a tool radius beyond it, down to the model's lowest level), or <i>The whole box</i>.</li>
+</ul>
+<p>Every 3D model has two toolpaths, <b>Toolpath 1 - Roughing</b> and <b>Toolpath 2 - Finishing</b>, each with its own tool, speeds and feeds and a <i>Cut this pass</i> switch. Any tool can be used except a drill.</p>
+<table>
+  <tr><th>Pass</th><th>What it does</th></tr>
+  <tr><td>Roughing</td><td>Usually a flat end mill. Clears the stock in flat levels (<i>Pass depth</i> apart), with straight runs (<i>Stepover</i> apart) and a pass around the edge of each level, and leaves the <i>Allowance</i> on the surface for the finishing tool.</td></tr>
+  <tr><td>Finishing</td><td>Usually a ball nose or tapered ball nose. Parallel passes across the model at the <i>Raster angle</i>, following the surface, <i>Stepover</i> apart (10% of a 1/8" ball is 0.0125"). <i>Smoothing</i> drops points to keep the G-code smaller; it only ever leaves the path above the surface. With the roughing pass off, the finishing pass takes the material down in <i>Pass depth</i> levels first.</td></tr>
+</table>
+<p><b>No gouging:</b> both passes are computed against a model that is never below the real one: every point of the tool, at every point of every move, stays on or above it, including the moves between passes. Where the next pass starts close by, the tool follows the surface to it; otherwise it lifts to the clearance height.</p>
+<p>3D toolpaths take a while to compute (about 20 seconds for a 15" medallion). The status bar shows a busy bar and <b>Abort</b> (<span class="menu">Toolpath &gt; Stop Generating</span>, <kbd>Shift</kbd>+<kbd>F5</kbd>); the last finished toolpath stays on screen. Moving or rotating a model does not compute them again. A finishing program for a large relief is big (tens of MB) and runs for hours: check the time in the status bar.</p>
+<p>The roughing removes the stock top over the model, so before each program after the first, zero Z on a part of the stock top that has not been cut (a corner of the board).</p>
 
 <h2 id="toolbars">Toolbars</h2>
 <ul>
@@ -182,8 +205,9 @@
   <tr><td>V-carve</td><td>Carves the shape with a V-bit: deeper where the shape is wider, with sharp corners. Depths are under <i>Machine Settings &gt; 2. Carve</i>.</td></tr>
   <tr><td>Pocket</td><td>Clears the inside to a flat floor with an end mill. Set the cut depth, pass depth and stepover.</td></tr>
   <tr><td>Profile</td><td>Follows the outline: <b>Outside</b> cuts the shape out at its true size, <b>Inside</b> cuts an opening, <b>On the line</b> engraves. <i>Cut through the stock</i> and <i>tabs</i> hold the part in place.</td></tr>
+  <tr><td>3D roughing and finishing</td><td>The two toolpaths of a 3D model (see <a href="#models">3D models</a>).</td></tr>
 </table>
-<p>The job runs V-carving first, then pockets, then profiles, with outside cut-outs last. When a job needs more than one tool, each tool gets its own G-code program; before each one, fit the tool and zero Z on the top of the stock.</p>
+<p>The job runs 3D roughing and finishing first, then V-carving, pockets and profiles, with outside cut-outs last. When a job needs more than one tool, each tool gets its own G-code program; before each one, fit the tool and zero Z on the top of the stock.</p>
 
 <h2 id="tools">Tool library</h2>
 <figure>
@@ -208,7 +232,7 @@
   <figcaption>View &gt; Show Simulation in the isometric view: the carved board, with the frame cut out on the outside.</figcaption>
 </figure>
 <ul>
-  <li><b>Pan</b>: drag empty space with the left button, or drag with the middle button. <b>Orbit</b>: drag with the right button. <b>Zoom</b>: mouse wheel. <b>Fit</b>: double-click empty space or <kbd>Ctrl</kbd>+<kbd>E</kbd>.</li>
+  <li><b>Pan</b>: drag with the left button (anywhere, also over drawings: hold <kbd>Shift</kbd> to move a drawing instead), or with the middle button. <b>Orbit</b>: drag with the right button. <b>Zoom</b>: mouse wheel. <b>Fit</b>: double-click empty space or <kbd>Ctrl</kbd>+<kbd>E</kbd>.</li>
   <li><span class="menu">View</span>: Top (<kbd>Ctrl</kbd>+<kbd>T</kbd>) and Isometric (<kbd>Ctrl</kbd>+<kbd>I</kbd>) views, rapid moves, outlines and the 1" grid.</li>
   <li><b>Simulation</b> (<kbd>Ctrl</kbd>+<kbd>M</kbd>): shows the finished part first. The bar under the view has Play/Pause, Reset, the playback speed and a slider to scrub through the job.</li>
 </ul>
@@ -224,7 +248,8 @@
 <table>
   <tr><th>Keys</th><th>Action</th></tr>
   <tr><td><kbd>F1</kbd></td><td>This guide</td></tr>
-  <tr><td><kbd>F5</kbd></td><td>Generate the toolpath now</td></tr>
+  <tr><td><kbd>F5</kbd> / <kbd>Shift</kbd>+<kbd>F5</kbd></td><td>Generate the toolpath now / stop generating it</td></tr>
+  <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd></td><td>Import a 3D model or depth image</td></tr>
   <tr><td><kbd>Ctrl</kbd>+<kbd>N</kbd> / <kbd>O</kbd> / <kbd>S</kbd></td><td>New, open, save project</td></tr>
   <tr><td><kbd>Ctrl</kbd>+<kbd>G</kbd></td><td>Export G-code</td></tr>
   <tr><td><kbd>Ctrl</kbd>+<kbd>F</kbd></td><td>Font for the current line's size</td></tr>
@@ -233,9 +258,11 @@
   <tr><td><kbd>V</kbd> <kbd>R</kbd> <kbd>E</kbd> <kbd>P</kbd> <kbd>S</kbd> <kbd>A</kbd> <kbd>T</kbd></td><td>Draw tools (view focused): select, rectangle, ellipse, polygon, star, area, text</td></tr>
   <tr><td>Arrows (<kbd>Shift</kbd>)</td><td>Nudge the selection 0.01" (0.1")</td></tr>
   <tr><td><kbd>Delete</kbd> / <kbd>Esc</kbd></td><td>Delete the selected drawing / cancel or deselect</td></tr>
-  <tr><td><kbd>Shift</kbd> while drawing / rotating</td><td>Keep proportions / turn freely</td></tr>
-  <tr><td><kbd>Ctrl</kbd> while drawing / <kbd>Ctrl</kbd>+click</td><td>Draw from the centre / select the next drawing under the mouse</td></tr>
-  <tr><td><kbd>Alt</kbd> while dragging</td><td>Ignore grid snapping</td></tr>
+  <tr><td>Left drag</td><td>Move the view (also over drawings)</td></tr>
+  <tr><td><kbd>Shift</kbd>+click / <kbd>Shift</kbd>+drag</td><td>Select a drawing / move it, or scale or rotate it with its handles</td></tr>
+  <tr><td><kbd>Shift</kbd>+<kbd>Ctrl</kbd>+click</td><td>Select the next drawing under the mouse</td></tr>
+  <tr><td><kbd>Shift</kbd> / <kbd>Ctrl</kbd> while drawing a shape</td><td>Keep its proportions / draw from the centre</td></tr>
+  <tr><td><kbd>Alt</kbd> while dragging</td><td>Ignore grid and rotation snapping</td></tr>
 </table>
 
 <h2 id="trouble">Tips and troubleshooting</h2>

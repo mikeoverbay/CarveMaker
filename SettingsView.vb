@@ -21,15 +21,24 @@ Public Class FilteredView
     Private ReadOnly _include As Func(Of PropertyDescriptor, Boolean)
     Private ReadOnly _machining As Func(Of Machining)
     Private ReadOnly _machiningCategory As String
+    Private ReadOnly _second As Func(Of Machining)
+    Private ReadOnly _secondCategory As String
+    ' Rows of the second toolpath: the grid asks for each row's owner with the descriptor it was given.
+    ' By reference: descriptors of the same property compare equal until their category is read.
+    Private ReadOnly _secondRows As New HashSet(Of PropertyDescriptor)(ReferenceEqualityComparer.Instance)
 
     ''' <param name="machining">The toolpath settings to show flat (Nothing for none).</param>
     ''' <param name="machiningCategory">Category the toolpath rows appear under.</param>
+    ''' <param name="second">A second toolpath (a 3D model's finishing), shown flat under its own category.</param>
     Public Sub New(target As Object, include As Func(Of PropertyDescriptor, Boolean),
-                   Optional machining As Func(Of Machining) = Nothing, Optional machiningCategory As String = "Toolpath")
+                   Optional machining As Func(Of Machining) = Nothing, Optional machiningCategory As String = "Toolpath",
+                   Optional second As Func(Of Machining) = Nothing, Optional secondCategory As String = "Toolpath 2")
         _target = target
         _include = include
         _machining = machining
         _machiningCategory = machiningCategory
+        _second = second
+        _secondCategory = secondCategory
     End Sub
 
     ''' <summary>The object being shown.</summary>
@@ -47,6 +56,20 @@ Public Class FilteredView
                 list.Add(TypeDescriptor.CreateProperty(GetType(Machining), p, New CategoryAttribute(_machiningCategory)))
             Next
         End If
+        Dim m2 = _second?.Invoke()
+        If m2 IsNot Nothing Then
+            SyncLock _secondRows
+                ' Rows from long-gone refreshes are no longer asked about.
+                If _secondRows.Count > 2000 Then _secondRows.Clear()
+            End SyncLock
+            For Each p In Machining.VisibleProperties(m2, attributes)
+                Dim pd = TypeDescriptor.CreateProperty(GetType(Machining), p, New CategoryAttribute(_secondCategory))
+                SyncLock _secondRows
+                    _secondRows.Add(pd)
+                End SyncLock
+                list.Add(pd)
+            Next
+        End If
         Return New PropertyDescriptorCollection(list.ToArray())
     End Function
 
@@ -54,9 +77,16 @@ Public Class FilteredView
         Return GetProperties(Nothing)
     End Function
 
-    ''' <summary>Toolpath rows belong to the Machining object, everything else to the target.</summary>
+    ''' <summary>Toolpath rows belong to their Machining object, everything else to the target.</summary>
     Public Function GetPropertyOwner(pd As PropertyDescriptor) As Object Implements ICustomTypeDescriptor.GetPropertyOwner
-        If pd IsNot Nothing AndAlso pd.ComponentType Is GetType(Machining) AndAlso _machining IsNot Nothing Then Return _machining()
+        If pd IsNot Nothing AndAlso pd.ComponentType Is GetType(Machining) Then
+            Dim isSecond As Boolean
+            SyncLock _secondRows
+                isSecond = _secondRows.Contains(pd)
+            End SyncLock
+            If isSecond AndAlso _second IsNot Nothing Then Return _second()
+            If _machining IsNot Nothing Then Return _machining()
+        End If
         Return _target
     End Function
 
@@ -116,14 +146,19 @@ Public Class SettingsView
     End Property
 End Class
 
-''' <summary>A view of one drawing: its object, placement, shape or text rows (by kind) plus its toolpath rows.</summary>
+''' <summary>
+''' A view of one drawing: its object, placement, shape or text rows (by kind) plus its toolpath rows
+''' (a 3D model: its relief rows and its roughing and finishing toolpaths).
+''' </summary>
 Public Class DrawingView
     Inherits FilteredView
 
     Private ReadOnly _drawing As DesignObject
 
     Public Sub New(drawing As DesignObject)
-        MyBase.New(drawing, Function(p) p.Name <> NameOf(DesignObject.Machining) AndAlso drawing.ShowsProperty(p.Name), Function() drawing.Machining, "Toolpath")
+        MyBase.New(drawing, Function(p) p.Name <> NameOf(DesignObject.Machining) AndAlso drawing.ShowsProperty(p.Name), Function() drawing.Machining,
+                   If(drawing.Kind = DrawingKind.Model, "Toolpath 1 - Roughing", "Toolpath"),
+                   If(drawing.Kind = DrawingKind.Model, New Func(Of Machining)(Function() drawing.FinishMachining), Nothing), "Toolpath 2 - Finishing")
         _drawing = drawing
     End Sub
 

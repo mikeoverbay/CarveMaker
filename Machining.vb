@@ -9,11 +9,16 @@
 '    Profile  the tool follows the outline: Outside (cut the shape out),
 '             Inside (cut an opening) or On the line (engrave), level by
 '             level, with optional holding tabs.
+'    3D roughing / 3D finishing
+'             the two toolpaths of a 3D model (Relief.vb, ReliefEngine.vb):
+'             constant-Z levels that leave an allowance, then parallel passes
+'             that follow the surface. Any tool but a drill.
 '
 '  Every toolpath has its own tool, spindle speed, feed and plunge rate.
-'  JobBuilder runs everything in machining order: V-carve, then pockets,
-'  then profiles last (cut-outs free the part, so they go at the end), one
-'  segment per tool. Coordinates are machine inches, Z0 = top of the stock.
+'  JobBuilder runs everything in machining order: 3D roughing and finishing
+'  (they shape the surface), V-carve, then pockets, then profiles last
+'  (cut-outs free the part, so they go at the end), one segment per tool.
+'  Coordinates are machine inches, Z0 = top of the stock.
 '
 '  Milling direction (spindle turning clockwise seen from above): climb
 '  milling keeps the material being cut on the LEFT of the direction of
@@ -35,6 +40,10 @@ Public Enum CutOperation
     VCarve
     Pocket
     Profile
+    ''' <summary>3D model: constant-Z levels down to the surface plus an allowance.</summary>
+    Roughing3D
+    ''' <summary>3D model: parallel passes that follow the surface.</summary>
+    Finishing3D
 End Enum
 
 Public Enum ProfileSide
@@ -75,7 +84,21 @@ Public Class CutOperationConverter
     Inherits FriendlyEnumConverter
     Public Sub New()
         MyBase.New(GetType(CutOperation), New Dictionary(Of Object, String) From {
-            {CutOperation.VCarve, "V-carve"}, {CutOperation.Pocket, "Pocket"}, {CutOperation.Profile, "Profile"}})
+            {CutOperation.VCarve, "V-carve"}, {CutOperation.Pocket, "Pocket"}, {CutOperation.Profile, "Profile"},
+            {CutOperation.Roughing3D, "3D roughing"}, {CutOperation.Finishing3D, "3D finishing"}})
+    End Sub
+
+    ''' <summary>The operations a text or drawing can choose (a 3D model's two toolpaths are fixed).</summary>
+    Public Overrides Function GetStandardValues(context As ITypeDescriptorContext) As StandardValuesCollection
+        Return New StandardValuesCollection(New CutOperation() {CutOperation.VCarve, CutOperation.Pocket, CutOperation.Profile})
+    End Function
+End Class
+
+Public Class ReliefLimitConverter
+    Inherits FriendlyEnumConverter
+    Public Sub New()
+        MyBase.New(GetType(ReliefLimit), New Dictionary(Of Object, String) From {
+            {ReliefLimit.ModelOutline, "Inside the model's outline"}, {ReliefLimit.WholeBox, "The whole box"}})
     End Sub
 End Class
 
@@ -164,10 +187,10 @@ Public Class Machining
     <DisplayName("Cut depth (in)"), Description("Final depth below the top of the stock.")>
     Public Property CutDepth As Double = 0.125
 
-    <DisplayName("Pass depth (in)"), Description("Depth removed per pass. Deeper cuts are taken in several passes; about half the tool diameter suits wood.")>
+    <DisplayName("Pass depth (in)"), Description("Depth removed per pass. Deeper cuts are taken in several passes; about half the tool diameter suits wood. 3D roughing: the step between its levels. 3D finishing uses it only when the roughing pass is off.")>
     Public Property PassDepth As Double = 0.125
 
-    <DisplayName("Stepover (%)"), Description("Distance between pocket passes, as a percentage of the tool diameter (40% is typical, 90% at most).")>
+    <DisplayName("Stepover (%)"), Description("Distance between passes, as a percentage of the tool's width: pockets and 3D roughing about 40% (90% at most), 3D finishing about 10% (smaller is smoother and slower).")>
     Public Property StepoverPercent As Double = 40.0
 
     <DisplayName("Tabs per shape"), RefreshProperties(RefreshProperties.All),
@@ -179,6 +202,60 @@ Public Class Machining
 
     <DisplayName("Tab thickness (in)"), Description("Height of the tabs above the bottom of the cut.")>
     Public Property TabThickness As Double = 0.1
+
+    ' ---- 3D model toolpaths ---------------------------------------------------
+
+    <DisplayName("Cut this pass"), RefreshProperties(RefreshProperties.All),
+     Description("Turn the pass off to leave it out of the job (for example to finish without roughing a shallow relief, or to rough only).")>
+    Public Property Enabled As Boolean = True
+
+    <DisplayName("Allowance (in)"), Description("Material the roughing pass leaves on the surface for the finishing pass to remove. The roughing tool never comes closer to the model than this.")>
+    Public Property Allowance As Double = 0.01
+
+    <DisplayName("Raster angle (deg)"), Description("Direction of the finishing passes on the model: 0 runs along the model's width, 90 along its height. Passes turned with the model when it is rotated.")>
+    Public Property RasterAngle As Double = 0.0
+
+    <DisplayName("Smoothing (in)"), Description("Points closer than this to a straight line are dropped from the finishing passes, which keeps the G-code smaller. The path is only ever left ABOVE the surface by this much, never below it.")>
+    Public Property Tolerance As Double = 0.0005
+
+    <DisplayName("Stepover (in)"), [ReadOnly](True), JsonIgnore,
+     Description("Distance between neighbouring passes: the stepover percentage of the tool's width (the tip ball's diameter for a tapered ball nose).")>
+    Public ReadOnly Property StepoverDistance As Double
+        Get
+            Return Math.Round(EffectiveStepover(), 5)
+        End Get
+    End Property
+
+    ''' <summary>Distance between passes for pockets and 3D toolpaths (inches).</summary>
+    Public Function EffectiveStepover() As Double
+        If Tool Is Nothing Then Return 0.0
+        Dim width = If(Tool.Type = ToolType.TaperedBallNose AndAlso Tool.EffectiveEndRadius > 0, 2 * Tool.EffectiveEndRadius, Tool.Diameter)
+        Return width * Math.Max(0.0, StepoverPercent) / 100.0
+    End Function
+
+    ''' <summary>True for the two toolpaths of a 3D model.</summary>
+    <Browsable(False), JsonIgnore>
+    Public ReadOnly Property Is3D As Boolean
+        Get
+            Return Operation = CutOperation.Roughing3D OrElse Operation = CutOperation.Finishing3D
+        End Get
+    End Property
+
+    ''' <summary>The roughing or finishing toolpath of a new 3D model, with the library's standard tool for it.</summary>
+    Public Shared Function NewRelief(op As CutOperation) As Machining
+        Dim m As New Machining()
+        m.Operation = op
+        m.Tool = DefaultToolFor(op)
+        m.ApplyToolSpeeds(m.Tool)
+        If op = CutOperation.Finishing3D Then
+            m.StepoverPercent = 10
+            m.PassDepth = 0.125
+        Else
+            m.StepoverPercent = 40
+            m.PassDepth = 0.125
+        End If
+        Return m
+    End Function
 
     Private Sub Remember(t As ToolDefinition)
         If t Is Nothing Then Return
@@ -222,9 +299,18 @@ Public Class Machining
         Return ToolDefinition.Create(ToolType.FlatEndMill, 0.25, 0.75, id:="std-flat-0250")
     End Function
 
+    ''' <summary>The standard 1/8" ball nose (same Id as in the library): the usual 3D finishing tool.</summary>
+    Public Shared Function DefaultBallNose() As ToolDefinition
+        Return ToolDefinition.Create(ToolType.BallNose, 0.125, 0.5, id:="std-ball-0125")
+    End Function
+
     ''' <summary>The library's standard tool for an operation.</summary>
     Public Shared Function DefaultToolFor(op As CutOperation) As ToolDefinition
-        Return If(op = CutOperation.VCarve, ToolDefinition.DefaultVBit(), DefaultEndMill())
+        Select Case op
+            Case CutOperation.VCarve : Return ToolDefinition.DefaultVBit()
+            Case CutOperation.Finishing3D : Return DefaultBallNose()
+            Case Else : Return DefaultEndMill()
+        End Select
     End Function
 
     ''' <summary>
@@ -233,8 +319,13 @@ Public Class Machining
     ''' </summary>
     Public Shared Function VisibleProperties(m As Machining, attributes As Attribute()) As PropertyDescriptor()
         Dim all = TypeDescriptor.GetProperties(GetType(Machining), attributes)
-        Dim names As New List(Of String) From {
-            NameOf(Operation), NameOf(Tool), NameOf(SpindleRpm), NameOf(FeedRate), NameOf(PlungeRate)}
+        Dim names As New List(Of String)
+        If m.Is3D Then
+            ' A 3D model's two toolpaths are fixed: no operation row, and a switch per pass.
+            names.AddRange({NameOf(Enabled), NameOf(Tool), NameOf(SpindleRpm), NameOf(FeedRate), NameOf(PlungeRate)})
+        Else
+            names.AddRange({NameOf(Operation), NameOf(Tool), NameOf(SpindleRpm), NameOf(FeedRate), NameOf(PlungeRate)})
+        End If
         Select Case m.Operation
             Case CutOperation.VCarve
                 names.Add(NameOf(MaxUsableDepth))
@@ -245,6 +336,10 @@ Public Class Machining
                 If Not m.ThroughCut Then names.Add(NameOf(CutDepth))
                 names.AddRange({NameOf(PassDepth), NameOf(TabCount)})
                 If m.TabCount > 0 Then names.AddRange({NameOf(TabWidth), NameOf(TabThickness)})
+            Case CutOperation.Roughing3D
+                names.AddRange({NameOf(PassDepth), NameOf(StepoverPercent), NameOf(StepoverDistance), NameOf(Allowance)})
+            Case CutOperation.Finishing3D
+                names.AddRange({NameOf(StepoverPercent), NameOf(StepoverDistance), NameOf(RasterAngle), NameOf(Tolerance), NameOf(PassDepth)})
         End Select
         Return names.Select(Function(n) all.Find(n, False)).Where(Function(p) p IsNot Nothing).ToArray()
     End Function
@@ -270,6 +365,8 @@ Public Class Machining
                 ElseIf Not endMill Then
                     Return "Profiles need an end mill (flat, ball or bull nose), or a V-bit on the line."
                 End If
+            Case CutOperation.Roughing3D, CutOperation.Finishing3D
+                If t.Type = ToolType.Drill Then Return "A drill cannot cut sideways: pick an end mill, ball nose, bull nose, tapered ball nose or V-bit."
         End Select
         Return Nothing
     End Function
@@ -277,6 +374,7 @@ Public Class Machining
     ''' <summary>Problems that stop this item from being machined.</summary>
     Public Function Problems(stockThickness As Double) As List(Of String)
         Dim p As New List(Of String)
+        If Is3D AndAlso Not Enabled Then Return p
         Dim tp = ToolProblem(Tool)
         If tp IsNot Nothing Then p.Add(tp)
         If Tool IsNot Nothing Then
@@ -287,6 +385,19 @@ Public Class Machining
         If Not (SpindleRpm > 0 AndAlso SpindleRpm <= 100000) Then p.Add("Spindle speed must be between 1 and 100000 RPM.")
         If Not (FeedRate > 0 AndAlso FeedRate <= 10000) OrElse Not (PlungeRate > 0 AndAlso PlungeRate <= 10000) Then p.Add("Feed and plunge rates must be between 0 and 10000 in/min.")
         If Operation = CutOperation.VCarve Then Return p
+        If Is3D Then
+            Dim pass = If(Operation = CutOperation.Roughing3D, "roughing", "finishing")
+            If Not (StepoverPercent >= 1 AndAlso StepoverPercent <= 90) Then p.Add("The " & pass & " stepover must be between 1% and 90%.")
+            If Operation = CutOperation.Roughing3D Then
+                If Not (PassDepth > 0) Then p.Add("The roughing pass depth must be more than 0.")
+                If Not (Allowance >= 0 AndAlso Allowance <= 0.25) Then p.Add("The allowance must be between 0 and 0.25"".")
+            Else
+                If Not (PassDepth >= 0) Then p.Add("The finishing pass depth cannot be negative.")
+                If Not (Tolerance >= 0.00005 AndAlso Tolerance <= 0.01) Then p.Add("Smoothing must be between 0.00005"" and 0.01"".")
+                If Not Double.IsFinite(RasterAngle) Then p.Add("The raster angle must be a number.")
+            End If
+            Return p
+        End If
         If Not (BottomDepth(stockThickness) > 0) Then p.Add("Cut depth must be more than 0.")
         If Not (PassDepth > 0) Then p.Add("Pass depth must be more than 0.")
         If Operation = CutOperation.Pocket AndAlso (StepoverPercent < 5 OrElse StepoverPercent > 90) Then p.Add("Stepover must be between 5% and 90%.")
@@ -318,6 +429,12 @@ Public Class Machining
                 Dim side As String = If(Me.Side = ProfileSide.OnLine, "on the line", Me.Side.ToString().ToLowerInvariant())
                 Dim depth = If(ThroughCut, "through", InchFormat.EditText(CutDepth) & """ deep")
                 Return "Profile " & side & ", " & depth & If(TabCount > 0, ", " & TabCount & " tabs", "") & ", " & feeds
+            Case CutOperation.Roughing3D
+                If Not Enabled Then Return "3D roughing off"
+                Return "3D roughing, " & InchFormat.EditText(PassDepth) & """ levels, " & feeds
+            Case CutOperation.Finishing3D
+                If Not Enabled Then Return "3D finishing off"
+                Return String.Format(Ci, "3D finishing, {0:0.####}"" stepover, {1}", EffectiveStepover(), feeds)
         End Select
         Return "V-carve, " & feeds
     End Function
@@ -334,6 +451,10 @@ Public Class Machining
            Append(StepoverPercent.ToString("R", Ci)).Append("|").Append(TabCount).Append("|").
            Append(TabWidth.ToString("R", Ci)).Append("|").Append(TabThickness.ToString("R", Ci)).Append("|").
            Append(SpindleRpm.ToString("R", Ci)).Append("|").Append(FeedRate.ToString("R", Ci)).Append("|").Append(PlungeRate.ToString("R", Ci))
+        If Is3D Then
+            sb.Append("|").Append(Enabled).Append("|").Append(Allowance.ToString("R", Ci)).Append("|").
+               Append(RasterAngle.ToString("R", Ci)).Append("|").Append(Tolerance.ToString("R", Ci))
+        End If
         If Tool IsNot Nothing Then
             sb.Append("|").Append(Tool.Type).Append("|").Append(Tool.Diameter.ToString("R", Ci)).Append("|").
                Append(Tool.Length.ToString("R", Ci)).Append("|").Append(Tool.EffectiveEndRadius.ToString("R", Ci)).Append("|").
@@ -397,6 +518,8 @@ Public Class MachiningToolEditor
         Select Case m.Operation
             Case CutOperation.Pocket : title = "Tool Library - choose the pocketing tool"
             Case CutOperation.Profile : title = "Tool Library - choose the profile tool"
+            Case CutOperation.Roughing3D : title = "Tool Library - choose the 3D roughing tool (usually a flat end mill)"
+            Case CutOperation.Finishing3D : title = "Tool Library - choose the 3D finishing tool (usually a ball nose or tapered ball nose)"
             Case Else : title = "Tool Library - choose the V-carve tool"
         End Select
         Using dlg As New frmToolLibrary(Function(t) m.ToolProblem(t), current, title)
@@ -421,6 +544,8 @@ Public Class MachiningItem
     Public Property Machining As Machining
     ''' <summary>True for the text block (its line centres steer the V-carve order).</summary>
     Public Property IsText As Boolean
+    ''' <summary>A 3D model (a copy for the worker thread): Machining is its roughing, Model.FinishMachining its finishing.</summary>
+    Public Property Model As DesignObject
 
     Public Sub New(name As String, paths As PathsD, machining As Machining, Optional isText As Boolean = False)
         Me.Name = name
@@ -862,7 +987,7 @@ Public Module JobBuilder
         ' Items that cannot be machined as set up are skipped with a note.
         Dim usable As New List(Of MachiningItem)
         For Each it In all
-            Dim probs = it.Machining.Problems(s.StockThickness)
+            Dim probs = If(it.Model IsNot Nothing, ReliefJob.Problems(it.Model, s), it.Machining.Problems(s.StockThickness))
             If probs.Count > 0 Then
                 tp.Warnings.Add(it.Name & " skipped: " & String.Join(" ", probs))
             Else
@@ -870,9 +995,13 @@ Public Module JobBuilder
             End If
         Next
 
+        ' 0. 3D models shape the surface first: every model's roughing, then every finishing pass
+        '    (the same tool on consecutive models stays one program).
+        ReliefJob.AddPasses(tp, usable.Where(Function(i) i.Model IsNot Nothing).ToList(), s, token)
+
         ' 1. V-carve. Items with the same V-bit are carved as one union (letters and drawings may
         '    overlap); each item's moves then get that item's own feed and plunge rate.
-        Dim vItems = usable.Where(Function(i) i.Machining.Operation = CutOperation.VCarve).ToList()
+        Dim vItems = usable.Where(Function(i) i.Model Is Nothing AndAlso i.Machining.Operation = CutOperation.VCarve).ToList()
         Dim vGroups = GroupByTool(vItems, bySpeed:=False)
         For gi = 0 To vGroups.Count - 1
             For gj = gi + 1 To vGroups.Count - 1
@@ -1021,7 +1150,7 @@ Public Module JobBuilder
         Return groups
     End Function
 
-    Private Sub AppendSegment(tp As Toolpath, name As String, op As CutOperation, tool As ToolDefinition, rpm As Double, moves As List(Of ToolMove))
+    Friend Sub AppendSegment(tp As Toolpath, name As String, op As CutOperation, tool As ToolDefinition, rpm As Double, moves As List(Of ToolMove))
         If moves.Count = 0 Then Return
         tp.Segments.Add(New ToolpathSegment With {
             .Name = name, .Operation = op, .Tool = If(tool?.Clone(), ToolDefinition.DefaultVBit()), .SpindleRpm = rpm,

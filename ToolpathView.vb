@@ -54,9 +54,13 @@ Public Class ToolpathView
     Private ReadOnly _cuts As New LineLayer()
     Private ReadOnly _rapids As New LineLayer()
 
+    ' Extra stock above the finished surface (display only): an amber slab outline over the blank.
+    Private ReadOnly _extraStock As New LineLayer()
+    Private _extraStockZ As Double
+
     Private ReadOnly Property AllLayers As LineLayer()
         Get
-            Return New LineLayer() {_grid, _blank, _outline, _cuts, _rapids, _selectionLayer}
+            Return New LineLayer() {_grid, _blank, _extraStock, _outline, _cuts, _rapids, _selectionLayer}
         End Get
     End Property
 
@@ -1409,8 +1413,41 @@ Public Class ToolpathView
         If Not _simPlaying Then _simTime = Double.PositiveInfinity
         BuildBuffers()
         RebuildSelectionLayer()
+        RebuildExtraStock()
         If firstTime OrElse Not SceneIntersectsView() Then ZoomToFit() Else Invalidate()
         RaiseEvent SimulationProgress(Me, EventArgs.Empty)
+    End Sub
+
+    ''' <summary>Extra stock above the finished surface (inches; display only, 0 = none).</summary>
+    Public Property ExtraStockZ As Double
+        Get
+            Return _extraStockZ
+        End Get
+        Set(value As Double)
+            If value = _extraStockZ Then Return
+            _extraStockZ = value
+            RebuildExtraStock()
+            Invalidate()
+        End Set
+    End Property
+
+    ''' <summary>The extra stock's outline: the top of the slab and its four upright edges over the blank.</summary>
+    Private Sub RebuildExtraStock()
+        Dim v As New List(Of Single)
+        Dim tp = _toolpath
+        Dim z = _extraStockZ
+        If tp IsNot Nothing AndAlso z > 0 AndAlso tp.BlankMaxX > tp.BlankMinX AndAlso tp.BlankMaxY > tp.BlankMinY Then
+            Dim x0 = tp.BlankMinX, y0 = tp.BlankMinY, x1 = tp.BlankMaxX, y1 = tp.BlankMaxY
+            Const r As Single = 1.0F, g As Single = 0.58F, b As Single = 0.12F
+            AddLine(v, x0, y0, z, x1, y0, z, r, g, b)
+            AddLine(v, x1, y0, z, x1, y1, z, r, g, b)
+            AddLine(v, x1, y1, z, x0, y1, z, r, g, b)
+            AddLine(v, x0, y1, z, x0, y0, z, r, g, b)
+            For Each c In {(x0, y0), (x1, y0), (x1, y1), (x0, y1)}
+                AddLine(v, c.Item1, c.Item2, 0, c.Item1, c.Item2, z, r, g, b)
+            Next
+        End If
+        SetPending(_extraStock, v.ToArray())
     End Sub
 
     ' ----------------------------------------------------------- simulation
@@ -2022,6 +2059,7 @@ Public Class ToolpathView
         GL.DepthMask(False)
         If _showGrid Then DrawLayer(_grid)
         DrawLayer(_blank)
+        DrawLayer(_extraStock)
         If Not _showSimulation Then DrawModelPictures(mvp)
         GL.DepthMask(True)
         If _showOutline AndAlso Not _showSimulation Then DrawLayer(_outline)

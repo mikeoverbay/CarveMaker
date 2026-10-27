@@ -28,6 +28,25 @@ Public Class UserPreferences
     ''' <summary>Where each toolbar over the view is (empty: all along the top).</summary>
     Public Property Toolbars As New List(Of ToolbarPlacement)
 
+    ''' <summary>
+    ''' The toolbars keep the standard arrangement (Project, Draw Tools, Text Style and Snap across
+    ''' the top, View below), packed again when the window's width changes, until one is moved by
+    ''' hand. Files from before this setting read True, so they get the standard arrangement once.
+    ''' </summary>
+    Public Property ToolbarsAuto As Boolean = True
+
+    ''' <summary>Exported G-code is split into one program per toolpath (otherwise one per tool).</summary>
+    Public Property GCodePerToolpath As Boolean = False
+
+    ''' <summary>The main window opens maximized (the first time too: the toolbars need the width).</summary>
+    Public Property WindowMaximized As Boolean = True
+
+    ''' <summary>The main window's place when not maximized (width 0: not saved yet).</summary>
+    Public Property WindowX As Integer
+    Public Property WindowY As Integer
+    Public Property WindowWidth As Integer
+    Public Property WindowHeight As Integer
+
     ''' <summary>Where the preferences live (tests point it elsewhere).</summary>
     Public Shared Property FilePath As String =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CarveMaker", "Preferences.json")

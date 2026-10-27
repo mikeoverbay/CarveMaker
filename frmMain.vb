@@ -97,6 +97,7 @@ Public Class frmMain
         ' The Stop menu item exists before the Project toolbar's Stop button follows it.
         SetupGenerationUi()
         SetupDrawing()
+        ApplyWindowPlacement()
         _glView.CurveTolerance = _settings.CurveTolerance
         tscSimSpeed.SelectedIndex = 3      ' 10x
 
@@ -456,7 +457,7 @@ Public Class frmMain
     End Sub
 
     Private Sub tsbObjRemove_Click(sender As Object, e As EventArgs) Handles tsbObjRemove.Click
-        RemoveDrawingAt(lstObjects.SelectedIndex, selectNext:=True)
+        RemoveAfterAsking(lstObjects.SelectedIndex, selectNext:=True)
     End Sub
 
     Private Sub tsbObjFit_Click(sender As Object, e As EventArgs) Handles tsbObjFit.Click
@@ -882,8 +883,12 @@ Public Class frmMain
         CopySimulationOnlySettings(_settings, snapshot)
         _lastSettings = snapshot
         _glView.SetToolpath(_toolpath, snapshot, t.Result)
+        _glView.ExtraStockZ = snapshot.ExtraStockZ
         UpdateStats(_toolpath)
         Dim notes = itemNotes.Concat(_toolpath.Warnings).ToList()
+        ' Extra stock is display only (changing it does not regenerate): warn from the current settings.
+        Dim extraNote = _settings.ExtraStockNote()
+        If extraNote IsNot Nothing Then notes.Add(extraNote)
         If notes.Count > 0 Then
             lblStatus.Text = String.Join("  |  ", notes)
         ElseIf _toolpath.IsEmpty Then
@@ -933,10 +938,12 @@ Public Class frmMain
             Return
         End If
         Dim ci = CultureInfo.InvariantCulture
-        Dim letters = If(tp.RegionCount > 0, tp.RegionCount.ToString(ci) & " letters, ", "")
+        ' Objects: every separately cut shape (each letter of the text, each region of a drawing, each pocket,
+        ' profile or 3D model).
+        Dim objects = If(tp.RegionCount > 0, tp.RegionCount.ToString(ci) & If(tp.RegionCount = 1, " object, ", " objects, "), "")
         lblStats.Text = String.Format(ci,
             "{0}{1} passes | {2:0.0}"" x {3:0.00}"" | depth {4:0.000}"" | cut {5:0.0}"" | ~{6:0.0} min",
-            letters, tp.Contours.Count + tp.ReliefPassCount, tp.Width, tp.Height, -tp.MinZ, tp.CutLength, tp.EstimatedMinutes)
+            objects, tp.Contours.Count + tp.ReliefPassCount, tp.Width, tp.Height, -tp.MinZ, tp.CutLength, tp.EstimatedMinutes)
         Dim tools = GCodeWriter.ToolGroups(tp).Count
         If tools > 1 Then lblStats.Text &= " | " & tools & " tools, one program each"
     End Sub
@@ -1016,6 +1023,18 @@ Public Class frmMain
                 Case NameOf(Machining.Tool)
                     SyncToolsFromLibrary()        ' the picker may have edited library entries
                     pgObject.Refresh()
+                Case NameOf(CarveSettings.ExtraStockZ)
+                    ' Display only: the slab over the blank. The toolpath and the carved surface stay as they are.
+                    If _lastSettings IsNot Nothing Then CopySimulationOnlySettings(_settings, _lastSettings)
+                    _glView.ExtraStockZ = _settings.ExtraStockZ
+                    ' The simulated board starts that much higher: build it again (the moves are the same).
+                    _glView.UpdateSimulationSettings(If(_lastSettings, _settings).Clone())
+                    Dim note = _settings.ExtraStockNote()
+                    lblStatus.Text = If(note, If(_settings.ExtraStockZ > 0,
+                        String.Format(CultureInfo.InvariantCulture, "Extra stock {0:0.###}"" shown over the blank (amber): face it off before carving; Z zero is the finished surface.", _settings.ExtraStockZ),
+                        "No extra stock."))
+                    RefreshSettingsGrids()
+                    Return
                 Case NameOf(CarveSettings.SimResolution), NameOf(CarveSettings.SimMeshDetail)
                     ' Simulation-only: rebuild the heightmap now, the toolpath is unchanged.
                     ' Simulate the toolpath with the settings it was generated from, so pending tool or
@@ -1127,48 +1146,69 @@ Public Class frmMain
             Return
         End If
 
+        ' Several toolpaths: one program per tool, or (the user's choice) one per toolpath.
+        Dim groups = GCodeWriter.ToolGroups(tp)
+        Dim perToolpath = False
+        Dim byToolpath = GCodeWriter.ToolpathGroups(tp)
+        If byToolpath.Count > 1 Then
+            Using choose As New ExportDialog(groups.Count, byToolpath.Count, _prefs.GCodePerToolpath)
+                If choose.ShowDialog(Me) <> DialogResult.OK Then Return
+                perToolpath = choose.PerToolpath
+                _prefs.GCodePerToolpath = perToolpath
+                _prefs.Save()
+            End Using
+            If perToolpath Then groups = byToolpath
+        End If
+
         If String.IsNullOrEmpty(dlgSave.FileName) Then
             dlgSave.FileName = SuggestFileName(rtbText.Text) & ".nc"
         End If
         If dlgSave.ShowDialog(Me) <> DialogResult.OK Then Return
         Try
-            Dim groups = GCodeWriter.ToolGroups(tp)
             If groups.Count <= 1 Then
                 File.WriteAllText(dlgSave.FileName, GCodeWriter.Write(tp, snapshot, rtbText.Text))
                 lblStatus.Text = "Saved " & dlgSave.FileName
                 Return
             End If
-            ' Several tools: one program per tool, numbered in the order they must run.
+            ' Several programs, numbered in the order they must run.
             Dim dir = Path.GetDirectoryName(dlgSave.FileName)
             Dim stem = Path.GetFileNameWithoutExtension(dlgSave.FileName)
             Dim ext = Path.GetExtension(dlgSave.FileName)
             If String.IsNullOrEmpty(ext) Then ext = ".nc"
+            Dim tools = GCodeWriter.ToolGroups(tp).Count
             Dim report As New Text.StringBuilder()
-            report.AppendLine("This job uses " & groups.Count & " tools, so it was saved as " & groups.Count & " programs.")
-            If tp.Segments.Any(Function(sg) sg.Operation = CutOperation.Roughing3D) Then
-                report.AppendLine("Run them in this order. Before each one, fit its tool and re-zero Z on the top of the stock, on a part the roughing has not cut away (a corner of the board):")
+            If perToolpath Then
+                report.AppendLine("Saved as " & groups.Count & " programs, one per toolpath (" & tools & If(tools = 1, " tool", " tools") & ").")
             Else
-                report.AppendLine("Run them in this order. Before each one, fit its tool and re-zero Z on the top of the stock:")
+                report.AppendLine("This job uses " & groups.Count & " tools, so it was saved as " & groups.Count & " programs.")
+            End If
+            If tp.Segments.Any(Function(sg) sg.Operation = CutOperation.Roughing3D) Then
+                report.AppendLine("Run them in this order. Before each one with a new tool, fit it and re-zero Z on the top of the stock, on a part the roughing has not cut away (a corner of the board):")
+            Else
+                report.AppendLine("Run them in this order. Before each one with a new tool, fit it and re-zero Z on the top of the stock:")
             End If
             report.AppendLine()
             For i = 0 To groups.Count - 1
                 Dim g = groups(i)
-                Dim fileName = stem & "-" & (i + 1).ToString(CultureInfo.InvariantCulture) & "-" & SafeFilePart(If(g.Tool?.AsciiName(), "tool")) & ext
+                Dim part = If(perToolpath, g.Segments(0).Name, g.Tool?.AsciiName())
+                Dim fileName = stem & "-" & (i + 1).ToString(CultureInfo.InvariantCulture) & "-" & SafeFilePart(If(part, "tool")) & ext
                 File.WriteAllText(Path.Combine(dir, fileName), GCodeWriter.Write(tp, snapshot, rtbText.Text, g, i + 1, groups.Count))
-                report.AppendLine(String.Format(CultureInfo.InvariantCulture, "{0}. {1}{2}     {3}, about {4:0.0} min{2}     {5}",
-                                                i + 1, fileName, Environment.NewLine, If(g.Tool?.DisplayName(), "tool"), g.EstimatedMinutes, g.Operations))
+                report.AppendLine(String.Format(CultureInfo.InvariantCulture, "{0}. {1}{2}     {3}, about {4:0.0} min{6}{2}     {5}",
+                                                i + 1, fileName, Environment.NewLine, If(g.Tool?.DisplayName(), "tool"), g.EstimatedMinutes, g.Operations,
+                                                If(g.SameToolAsPrevious, " (same tool: keep it and the Z zero)", "")))
             Next
-            lblStatus.Text = "Saved " & groups.Count & " programs (one per tool) in " & dir
+            lblStatus.Text = "Saved " & groups.Count & If(perToolpath, " programs (one per toolpath) in ", " programs (one per tool) in ") & dir
             MessageBox.Show(Me, report.ToString(), "Save G-code", MessageBoxButtons.OK, MessageBoxIcon.Information)
         Catch ex As Exception
             MessageBox.Show(Me, ex.Message, "Save G-code", MessageBoxButtons.OK, MessageBoxIcon.Error)
         End Try
     End Sub
 
-    ''' <summary>Settings that only drive the simulation display, never the toolpath.</summary>
+    ''' <summary>Settings that only drive the display (simulation, extra stock), never the toolpath.</summary>
     Private Shared Sub CopySimulationOnlySettings(source As CarveSettings, target As CarveSettings)
         target.SimResolution = source.SimResolution
         target.SimMeshDetail = source.SimMeshDetail
+        target.ExtraStockZ = source.ExtraStockZ
     End Sub
 
     ''' <summary>Toolpath > Tool Library: manage tools; follows edits to the project's own tool.</summary>

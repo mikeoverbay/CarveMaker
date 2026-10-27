@@ -70,7 +70,12 @@ SmartScreen may ask you to confirm the first time.)
 
 Blank (*Machine Settings > 1. Blank*): give the stock **width X**, **height Y**,
 **thickness** and **margin**, and the machine coordinates of its lower-left corner (*Blank
-origin*; use `-width/2, -height/2` if you zero at the centre). Placement (Text
+origin*; use `-width/2, -height/2` if you zero at the centre). *Extra stock on top, Z* is
+material above the finished surface that you face off before carving. Zero Z on the finished
+surface; the toolpaths do not change. It is shown: an amber outline over the blank, and in
+the simulation the board is that much taller, so anything cutting at or near Z 0 (a pocket
+used to face it, say) visibly removes it. The status bar warns when the clearance or safe
+height is inside it. Placement (Text
 tab, *2. Placement on the blank*): each line is
 justified across the blank: **Left** starts at the left margin, **Center** is
 centred on the blank, **Right** ends at the right margin. The whole block is
@@ -171,21 +176,26 @@ when *Lock aspect ratio* is off; drawn shapes start unlocked), and the round
 knob above the top edge rotates it about its centre in steps of the rotation
 snap (**Alt** turns it freely). **Draw > Scale** sets an exact size or
 percentage.
-Arrow keys nudge by 0.01" (0.1" with Shift), **Delete** removes the drawing.
+Arrow keys nudge by 0.01" (0.1" with Shift), **Delete** removes the drawing after asking
+(so do *Remove* on the Drawings tab and **Draw > Delete**; *Keep It* is the default answer, so a
+stray click or Enter never deletes work).
 **Draw** also has Rotate 90 degrees left/right, Mirror, Bring to Front and Send
 to Back, **Hide** (Ctrl+H: not shown, picked or carved) and **Show All**
 (Ctrl+Shift+H); both are also on the *View* toolbar.
 
-**Toolbars**: *Project*, *Draw Tools*, *Text Style*, *Snap* and *View* start over the
-view, side by side (a toolbar that does not fit on a row starts the next one).
+**Toolbars**: they start in the standard arrangement: *Project*, *Draw Tools*, *Text Style*
+(font, bold, italic, alignment) and *Snap* across the top, and *View* (Toolpath / Simulation,
+Hide, Show All) on the row below. The window opens maximized the first time (then as you
+left it), so the top four fit on one row; in a narrower window they wrap, and they pack
+again when the window is resized.
 *Project* has New, Open and Save, Generate, Stop and Export G-code, and the Tool
 Library and Machine Settings; each button does what its menu item does and is
 greyed out when that is. Drag one by its grip to any edge of the view (top, bottom, left or right,
 in rows), or off the view to float it in its own small window (double-click
 that window's title to dock it again). Right-click a toolbar to dock it on an
 edge, float it or hide it; **View > Toolbars** shows hidden ones again and
-*Reset Toolbars* puts them all back along the top. The arrangement is
-remembered for the next start.
+*Reset Toolbars* brings the standard arrangement back. Once you move a toolbar
+yourself, your arrangement is kept and remembered for the next start.
 
 **Snapping** (Snap toolbar, or **Draw > Snap to Grid / Grid Spacing /
 Rotation Snap**):
@@ -294,6 +304,13 @@ tool, **Export G-code** writes one numbered program per tool, such as
 `Sign-1-1-4in_90_deg_V_bit.nc` and `Sign-2-1-4in_flat_end_mill.nc`, and lists
 the order. Before each program, fit its tool and re-zero Z on the top of the
 stock. Each program has the usual FluidNC start and end.
+
+When the job has more than one toolpath, Export asks how to split it: **one program
+per tool** (the above; a single program when every toolpath uses the same tool) or
+**one program per toolpath**: the V-carve, each pocket, profile and 3D pass in its own
+numbered program (`Sign-2-Pocket_Rectangle_1.nc`, ...), to run, run again or skip each
+one on its own. Where the next program uses the same tool, its header says to keep the
+tool and the Z zero. The choice is remembered for the next export.
 
 ## Tool library
 

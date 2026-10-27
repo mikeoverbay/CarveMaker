@@ -8,10 +8,12 @@
 Imports System.Globalization
 Imports System.Text
 
-''' <summary>Consecutive segments cut with the same tool: one program file.</summary>
+''' <summary>Consecutive segments cut with the same tool (or one toolpath): one program file.</summary>
 Public Class ToolGroup
     Public Property Tool As ToolDefinition
     Public Property Segments As New List(Of ToolpathSegment)
+    ''' <summary>The previous program ends with the same tool: no tool change, Z zero stays.</summary>
+    Public Property SameToolAsPrevious As Boolean
 
     Public ReadOnly Property EstimatedMinutes As Double
         Get
@@ -53,6 +55,22 @@ Public Class GCodeWriter
         Return groups
     End Function
 
+    ''' <summary>
+    ''' The job split into one program per toolpath (segment), in run order: to run, re-run or skip
+    ''' each one on its own. A program whose tool is the previous one's says so (no tool change).
+    ''' </summary>
+    Public Shared Function ToolpathGroups(tp As Toolpath) As List(Of ToolGroup)
+        Dim groups As New List(Of ToolGroup)
+        For Each sg In tp.Segments
+            Dim prev = groups.LastOrDefault()
+            Dim same = prev IsNot Nothing AndAlso prev.Tool IsNot Nothing AndAlso sg.Tool IsNot Nothing AndAlso prev.Tool.SameGeometry(sg.Tool)
+            Dim g As New ToolGroup With {.Tool = sg.Tool, .SameToolAsPrevious = same}
+            g.Segments.Add(sg)
+            groups.Add(g)
+        Next
+        Return groups
+    End Function
+
     ''' <summary>Builds the complete G-code program text for the whole job (one tool).</summary>
     Public Shared Function Write(tp As Toolpath, s As CarveSettings, sourceText As String) As String
         Return Write(tp, s, sourceText, Nothing, 1, 1)
@@ -84,7 +102,10 @@ Public Class GCodeWriter
         sb.AppendLine("%")
         If count > 1 Then
             sb.AppendLine("(" & AppInfo.Name & " job, program " & index.ToString(Ci) & " of " & count.ToString(Ci) & ")")
-            If tp.Segments.Any(Function(sg) sg.Operation = CutOperation.Roughing3D) Then
+            If group IsNot Nothing AndAlso group.Segments.Count = 1 Then sb.AppendLine("(Toolpath: " & Comment(group.Segments(0).Name) & ")")
+            If group IsNot Nothing AndAlso group.SameToolAsPrevious Then
+                sb.AppendLine("(Same tool as the previous program: keep the tool and the Z zero)")
+            ElseIf tp.Segments.Any(Function(sg) sg.Operation = CutOperation.Roughing3D) Then
                 ' The roughing removes the top over the model: zero where the stock is still whole.
                 sb.AppendLine("(Fit this tool and re-zero Z on an uncut part of the stock top before running)")
             Else

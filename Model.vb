@@ -1029,6 +1029,32 @@ Public Class CarveSettings
      Description("Used only to warn when the flat depth would cut through the stock.")>
     Public Property StockThickness As Double = 0.75
 
+    Private _extraStockZ As Double
+
+    <Category("1. Blank"), DisplayName("Extra stock on top, Z (in)"),
+     Description("Material above the finished surface that you face off before carving. Zero Z on the finished surface; the toolpaths do not change. It is shown: an amber outline over the blank, and in the simulation the board is that much taller, so anything cutting at or near Z 0 visibly removes it. 0 = none.")>
+    Public Property ExtraStockZ As Double
+        Get
+            Return _extraStockZ
+        End Get
+        Set(value As Double)
+            _extraStockZ = If(Double.IsFinite(value), Math.Max(0.0, Math.Min(4.0, value)), 0.0)
+        End Set
+    End Property
+
+    ''' <summary>
+    ''' A warning when rapids at the clearance or safe height would run inside the extra stock
+    ''' (it must be faced off first), or Nothing.
+    ''' </summary>
+    Public Function ExtraStockNote() As String
+        If Not (ExtraStockZ > 0) Then Return Nothing
+        Dim lowest = Math.Min(ClearanceZ, SafeZ)
+        If lowest >= ExtraStockZ Then Return Nothing
+        Return String.Format(Globalization.CultureInfo.InvariantCulture,
+                             "Extra stock {0:0.###}"" on top: the rapids at {1:0.###}"" ({2}) would run inside it. Face it off before running this job, or raise Clearance Z / Safe Z above it.",
+                             ExtraStockZ, lowest, If(ClearanceZ <= SafeZ, "Clearance Z", "Safe Z"))
+    End Function
+
     ''' <summary>Feeds and speed the engines use; set per toolpath by Machining.ApplyTo (kept for old projects).</summary>
     <Browsable(False)>
     Public Property FeedRate As Double = 40.0

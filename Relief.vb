@@ -341,6 +341,8 @@ Friend Module ReliefJob
 
     ''' <summary>Roughing of every model, then every finishing pass, appended to the job as segments.</summary>
     Friend Sub AddPasses(tp As Toolpath, items As List(Of MachiningItem), s As CarveSettings, token As CancellationToken)
+        ' Each model is one object in the status bar's count.
+        tp.RegionCount += items.Count
         For Each it In items
             Dim o = it.Model
             If o.Machining.Enabled Then

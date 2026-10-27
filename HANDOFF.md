@@ -219,6 +219,7 @@ torture SVG folders and their expectation scripts). Build with
 | `reliefgui` | 3D import through the form (env `SMOKE_SHOTS=1` screenshots during generation, `SMOKE_HOVER=1` hover light check, `SMOKE_STEPS=1` tab-switch steps) |
 | `reliefdemo` | Opens the window maximized, imports the dragon at 15" on a 16" blank, shows the simulation and leaves the window to the user |
 | `modelinfo <file> [dir]` | What the importer makes of a model: side, units, size, height spread, and a preview PNG per side |
+| `extrastock` | Extra stock on top: the clearance warning, clamping, project round trip, the warning on a generated toolpath with unchanged moves (no window) |
 | `skinsheet [dir]` | Every icon on a command button (normal, hot, pressed, disabled), a round toggle (off, on), at menu size and at twice the size, plus a band with a spacer: `skin_sheet.png` |
 | `skinshots [dir]` | The real window in the skin: main window, Drawings tab, an open menu, Machine Settings, the Tool Library (`skin_*.png`) |
 | `tools` | Tool library: profiles and meshes of all standard tools, inch parsing, validation, settings/project migration, library file, the dialog (edits, type switch, save, pick mode) and the simulation tool, with screenshots. `tools nogui` skips the screen part |
@@ -282,6 +283,25 @@ The torture expectations (`svg-torture-transforms-expect.js`,
   measured whichever way it stands (`ToolbarLength`): it turns when it joins a side panel.
 - Tool drawing: a full radius (ball nose, tapered ball nose) is labelled R and, under it, the ball
   size 2 x R (the user read "R 1/16 (ball)" as a 1/16" ball).
+- Toolbars: the standard arrangement (`ArrangeToolbars`: Project, Draw Tools, Text Style, Snap packed
+  in order across the top, View on its own row below) holds while `_autoToolbars` (saved as
+  `UserPreferences.ToolbarsAuto`, True when missing, so pre-1.4 layouts get it once); `tspTop.SizeChanged`
+  packs again (`ArrangementHolds`). Any dock or float outside start-up/arranging makes the layout the
+  user's. The real program opens maximized the first time and then as left (`RestoreWindowPlacement`
+  is set only by ApplicationEvents' Startup, so harness windows keep their own size).
+- Removing a drawing by hand asks first (`ConfirmRemove`, dark `ConfirmDialog`, Keep It default);
+  `frmMain.SkipRemoveConfirmation` is set by the harness (Program.Main, by reflection).
+- Extra stock on top (`CarveSettings.ExtraStockZ`) is display only for the toolpaths: copied like the
+  simulation-only settings (a change rebuilds the simulation, never the toolpath), drawn by
+  `ToolpathView.ExtraStockZ` as an amber slab outline, and real material in the simulation
+  (`CarveSimulation._topZ`: the heightmap is depth below the board top, stamps are shifted down by it,
+  the surface is drawn at `uTop - d`, walls from +extra to -thickness). `ExtraStockNote` warns (from the
+  current settings, at display time) when Clearance/Safe Z is inside it. The user did not want a facing
+  cycle. Harness `extrashot` takes a screenshot of it.
+- Export G-code: with more than one toolpath, `ExportDialog` asks one program per tool
+  (`GCodeWriter.ToolGroups`) or per toolpath (`ToolpathGroups`, each segment its own program,
+  `SameToolAsPrevious` writes "keep the tool and the Z zero" instead of "fit this tool");
+  remembered as `UserPreferences.GCodePerToolpath`. Files are named after the toolpath.
 - `SetupGenerationUi` runs before `SetupDrawing`: the Project toolbar's Stop button mirrors the
   Stop Generating menu item, which must exist first.
 - PropertyGrid edits write straight into `_settings`; toolpath-relevant ones go

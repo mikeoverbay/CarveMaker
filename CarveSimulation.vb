@@ -28,6 +28,9 @@ Public Class CarveSimulation
     Private _cell As Double
     Private _blankX0, _blankY0, _blankW, _blankH As Double
     Private _thickness As Double
+    ' The board's top: Z 0, or higher by the extra stock above the finished surface. The heightmap
+    ' holds how deep each cell is cut below this top, so material above Z 0 is cut like any other.
+    Private _topZ As Double
     Private _tool As ToolModel                  ' first tool (kept for callers that ask for "the" tool)
     Private _tools As New List(Of ToolModel)    ' one per distinct tool in the job (drawn above the board)
     Private _toolDefs As New List(Of ToolDefinition)   ' the same tools: shapes of the stamps
@@ -150,6 +153,7 @@ Public Class CarveSimulation
         _blankW = Math.Max(0.01, tp.BlankMaxX - tp.BlankMinX)
         _blankH = Math.Max(0.01, tp.BlankMaxY - tp.BlankMinY)
         _thickness = Math.Max(0.05, Math.Min(s.StockThickness, 2.0))
+        _topZ = Math.Max(0.0, Math.Min(s.ExtraStockZ, 4.0))
         ' One shape and mesh per distinct tool; every move knows which one cuts it.
         _tools.Clear()
         _toolDefs.Clear()
@@ -174,7 +178,8 @@ Public Class CarveSimulation
             _tools.Add(New ToolModel(d, 32))
         Next
         _tool = _tools(0)
-        _thicknessForDraw = CSng(_thickness)
+        ' Cut through below the bottom: the stock thickness under Z 0 plus the extra stock above it.
+        _thicknessForDraw = CSng(_thickness + _topZ)
 
         ' Cell size: requested, coarsened until the texture fits the hardware and a memory cap.
         Dim maxEdge As Integer = Math.Max(256, maxTextureSize)
@@ -321,7 +326,7 @@ Public Class CarveSimulation
     Private Sub CreateWalls()
         ' Four side walls and the bottom of the board (position + normal).
         Dim x0 = CSng(_blankX0), y0 = CSng(_blankY0), x1 = CSng(_blankX0 + _blankW), y1 = CSng(_blankY0 + _blankH)
-        Dim zt As Single = 0, zb As Single = CSng(-_thickness)
+        Dim zt As Single = CSng(_topZ), zb As Single = CSng(-_thickness)
         Dim v As New List(Of Single)
         Dim vert = Sub(x As Single, y As Single, z As Single, nx As Single, ny As Single, nz As Single)
                        v.Add(x) : v.Add(y) : v.Add(z) : v.Add(nx) : v.Add(ny) : v.Add(nz)
@@ -398,6 +403,7 @@ Public Class CarveSimulation
             "uniform vec2 uTexel;" & vbLf &        ' 1/texW, 1/texH
             "uniform float uCell;" & vbLf &        ' inches per texel
             "uniform float uThickness;" & vbLf &   ' stock thickness: deeper cuts go through
+            "uniform float uTop;" & vbLf &         ' Z of the board top (extra stock above Z 0)
             "uniform mat4 uMvp;" & vbLf &
             "out vec3 vNormal;" & vbLf &
             "out float vDepth;" & vbLf &
@@ -409,7 +415,7 @@ Public Class CarveSimulation
             "  float dy = texture(uHeight, suv + vec2(0.0, uTexel.y)).r - texture(uHeight, suv - vec2(0.0, uTexel.y)).r;" & vbLf &
             "  vNormal = normalize(vec3(dx / (2.0 * uCell), dy / (2.0 * uCell), 1.0));" & vbLf &
             "  vDepth = d;" & vbLf &
-            "  vec3 w = vec3(uBlank.x + puv.x * uBlank.z, uBlank.y + puv.y * uBlank.w, -d);" & vbLf &
+            "  vec3 w = vec3(uBlank.x + puv.x * uBlank.z, uBlank.y + puv.y * uBlank.w, uTop - d);" & vbLf &
             "  gl_Position = uMvp * vec4(w, 1.0);" & vbLf &
             "}" & vbLf,
             "#version 330 core" & vbLf &
@@ -517,12 +523,13 @@ Public Class CarveSimulation
             Dim f0 As Double = If(i = startMove, startFrac, 0.0)
             If f1 > f0 AndAlso mv.Kind <> MoveKind.Rapid Then
                 Dim from As Pt3 = If(i = 0, New Pt3(0, 0, 0), moves(i - 1).Target)
-                ' A move that stays at or above the stock top removes nothing.
-                If Math.Min(from.Z, mv.Target.Z) < 0 Then
+                ' A move that stays at or above the board top removes nothing.
+                If Math.Min(from.Z, mv.Target.Z) < _topZ Then
                     Dim ti = MoveTool(i)
                     ' The start is already stamped when it was the end of the previous cut with this tool.
                     Dim startDone = f0 > 0 OrElse (i > 0 AndAlso moves(i - 1).Kind <> MoveKind.Rapid AndAlso MoveTool(i - 1) = ti)
-                    AddStamps(ti, from, mv.Target, f0, f1, startDone)
+                    ' Stamps are measured from the board top (the heightmap is depth below it).
+                    AddStamps(ti, New Pt3(from.X, from.Y, from.Z - _topZ), New Pt3(mv.Target.X, mv.Target.Y, mv.Target.Z - _topZ), f0, f1, startDone)
                 End If
             End If
             _appliedMove = i
@@ -682,6 +689,7 @@ Public Class CarveSimulation
         GL.Uniform2(GL.GetUniformLocation(_surfProg, "uTexel"), CSng(1.0 / _texW), CSng(1.0 / _texH))
         GL.Uniform1(GL.GetUniformLocation(_surfProg, "uCell"), CSng(_blankW / _texW))
         GL.Uniform1(GL.GetUniformLocation(_surfProg, "uThickness"), _thicknessForDraw)
+        GL.Uniform1(GL.GetUniformLocation(_surfProg, "uTop"), CSng(_topZ))
         GL.UniformMatrix4(GL.GetUniformLocation(_surfProg, "uMvp"), False, mvp)
         GL.BindVertexArray(_surfVao)
         GL.Enable(EnableCap.PrimitiveRestart)

@@ -25,5 +25,10 @@ Namespace My
 
     Partial Friend Class MyApplication
 
+        Private Sub MyApplication_Startup(sender As Object, e As StartupEventArgs) Handles Me.Startup
+            ' The real program opens where it was left, maximized the first time (test harnesses
+            ' that make the window themselves do not set this).
+            frmMain.RestoreWindowPlacement = True
+        End Sub
     End Class
 End Namespace

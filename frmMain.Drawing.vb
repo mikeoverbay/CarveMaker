@@ -48,7 +48,7 @@ Partial Class frmMain
                                             If _glView.ActiveTool = DrawTool.Select Then _statusNote = Nothing
                                             UpdateDrawUi()
                                         End Sub
-        AddHandler _glView.DeleteRequested, Sub(o, ev) RemoveDrawingAt(_glView.SelectedObject, selectNext:=False)
+        AddHandler _glView.DeleteRequested, Sub(o, ev) RemoveAfterAsking(_glView.SelectedObject, selectNext:=False)
         AddHandler _glView.EditTextRequested, Sub(o, ev) BeginTextEdit(_objects(ev.Index), isNew:=False)
         AddHandler _glView.DragFeedback, Sub(o, ev) lblStatus.Text = ev.Text
         AddHandler _glView.Resize, Sub(o, ev) PositionTextEditor()
@@ -740,8 +740,28 @@ Partial Class frmMain
     End Sub
 
     Private Sub mnuDrawDelete_Click(sender As Object, e As EventArgs) Handles mnuDrawDelete.Click
-        RemoveDrawingAt(_glView.SelectedObject, selectNext:=False)
+        RemoveAfterAsking(_glView.SelectedObject, selectNext:=False)
     End Sub
+
+    ''' <summary>
+    ''' Removes a drawing the user asked to remove (Remove, Draw > Delete, the Delete key) after asking:
+    ''' a stray click or key must not lose work, and Keep It is the default answer. The drawing named
+    ''' in the question is the one removed, wherever it is in the list by then.
+    ''' </summary>
+    Private Sub RemoveAfterAsking(idx As Integer, selectNext As Boolean)
+        If idx < 0 OrElse idx >= _objects.Count Then Return
+        Dim o = _objects(idx)
+        If Not SkipRemoveConfirmation AndAlso
+           Not ConfirmDialog.Ask(Me, "Remove Drawing",
+                                 "Remove """ & o.Name & """ from the blank?" & Environment.NewLine & Environment.NewLine &
+                                 "Its outline and toolpath settings go with it. This cannot be undone (unless you close without saving).",
+                                 "Remove", "Keep It") Then Return
+        Dim at = _objects.IndexOf(o)
+        If at >= 0 Then RemoveDrawingAt(at, selectNext)
+    End Sub
+
+    ''' <summary>Test harnesses that remove drawings on purpose can skip the question.</summary>
+    Public Shared Property SkipRemoveConfirmation As Boolean
 
     ''' <summary>Removes a drawing (closing its text editor first).</summary>
     Private Sub RemoveDrawingAt(idx As Integer, selectNext As Boolean)

@@ -1,24 +1,69 @@
 ' ============================================================================
 '  frmMain.Toolbars.vb
-'  The toolbars over the view (Project, Draw Tools, Text Style, Snap, View). Each can be
-'  docked on any edge of the view (drag it by its grip), floated in a small
-'  window (drag it off the view, or right-click > Float), and hidden; View >
-'  Toolbars shows them again or puts them all back along the top. Where each
-'  one is goes into the user's preferences.
+'  The toolbars over the view (Project, Draw Tools, Text Style, Snap, View). They
+'  start in the standard arrangement: Project, Draw Tools, Text Style and Snap
+'  across the top, View on the row below, packed again whenever the window's
+'  width changes (one row when maximized). Each can be docked on any edge of the
+'  view (drag it by its grip), floated in a small window (drag it off the view,
+'  or right-click > Float), and hidden; once one is moved by hand the layout is
+'  the user's, and View > Toolbars > Reset Toolbars brings the standard one back.
+'  Where each one is, and the main window's size, go into the user's preferences.
 ' ============================================================================
 
 Partial Class frmMain
+
+    ''' <summary>
+    ''' Set by the application at start-up: the real program opens where it was left (maximized
+    ''' the first time, so the toolbars fit on one row). Test harnesses leave windows as they make them.
+    ''' </summary>
+    Public Shared Property RestoreWindowPlacement As Boolean
+
+    ''' <summary>Maximized, or the saved place when it is still on a screen (from Load).</summary>
+    Private Sub ApplyWindowPlacement()
+        If Not RestoreWindowPlacement OrElse _prefs Is Nothing Then Return
+        If _prefs.WindowWidth > 200 AndAlso _prefs.WindowHeight > 150 Then
+            Dim r As New Rectangle(_prefs.WindowX, _prefs.WindowY, _prefs.WindowWidth, _prefs.WindowHeight)
+            ' Only where the title bar can still be reached (a monitor may have been unplugged).
+            Dim caption As New Point(r.X + r.Width \ 2, r.Y + 12)
+            If Screen.AllScreens.Any(Function(sc) sc.WorkingArea.Contains(caption)) Then
+                StartPosition = FormStartPosition.Manual
+                Bounds = r
+            End If
+        End If
+        If _prefs.WindowMaximized Then WindowState = FormWindowState.Maximized
+        AddHandler FormClosing, Sub(o, ev) SaveWindowPlacement()
+    End Sub
+
+    Private Sub SaveWindowPlacement()
+        Dim r = If(WindowState = FormWindowState.Normal, Bounds, RestoreBounds)
+        ' Closed while minimized (from the taskbar): keep whether it was maximized before.
+        If WindowState <> FormWindowState.Minimized Then _prefs.WindowMaximized = WindowState = FormWindowState.Maximized
+        _prefs.WindowX = r.X : _prefs.WindowY = r.Y
+        _prefs.WindowWidth = r.Width : _prefs.WindowHeight = r.Height
+        _prefs.Save()
+    End Sub
 
     Private _toolbarMenu As ContextMenuStrip
     Private ReadOnly _floatingToolbars As New Dictionary(Of ToolStrip, ToolbarWindow)
     Private ReadOnly _hiddenToolbars As New HashSet(Of ToolStrip)
     Private ReadOnly _lastDock As New Dictionary(Of ToolStrip, String)
     Private _restoringToolbars As Boolean
+    ' The standard arrangement holds (and is packed again when the view's width changes)
+    ' until a toolbar is moved by hand; Reset Toolbars brings it back.
+    Private _autoToolbars As Boolean = True
+    Private _repackPending As Boolean
 
     ''' <summary>The movable toolbars, in their default order along the top.</summary>
     Private ReadOnly Property ViewToolbars As ToolStrip()
         Get
             Return {tsProject, tsDrawTools, tsTextStyle, tsSnap, tsView}
+        End Get
+    End Property
+
+    ''' <summary>The toolbars of the standard arrangement's top row; the View toolbar goes on the row below them.</summary>
+    Private ReadOnly Property TopRowToolbars As ToolStrip()
+        Get
+            Return {tsProject, tsDrawTools, tsTextStyle, tsSnap}
         End Get
     End Property
 
@@ -45,11 +90,18 @@ Partial Class frmMain
         _toolbarMenu = New ContextMenuStrip()
         For Each entry In {("Dock &Top", "Top"), ("Dock &Left", "Left"), ("Dock &Right", "Right"), ("Dock &Bottom", "Bottom")}
             Dim place = entry.Item2
-            _toolbarMenu.Items.Add(entry.Item1, Nothing, Sub(o, ev) If MenuToolbar() IsNot Nothing Then DockToolbar(MenuToolbar(), place))
+            _toolbarMenu.Items.Add(entry.Item1, Nothing, Sub(o, ev)
+                                                            Dim ts = MenuToolbar()
+                                                            If ts Is Nothing Then Return
+                                                            _autoToolbars = False
+                                                            DockToolbar(ts, place)
+                                                        End Sub)
         Next
         _toolbarMenu.Items.Add("&Float", Nothing, Sub(o, ev)
                                                      Dim ts = MenuToolbar()
-                                                     If ts IsNot Nothing AndAlso Not _floatingToolbars.ContainsKey(ts) Then FloatToolbar(ts, ts.PointToScreen(New Point(0, ts.Height + 8)))
+                                                     If ts Is Nothing OrElse _floatingToolbars.ContainsKey(ts) Then Return
+                                                     _autoToolbars = False
+                                                     FloatToolbar(ts, ts.PointToScreen(New Point(0, ts.Height + 8)))
                                                  End Sub)
         AddHandler _toolbarMenu.Opening, Sub(o, ev)
                                              Dim ts = MenuToolbar()
@@ -68,6 +120,8 @@ Partial Class frmMain
             ts.GripStyle = ToolStripGripStyle.Visible
             ts.ContextMenuStrip = _toolbarMenu
             AddHandler ts.EndDrag, AddressOf Toolbar_EndDrag
+            ' A drag by the grip is the user's arrangement from its start: no re-packing under the mouse.
+            AddHandler ts.BeginDrag, Sub(o, ev) _autoToolbars = False
             Dim bar = ts
             Dim mi As New ToolStripMenuItem(ts.Text) With {.Tag = ts}
             AddHandler mi.Click, Sub(o, ev) SetToolbarVisible(bar, Not IsToolbarVisible(bar))
@@ -81,6 +135,7 @@ Partial Class frmMain
                                                             If ts IsNot Nothing Then mi.Checked = IsToolbarVisible(ts)
                                                         Next
                                                     End Sub
+        AddHandler tspTop.SizeChanged, AddressOf TopPanel_SizeChanged
         AddHandler Shown, Sub(o, ev) ShowFloatingToolbars()
         AddHandler FormClosing, Sub(o, ev) SaveToolbarLayout()
         RestoreToolbars()
@@ -112,12 +167,12 @@ Partial Class frmMain
     End Sub
 
     ''' <summary>Where a toolbar dropped into a panel goes: the end of the panel's first row.</summary>
-    Private Shared Function EndOfFirstRow(panel As ToolStripPanel) As Point
+    Private Function EndOfFirstRow(panel As ToolStripPanel) As Point
         Return EndOfRow(panel, 0)
     End Function
 
     ''' <summary>The spot just after the last toolbar of a row (a new row's spot when the row does not exist yet).</summary>
-    Private Shared Function EndOfRow(panel As ToolStripPanel, rowIndex As Integer) As Point
+    Private Function EndOfRow(panel As ToolStripPanel, rowIndex As Integer) As Point
         If panel.Rows.Length = 0 Then Return Point.Empty
         If rowIndex >= panel.Rows.Length Then
             Dim lastRow = panel.Rows(panel.Rows.Length - 1).Bounds
@@ -126,6 +181,8 @@ Partial Class frmMain
         Dim row = panel.Rows(rowIndex)
         Dim lastEdge = 0
         For Each c In row.Controls
+            ' A hidden toolbar keeps its old bounds but takes no room.
+            If TypeOf c Is ToolStrip AndAlso _hiddenToolbars.Contains(DirectCast(c, ToolStrip)) Then Continue For
             lastEdge = Math.Max(lastEdge, If(panel.Orientation = Orientation.Horizontal, c.Right, c.Bottom))
         Next
         Return If(panel.Orientation = Orientation.Horizontal, New Point(lastEdge, row.Bounds.Top), New Point(row.Bounds.Left, lastEdge))
@@ -135,7 +192,7 @@ Partial Class frmMain
     ''' Where a toolbar docked without a spot goes: the end of the first row with room for
     ''' it, or a new row (so a long row does not hide buttons behind its overflow chevron).
     ''' </summary>
-    Private Shared Function EndOfRoomyRow(panel As ToolStripPanel, ts As ToolStrip) As Point
+    Private Function EndOfRoomyRow(panel As ToolStripPanel, ts As ToolStrip) As Point
         If RoomAlong(panel) <= 0 Then Return EndOfFirstRow(panel)
         For r = 0 To panel.Rows.Length - 1
             If FitsAtEndOfRow(panel, r, ts) Then Return EndOfRow(panel, r)
@@ -144,7 +201,7 @@ Partial Class frmMain
     End Function
 
     ''' <summary>The saved spot (end of its saved row), or a row with room when the toolbar no longer fits there.</summary>
-    Private Shared Function SavedSpot(panel As ToolStripPanel, row As Integer, ts As ToolStrip) As Point
+    Private Function SavedSpot(panel As ToolStripPanel, row As Integer, ts As ToolStrip) As Point
         If row >= panel.Rows.Length OrElse RoomAlong(panel) <= 0 OrElse FitsAtEndOfRow(panel, row, ts) Then Return EndOfRow(panel, row)
         Return EndOfRoomyRow(panel, ts)
     End Function
@@ -153,7 +210,7 @@ Partial Class frmMain
         Return If(panel.Orientation = Orientation.Horizontal, panel.Width, panel.Height)
     End Function
 
-    Private Shared Function FitsAtEndOfRow(panel As ToolStripPanel, row As Integer, ts As ToolStrip) As Boolean
+    Private Function FitsAtEndOfRow(panel As ToolStripPanel, row As Integer, ts As ToolStrip) As Boolean
         Dim spot = EndOfRow(panel, row)
         Return If(panel.Orientation = Orientation.Horizontal, spot.X, spot.Y) + ToolbarLength(ts) <= RoomAlong(panel)
     End Function
@@ -165,6 +222,8 @@ Partial Class frmMain
 
     ''' <summary>Docks a toolbar on an edge of the view (at the end of a row with room unless a spot is given).</summary>
     Private Sub DockToolbar(ts As ToolStrip, place As String, Optional at As Point? = Nothing)
+        ' Outside the standard arrangement and start-up, a dock is the user's own layout.
+        If Not _restoringToolbars Then _autoToolbars = False
         UnfloatToolbar(ts)
         Dim panel = PanelOf(place)
         If ts.Parent IsNot Nothing Then ts.Parent.Controls.Remove(ts)
@@ -176,6 +235,7 @@ Partial Class frmMain
 
     ''' <summary>Floats a toolbar in its own small window at a screen point (kept on a screen).</summary>
     Private Sub FloatToolbar(ts As ToolStrip, screenPoint As Point)
+        If Not _restoringToolbars Then _autoToolbars = False
         If Not _floatingToolbars.ContainsKey(ts) Then
             If ts.Parent IsNot Nothing Then _lastDock(ts) = PlaceOf(ts)
             Dim w As New ToolbarWindow(ts) With {.Owner = Me}
@@ -217,6 +277,8 @@ Partial Class frmMain
     ''' <summary>A grip drag that ends away from the view floats the toolbar there.</summary>
     Private Sub Toolbar_EndDrag(sender As Object, e As EventArgs)
         Dim ts = DirectCast(sender, ToolStrip)
+        ' Moved by hand: from now on the arrangement is the user's.
+        _autoToolbars = False
         Dim area = pnlView.RectangleToScreen(pnlView.ClientRectangle)
         area.Inflate(24, 24)
         If Not area.Contains(MousePosition) Then
@@ -227,27 +289,92 @@ Partial Class frmMain
         End If
     End Sub
 
-    ''' <summary>All toolbars shown and docked along the top in their usual order.</summary>
+    ''' <summary>All toolbars shown, in the standard arrangement again.</summary>
     Private Sub ResetToolbars()
+        For Each ts In ViewToolbars
+            UnfloatToolbar(ts)
+        Next
+        _hiddenToolbars.Clear()
+        _lastDock.Clear()
+        _autoToolbars = True
+        ArrangeToolbars()
+    End Sub
+
+    ''' <summary>
+    ''' The standard arrangement: Project, Draw Tools, Text Style and Snap across the top in that
+    ''' order (one row when the view is wide enough, as when maximized; otherwise each that does not
+    ''' fit starts a new row), and the View toolbar (Toolpath, Hide, Show All) on the row below them.
+    ''' </summary>
+    Private Sub ArrangeToolbars()
+        Dim wasRestoring = _restoringToolbars
         _restoringToolbars = True
         Try
             For Each ts In ViewToolbars
-                UnfloatToolbar(ts)
-                If ts.Parent IsNot Nothing Then ts.Parent.Controls.Remove(ts)
+                If Not _floatingToolbars.ContainsKey(ts) AndAlso ts.Parent IsNot Nothing Then ts.Parent.Controls.Remove(ts)
             Next
-            _hiddenToolbars.Clear()
-            _lastDock.Clear()
-            For Each ts In ViewToolbars
-                DockToolbar(ts, "Top")
+            For Each ts In TopRowToolbars
+                If _floatingToolbars.ContainsKey(ts) Then Continue For
+                ' Flow: the end of the last row if it fits there, else a new row (the order always holds).
+                Dim last = Math.Max(0, tspTop.Rows.Length - 1)
+                DockToolbar(ts, "Top", If(tspTop.Rows.Length = 0 OrElse RoomAlong(tspTop) <= 0 OrElse Not IsToolbarVisible(ts) OrElse FitsAtEndOfRow(tspTop, last, ts),
+                                          EndOfRow(tspTop, last), EndOfRow(tspTop, tspTop.Rows.Length)))
             Next
+            If Not _floatingToolbars.ContainsKey(tsView) Then DockToolbar(tsView, "Top", EndOfRow(tspTop, tspTop.Rows.Length))
         Finally
-            _restoringToolbars = False
+            _restoringToolbars = wasRestoring
         End Try
         SaveToolbarLayout()
     End Sub
 
+    ''' <summary>The window's width changed: pack the standard arrangement again if it no longer matches.</summary>
+    Private Sub TopPanel_SizeChanged(sender As Object, e As EventArgs)
+        If Not _autoToolbars OrElse _restoringToolbars OrElse _repackPending OrElse Not IsHandleCreated Then Return
+        _repackPending = True
+        BeginInvoke(Sub()
+                        _repackPending = False
+                        If _autoToolbars AndAlso Not _restoringToolbars AndAlso Not ArrangementHolds() Then ArrangeToolbars()
+                    End Sub)
+    End Sub
+
+    ''' <summary>
+    ''' The top toolbars are packed as the standard arrangement packs them at this width: none runs
+    ''' past the edge (unless it is alone in its row) and no row's first one would fit after the row above.
+    ''' </summary>
+    Private Function ArrangementHolds() As Boolean
+        Dim room = RoomAlong(tspTop)
+        If room <= 0 Then Return True
+        Dim tops = TopRowToolbars.Where(Function(t) t.Parent Is tspTop AndAlso IsToolbarVisible(t)).ToList()
+        For Each ts In tops
+            ' Past the edge, or squeezed by the panel (buttons behind the chevron), unless alone at the row's start.
+            Dim squeezed = ts.Width < ts.PreferredSize.Width - 2
+            If (ts.Right > room OrElse squeezed) AndAlso ts.Left > tspTop.Padding.Left + 8 Then Return False
+        Next
+        For r = 1 To tspTop.Rows.Length - 1
+            Dim first = tspTop.Rows(r).Controls.OfType(Of ToolStrip)().Where(Function(t) tops.Contains(t)).OrderBy(Function(t) t.Left).FirstOrDefault()
+            If first IsNot Nothing AndAlso first Is tspTop.Rows(r).Controls.OfType(Of ToolStrip)().Where(Function(t) IsToolbarVisible(t)).OrderBy(Function(t) t.Left).FirstOrDefault() AndAlso
+               FitsAtEndOfRow(tspTop, r - 1, first) Then Return False
+        Next
+        Return True
+    End Function
+
     ''' <summary>Puts the toolbars where the preferences say (new ones along the top).</summary>
     Private Sub RestoreToolbars()
+        If _prefs.ToolbarsAuto OrElse _prefs.Toolbars.Count = 0 Then
+            ' The standard arrangement (also once for layouts saved before it existed); hidden ones stay hidden.
+            For Each st In _prefs.Toolbars
+                Dim hidden = ViewToolbars.FirstOrDefault(Function(t) t.Name = st.Name)
+                If hidden IsNot Nothing AndAlso Not st.Visible Then _hiddenToolbars.Add(hidden)
+            Next
+            _autoToolbars = True
+            _restoringToolbars = True
+            Try
+                ArrangeToolbars()
+            Finally
+                _restoringToolbars = False
+            End Try
+            Return
+        End If
+        _autoToolbars = False
         _restoringToolbars = True
         Try
             Dim placed As New HashSet(Of ToolStrip)
@@ -302,6 +429,7 @@ Partial Class frmMain
                                                   End If
                                                   Return p
                                               End Function).ToList()
+        _prefs.ToolbarsAuto = _autoToolbars
         _prefs.Save()
     End Sub
 End Class

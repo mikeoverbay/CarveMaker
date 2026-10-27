@@ -78,6 +78,8 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
 | `Icons.vb` | `IconKind` and every button/menu picture, drawn in code on a 20-unit grid (light ink, or dark ink for a yellow toggle); `ToolLibrary` uses `ToolDrawing.RenderIcon` |
 | `frmMain.Skin.vb` | Partial frmMain: `SetupSkin` (skin, toolbar styling, toggles, toolbar and menu icons) and the Project toolbar (`tsProject`: `MenuButton` mirrors a menu item's click and enabled state) |
 | `frmMain.Toolbars.vb` | Partial frmMain: the five movable toolbars over the view (`tsProject`, `tsDrawTools`, `tsTextStyle`, `tsSnap`, `tsView`; docked without a spot they go to the end of the first row with room, `EndOfRoomyRow`) in four `ToolStripPanel`s around the GL view or in a `ToolbarWindow` (floating), right-click menu, View > Toolbars, layout saved per toolbar as panel + row + order (floating: screen position) in `UserPreferences.Toolbars` |
+| `GridCheckBoxes.vb` | Yes/no grid rows as check boxes: `CheckBoxEditor` (paints the box), `CheckBoxConverter` (no words, no list, not typed in), `GridCheckBoxes` (`Attributes`, `AsCheckBox` used by FilteredView on every Boolean row, `Attach` from `Skin.StyleGrid`: watches the grid's internal edit box, `Flip`) |
+| `frmMain.Moves.vb` | Partial frmMain: the View toolbar's Cuts and Rapids switches (after Status) with View > Show Cutting Moves / Show Rapid Moves, and `IsToolpathShown` (each toolpath's Show in view, read from the live objects) |
 | `frmMain.Drawing.vb` | Partial frmMain: Draw and Style menus, snap controls, draw toolbar (`tsDrawTools` over the view, icons from `Icons.vb`), drawings from `ShapeDrawn`, the in-place text editor (`BeginTextEdit` / `EndTextEdit`), text style, arrange commands, `RemoveDrawingAt` |
 | `Setup\` | Installer project and `Setup.iss` |
 | `Samples\` | Six sample SVGs shipped next to the exe |
@@ -168,8 +170,9 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
    Float; closing hides, title double-click docks), View > Toolbars to show/hide/reset.
 13. **3D models (reliefs).** See the file map. A model is a `DesignObject` of kind Model whose
    `Machining` is its roughing and `FinishMachining` its finishing (`CutOperation.Roughing3D` /
-   `Finishing3D`; the Drawings grid shows both flat via `FilteredView`'s second Machining, matched by
-   descriptor REFERENCE: descriptors of the same property compare equal until their category is read).
+   `Finishing3D`; the Drawings grid shows both flat via `FilteredView`'s second Machining; its rows carry a private
+   `SecondToolpathAttribute` mark that `GetPropertyOwner` looks for. A reference set of those descriptors, cleared at
+   2000, used to send Toolpath 2 edits to the roughing pass after about 83 grid refreshes: review 2026-10-27).
    Projects with a model are file version 2 (older versions refuse them cleanly). Generation now runs
    `JobBuilder.Generate` AND `ToolpathView.PrepareLines` (line vertex arrays) on the worker and posts the
    result with `BeginInvoke`; `SetGenerating` disables Generate / Export / simulation controls and shows
@@ -231,6 +234,34 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
    set of points closes this; the exact fix is a per-column maximum over each step (each column's
    zc - Eval(d(t)) - line(t) is concave in t; BMax bounds prune), not done: the overlap is microscopic
    (sideways eps for the rim graze) and the cost unmeasured.
+18. **Check boxes, Show in view, Cuts / Rapids** (2026-10-27). The user asked for (a) every True/False drop-down in
+   the object panel turned into a simple check box, (b) a visibility check box per toolpath to hide it in the view, and
+   (c) buttons on the main window to hide rapid moves and regular moves.
+   (a) `GridCheckBoxes.vb`, applied to every grid (Drawings tab, Text tab, Machine Settings) for consistency: FilteredView
+   wraps every Boolean row (`AsCheckBox`; Toolpath 2 rows also get the second-toolpath mark), FontChoice.Bold/Italic carry
+   the attributes (nested rows). A probe showed the .NET 8 PropertyGridView hands every left click on a row's value (the
+   paint box too) to its `GridViewTextBox` as MouseDown with `SelectedGridItem` already the clicked row, and raises none
+   of its own MouseDown/MouseUp/KeyDown (keys typed while it has the focus reach the edit box as WM_CHAR): so `Attach`
+   watches that edit box (made lazily: ControlAdded): MouseDown flips, KeyPress swallows every character and flips on a
+   space, KeyDown swallows paste and delete. The converter must say its values are NOT exclusive: the grid only treats
+   a row as typeable (and draws its label in normal ink rather than the read-only grey) when the converter takes text
+   and its standard values are not exclusive (BooleanConverter's are); nothing can be typed because of the key hooks. `Flip` (posted with
+   BeginInvoke, only while the row is still the selected one) sets the value on the row's owner (parent row's value for
+   nested rows, else `ICustomTypeDescriptor.GetPropertyOwner`), raises the protected `OnPropertyValueChanged` by
+   reflection (the forms see an ordinary edit with the old value) and refreshes the grid (RefreshProperties rows).
+   (b) `Machining.ShowInView` (default True, saved in the .prj, NOT in `Key()`: no regeneration, relief cache kept; first
+   row of a toolpath, second after Cut this pass on a model). `JobBuilder.Generate` registers a `ToolpathOwner` per usable
+   item (`MachiningItem.Source` = the live DesignObject from `PlacedItems`, only compared; the text has `IsText`; a model
+   also gets Pass 1 for its finishing) and `AppendSegment(runs:=)` records `Toolpath.OwnerRuns` (move ranges): pockets and
+   profiles per item, 3D passes whole, a V-carve group of one item whole, a union of several by `ItemRuns` (a cutting move
+   to the item whose area holds it, preferring the previous move's item; a vertical rapid up to the move before; other
+   rapids to the cut they lead to). `PrepareLines` groups the cut and rapid vertex arrays by owner (group 0 = no owner,
+   k + 1 = owner k; `CutStarts`/`RapidStarts` in vertices; the line to move i belongs to move i) and the paint draws
+   `ShownRanges` (neighbouring shown groups joined) asking `ToolpathShown` (frmMain.Moves.vb). A Show in view edit only
+   invalidates the view and marks the project changed. The simulation, export and statistics are unchanged.
+   (c) `ToolpathView.ShowCuts`; `_tsbShowCuts`/`_tsbShowRapids` (round toggles, yellow while shown, icons
+   `CutMoves`/`RapidMoves`) follow `_mnuViewCuts`/`mnuViewRapids` both ways; not saved between runs (like Show Rapid Moves).
+   New controls are made in code, not in the designer files (the user opens the solution in Visual Studio 2022).
 12. **Picking rules and the user guide.** `PickAt` collects every object near the
    cursor (one GPU pass per nearby object, `PickAllAt`) and picks: under the cursor,
    then the smallest box, then the nearest, then the topmost. Clicks use
@@ -262,6 +293,8 @@ torture SVG folders and their expectation scripts). Build with
 | `relief` | 3D: dragon import (side, units, size), storage round trip, grid rows of a model, 15" scale + depth, roughing + finishing with an independent brute-force gouge check on sampled moves (roughing: never closer than the allowance), the toolpath cache when moving, G-code programs; then the spiral pattern: rows / key / summary / project round trip (and pre-spiral files), spiral roughing + finishing in both directions with the gouge check (every n-th move plus the long moves), where each starts and ends (radius about the centre, mean radius per tenth of the moves), finishing coverage (every covered cell within a stepover of a cut), roughing levels and stock left (flat end mill replayed on a 0.01" grid, compared with the raster; no rapid into uncut stock), a 4" whole-box spiral (corners within half a stepover), and a moves / time / G-code size table |
 | `spiralverify` | Spiral against raster on a 600-cell synthetic model (plateau, spikes, hole, island): every move sampled every 0.2 cell against the drop, rapids, roughing stock replay and engagement, coverage (with levels, stock-top points left out), link lengths, rotated / mirrored / tapered ball cases |
 | `spiralgouge` | The engine straight on the synthetic grid: raster and spiral finishing, both machine areas, two smoothing values, every move checked against an independent drop |
+| `moves` | Show in view without a window: owners and runs of a job with the text, two V-carved drawings sharing its V-bit, two pockets sharing a tool, a profile and a synthetic 3D model (every move once, each owner's cuts on its drawing, retracts with their cut, segments vs owners, one segment per toolpath for export), PrepareLines groups against an independent regrouping, ShowInView out of the key and saved / missing in old files, grid rows (order, owners of the model's two rows, every Boolean row a check box, the converter) |
+| `movesgui [dir]` | The real window: Show in view ticked/unticked by a click on the box, on the value, Space and a double-click (no error box), lines hidden without regenerating (ShownRanges and screen pixels), Cut through the stock regenerates and changes the rows, the Text tab's Show in view and Large font > Bold, Machine Settings' Dust collection, the Cuts / Rapids switches and View menu (screen pixels), the simulation keeps every move; screenshots `moves_*.png` |
 | `reliefrapids` | Dragon 15": lifts, rapid length and machining time for raster and both spirals, roughed or not, with where the lifts are (radius, depth left) and the hop lengths |
 | `reliefgui` | 3D import through the form (env `SMOKE_SHOTS=1` screenshots during generation, `SMOKE_HOVER=1` hover light check, `SMOKE_STEPS=1` tab-switch steps) |
 | `reliefdemo` | Opens the window maximized, imports the dragon at 15" on a 16" blank, shows the simulation and leaves the window to the user |

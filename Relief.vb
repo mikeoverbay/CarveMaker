@@ -352,14 +352,14 @@ Friend Module ReliefJob
             Dim o = it.Model
             If o.Machining.Enabled Then
                 Dim moves = Run(tp, o, o.Machining, s, roughed:=False, token:=token)
-                JobBuilder.AppendSegment(tp, "3D roughing: " & o.Name, CutOperation.Roughing3D, o.Machining.Tool, o.Machining.SpindleRpm, moves)
+                JobBuilder.AppendSegment(tp, "3D roughing: " & o.Name, CutOperation.Roughing3D, o.Machining.Tool, o.Machining.SpindleRpm, moves, runs:=JobBuilder.WholeRun(moves, it.OwnerIndex))
             End If
         Next
         For Each it In items
             Dim o = it.Model
             If o.FinishMachining IsNot Nothing AndAlso o.FinishMachining.Enabled Then
                 Dim moves = Run(tp, o, o.FinishMachining, s, roughed:=o.Machining.Enabled, token:=token)
-                JobBuilder.AppendSegment(tp, "3D finishing: " & o.Name, CutOperation.Finishing3D, o.FinishMachining.Tool, o.FinishMachining.SpindleRpm, moves)
+                JobBuilder.AppendSegment(tp, "3D finishing: " & o.Name, CutOperation.Finishing3D, o.FinishMachining.Tool, o.FinishMachining.SpindleRpm, moves, runs:=JobBuilder.WholeRun(moves, it.FinishOwnerIndex))
             End If
         Next
         Trace?.Invoke("3D passes added: " & tp.Moves.Count & " moves")

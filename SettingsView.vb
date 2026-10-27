@@ -8,7 +8,8 @@
 '  descriptors and names the real object as their owner, so edits land on the
 '  shared objects and the form's change handlers see the usual property names.
 '  Toolpath rows (Machining) are shown flat in their own category; which rows
-'  appear follows the chosen operation (Machining.VisibleProperties).
+'  appear follows the chosen operation (Machining.VisibleProperties). Yes/no
+'  rows are shown as check boxes (GridCheckBoxes.vb).
 ' ============================================================================
 
 Imports System.ComponentModel
@@ -23,9 +24,16 @@ Public Class FilteredView
     Private ReadOnly _machiningCategory As String
     Private ReadOnly _second As Func(Of Machining)
     Private ReadOnly _secondCategory As String
-    ' Rows of the second toolpath: the grid asks for each row's owner with the descriptor it was given.
-    ' By reference: descriptors of the same property compare equal until their category is read.
-    Private ReadOnly _secondRows As New HashSet(Of PropertyDescriptor)(ReferenceEqualityComparer.Instance)
+
+    ''' <summary>
+    ''' Marks the rows of the second toolpath: the grid asks for each row's owner with the descriptor it
+    ''' was given, and the mark travels with it (a list of those descriptors would have to be kept, and
+    ''' forgotten, as the grid refreshes).
+    ''' </summary>
+    Private NotInheritable Class SecondToolpathAttribute
+        Inherits Attribute
+        Public Shared ReadOnly Mark As New SecondToolpathAttribute()
+    End Class
 
     ''' <param name="machining">The toolpath settings to show flat (Nothing for none).</param>
     ''' <param name="machiningCategory">Category the toolpath rows appear under.</param>
@@ -49,25 +57,19 @@ Public Class FilteredView
     End Property
 
     Public Function GetProperties(attributes As Attribute()) As PropertyDescriptorCollection Implements ICustomTypeDescriptor.GetProperties
-        Dim list = TypeDescriptor.GetProperties(_target, attributes, True).Cast(Of PropertyDescriptor)().Where(_include).ToList()
+        ' Yes/no rows are check boxes (GridCheckBoxes).
+        Dim list = TypeDescriptor.GetProperties(_target, attributes, True).Cast(Of PropertyDescriptor)().Where(_include).
+            Select(Function(p) GridCheckBoxes.AsCheckBox(p)).ToList()
         Dim m = _machining?.Invoke()
         If m IsNot Nothing Then
             For Each p In Machining.VisibleProperties(m, attributes)
-                list.Add(TypeDescriptor.CreateProperty(GetType(Machining), p, New CategoryAttribute(_machiningCategory)))
+                list.Add(GridCheckBoxes.AsCheckBox(p, New CategoryAttribute(_machiningCategory)))
             Next
         End If
         Dim m2 = _second?.Invoke()
         If m2 IsNot Nothing Then
-            SyncLock _secondRows
-                ' Rows from long-gone refreshes are no longer asked about.
-                If _secondRows.Count > 2000 Then _secondRows.Clear()
-            End SyncLock
             For Each p In Machining.VisibleProperties(m2, attributes)
-                Dim pd = TypeDescriptor.CreateProperty(GetType(Machining), p, New CategoryAttribute(_secondCategory))
-                SyncLock _secondRows
-                    _secondRows.Add(pd)
-                End SyncLock
-                list.Add(pd)
+                list.Add(GridCheckBoxes.AsCheckBox(p, New CategoryAttribute(_secondCategory), SecondToolpathAttribute.Mark))
             Next
         End If
         Return New PropertyDescriptorCollection(list.ToArray())
@@ -80,11 +82,7 @@ Public Class FilteredView
     ''' <summary>Toolpath rows belong to their Machining object, everything else to the target.</summary>
     Public Function GetPropertyOwner(pd As PropertyDescriptor) As Object Implements ICustomTypeDescriptor.GetPropertyOwner
         If pd IsNot Nothing AndAlso pd.ComponentType Is GetType(Machining) Then
-            Dim isSecond As Boolean
-            SyncLock _secondRows
-                isSecond = _secondRows.Contains(pd)
-            End SyncLock
-            If isSecond AndAlso _second IsNot Nothing Then Return _second()
+            If pd.Attributes(GetType(SecondToolpathAttribute)) IsNot Nothing AndAlso _second IsNot Nothing Then Return _second()
             If _machining IsNot Nothing Then Return _machining()
         End If
         Return _target

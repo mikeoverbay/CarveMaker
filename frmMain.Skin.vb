@@ -39,8 +39,10 @@ Partial Class frmMain
         tsbSimToggle.Image = _pathIcon
         tsbSimToggle.Text = "Toolpath"
         tsbSimPlay.Image = _playIcon
-        ' The Status button after the Toolpath / Simulation switch (frmMain.Status.vb).
+        ' The Status button after the Toolpath / Simulation switch (frmMain.Status.vb), then the Cuts and
+        ' Rapids switches (frmMain.Moves.vb).
         SetupStatusButton(px)
+        SetupMoveButtons(px)
         Dim simBarBefore = tsSim.PreferredSize.Height
         For Each ts In {tsProject, tsDrawTools, tsTextStyle, tsSnap, tsView, tsObjects, tsFormat, tsSim}
             Skin.StyleToolbar(ts)
@@ -108,6 +110,8 @@ Partial Class frmMain
         Skin.SetIcon(mnuStyleAlignCenter, IconKind.AlignCenter)
         Skin.SetIcon(mnuStyleAlignRight, IconKind.AlignRight)
         Skin.SetIcon(mnuViewSim, IconKind.Simulation)
+        Skin.SetIcon(_mnuViewCuts, IconKind.CutMoves)
+        Skin.SetIcon(mnuViewRapids, IconKind.RapidMoves)
         Skin.SetIcon(mnuToolpathGenerate, IconKind.Generate)
         Skin.SetIcon(_mnuToolpathAbort, IconKind.StopGenerate)
         Skin.SetIcon(mnuToolLibrary, IconKind.ToolLibrary)

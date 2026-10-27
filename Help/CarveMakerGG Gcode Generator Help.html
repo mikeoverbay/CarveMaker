@@ -102,6 +102,7 @@
   <tr><td><b>Drawings</b> tab</td><td>The list of drawings (imported SVGs, shapes, areas and text drawings) and the settings of the selected one, including its toolpath.</td></tr>
   <tr><td>Toolbars over the view</td><td><i>Project</i>, <i>Draw Tools</i>, <i>Text Style</i>, <i>Snap</i> and <i>View</i>. They can be moved, floated or hidden (see <a href="#toolbars">Toolbars</a>).</td></tr>
   <tr><td>The view</td><td>The blank, the outlines, the toolpath coloured by depth (cyan shallow, orange deep) and the rapid moves in red; or the simulated carving.</td></tr>
+  <tr><td>Settings lists</td><td>The text settings, the selected drawing's settings and the Machine Settings window. Yes/no settings are check boxes: click the box (or anywhere in the row's value), or press <kbd>Space</kbd>, to switch them.</td></tr>
   <tr><td>Status bar</td><td>Messages on the left (warnings such as text running off the blank, or hints for the current tool); on the right the number of objects (every separately cut shape: each letter, each drawing region, pocket, profile or 3D model) and passes, the job size, depth, cut length, time estimate and number of tools.</td></tr>
 </table>
 
@@ -182,7 +183,7 @@
   <li><b>Model units</b>: STL and OBJ files do not say their units. Millimetres are assumed for a large model; change it if the size is wrong (the scale percentage stays).</li>
   <li><b>Machine area</b>: <i>Inside the model's outline</i> keeps the tool centre over the model (its edge still cuts a tool radius beyond it, down to the model's lowest level), or <i>The whole box</i>.</li>
 </ul>
-<p>Every 3D model has two toolpaths, <b>Toolpath 1 - Roughing</b> and <b>Toolpath 2 - Finishing</b>, each with its own tool, speeds and feeds and a <i>Cut this pass</i> switch. Any tool can be used except a drill.</p>
+<p>Every 3D model has two toolpaths, <b>Toolpath 1 - Roughing</b> and <b>Toolpath 2 - Finishing</b>, each with its own tool, speeds and feeds, a <i>Cut this pass</i> switch and a <i>Show in view</i> box (see <a href="#toolpaths">Toolpaths</a>). Any tool can be used except a drill.</p>
 <table>
   <tr><th>Pass</th><th>What it does</th></tr>
   <tr><td>Roughing</td><td>Usually a flat end mill. Clears the stock in flat levels (<i>Pass depth</i> apart), with straight runs or a spiral (<i>Stepover</i> apart, see <i>Pattern</i>) and a pass around the edge of each level, and leaves the <i>Allowance</i> on the surface for the finishing tool.</td></tr>
@@ -197,8 +198,9 @@
 <p>Buttons that do something once are glossy black with a lime bar that glows under the mouse. Buttons that stay on (a draw tool, Bold, Italic, an alignment or size, the simulation switch) are round and turn yellow while on. Hold the mouse on a button to see what it does and its shortcut.</p>
 <ul>
   <li><i>Project</i>: New, Open and Save; Generate (<kbd>F5</kbd>), Stop (<kbd>Shift</kbd>+<kbd>F5</kbd>) and Export G-code; the Tool Library and Machine Settings. Each button is greyed out when its menu item is (Stop only while a toolpath is being computed).</li>
+  <li><b>Cuts</b> and <b>Rapids</b> (after Status on the <i>View</i> toolbar, yellow while shown): show or hide the cutting moves and the rapid moves (red) in the view, like <span class="menu">View &gt; Show Cutting Moves / Show Rapid Moves</span>. Display only: hidden moves are still cut, exported and simulated.</li>
   <li><b>Status</b> (after the Toolpath / Simulation switch on the <i>View</i> toolbar): green when the job is fine; red and blinking when something is wrong (a toolpath warning such as a bit too shallow for the depth or text off the blank, a drawing that cannot be carved, settings out of range, a failed generation, rapids inside the extra stock); amber while a toolpath is computed; grey with nothing to cut. Click it for the <i>Job Status</i> table: one row per problem (where it is and what it is), then the job's numbers (objects, passes, size, deepest cut, cut length, time, the tool of each program). <i>Copy All</i> copies the table to paste into a spreadsheet.</li>
-  <li>They start in the standard arrangement: <i>Project</i>, <i>Draw Tools</i>, <i>Text Style</i> (font, bold, italic, alignment) and <i>Snap</i> across the top, <i>View</i> (Toolpath / Simulation, Hide, Show All) on the row below. The window opens maximized the first time (then as you left it), so the top four fit on one row; in a narrower window they wrap, and they pack again when the window is resized.</li>
+  <li>They start in the standard arrangement: <i>Project</i>, <i>Draw Tools</i>, <i>Text Style</i> (font, bold, italic, alignment) and <i>Snap</i> across the top, <i>View</i> (Toolpath / Simulation, Status, Cuts, Rapids, Hide, Show All) on the row below. The window opens maximized the first time (then as you left it), so the top four fit on one row; in a narrower window they wrap, and they pack again when the window is resized.</li>
   <li>Drag a toolbar by its dotted grip to any edge of the view: top, bottom, left or right, in rows.</li>
   <li>Drag it off the view to float it in its own small window. Double-click that window's title to dock it again; closing it hides the toolbar.</li>
   <li>Right-click a toolbar to dock it on an edge, float it or hide it.</li>
@@ -206,7 +208,8 @@
 </ul>
 
 <h2 id="toolpaths">Toolpaths</h2>
-<p>The text (<i>3. Toolpath</i> on the Text tab) and every drawing (<i>Toolpath</i> on the Drawings tab) have their own toolpath: the <b>Operation</b>, the <b>Tool</b> (the <b>&hellip;</b> button opens the tool library), and the <b>spindle speed</b>, <b>feed rate</b> and <b>plunge rate</b>. Picking a tool fills in its speeds; you can still change them.</p>
+<p>The text (<i>3. Toolpath</i> on the Text tab) and every drawing (<i>Toolpath</i> on the Drawings tab) have their own toolpath: <b>Show in view</b>, the <b>Operation</b>, the <b>Tool</b> (the <b>&hellip;</b> button opens the tool library), and the <b>spindle speed</b>, <b>feed rate</b> and <b>plunge rate</b>. Picking a tool fills in its speeds; you can still change them.</p>
+<p><b>Show in view</b> is a check box: untick it to hide that toolpath's lines in the view, so the others are easier to see (a 3D model has one for each of its two toolpaths). It is display only: nothing is generated again, and the toolpath is still cut, exported and simulated. It is saved with the project.</p>
 <table>
   <tr><th>Operation</th><th>What it does</th></tr>
   <tr><td>V-carve</td><td>Carves the shape with a V-bit: deeper where the shape is wider, with sharp corners. Depths are under <i>Machine Settings &gt; 2. Cut settings</i>.</td></tr>
@@ -240,7 +243,7 @@
 </figure>
 <ul>
   <li><b>Pan</b>: drag with the left button (anywhere, also over drawings: hold <kbd>Shift</kbd> to move a drawing instead), or with the middle button. <b>Orbit</b>: drag with the right button. <b>Zoom</b>: mouse wheel. <b>Fit</b>: double-click empty space or <kbd>Ctrl</kbd>+<kbd>E</kbd>.</li>
-  <li><span class="menu">View</span>: Top (<kbd>Ctrl</kbd>+<kbd>T</kbd>) and Isometric (<kbd>Ctrl</kbd>+<kbd>I</kbd>) views, rapid moves, outlines and the 1" grid.</li>
+  <li><span class="menu">View</span>: Top (<kbd>Ctrl</kbd>+<kbd>T</kbd>) and Isometric (<kbd>Ctrl</kbd>+<kbd>I</kbd>) views, cutting moves and rapid moves (also the <i>Cuts</i> and <i>Rapids</i> buttons), outlines and the 1" grid. The top view is flat (true to scale for drawing and measuring); a tilted view is in perspective, so the near edge of the board is bigger than the far one. The isometric view fits the whole job.</li>
   <li><b>Simulation</b> (<kbd>Ctrl</kbd>+<kbd>M</kbd>, or the <i>Toolpath / Simulation</i> switch at the start of the <i>View</i> toolbar, which shows which of the two is on): shows the finished part first. The bar under the view has Play/Pause, Reset, the playback speed and a slider to scrub through the job.</li>
 </ul>
 

@@ -46,6 +46,8 @@ Public Class ToolpathView
         Public VertexCount As Integer
         Public Data As Single() = New Single() {}   ' last vertex data; re-uploaded after a handle recreation
         Public Dirty As Boolean
+        ' Cut and rapid layers: where each toolpath's lines start (ToolpathLines.CutStarts / RapidStarts).
+        Public Starts As Integer()
     End Class
 
     Private ReadOnly _grid As New LineLayer()
@@ -1320,6 +1322,7 @@ Public Class ToolpathView
     End Class
 
     Private _showRapids As Boolean = True
+    Private _showCuts As Boolean = True
     Private _showOutline As Boolean = True
     Private _showGrid As Boolean = True
 
@@ -1368,6 +1371,23 @@ Public Class ToolpathView
             Invalidate()
         End Set
     End Property
+
+    ''' <summary>Shows the cutting moves (feeds and plunges) of the toolpath lines.</summary>
+    Public Property ShowCuts As Boolean
+        Get
+            Return _showCuts
+        End Get
+        Set(value As Boolean)
+            _showCuts = value
+            Invalidate()
+        End Set
+    End Property
+
+    ''' <summary>
+    ''' Asked while painting whether a toolpath's lines are shown (the form looks up the toolpath's
+    ''' Show in view switch); Nothing: every toolpath is. Invalidate the view after a switch changes.
+    ''' </summary>
+    Public Property ToolpathShown As Func(Of ToolpathOwner, Boolean)
 
     Public Property ShowOutline As Boolean
         Get
@@ -1688,7 +1708,9 @@ Public Class ToolpathView
         SetPending(_blank, l.Blank)
         SetPending(_outline, l.Outline)
         SetPending(_cuts, l.Cuts)
+        _cuts.Starts = l.CutStarts
         SetPending(_rapids, l.Rapids)
+        _rapids.Starts = l.RapidStarts
         Invalidate()
     End Sub
 
@@ -1736,35 +1758,87 @@ Public Class ToolpathView
         End If
         l.Outline = outline.ToArray()
 
-        ' Cuts and rapids straight into arrays of the right size (no growing lists of millions of floats).
-        Dim nCut = 0, nRapid = 0
+        ' Cuts and rapids straight into arrays of the right size (no growing lists of millions of floats),
+        ' each toolpath's lines together so the view can leave a hidden one out. Group 0: moves of no
+        ' toolpath; group k + 1: tp.Owners(k). The line to move i belongs to move i.
+        Dim groups = If(tp Is Nothing, 1, tp.Owners.Count + 1)
+        Dim cutLines(groups - 1) As Integer, rapidLines(groups - 1) As Integer
         If tp IsNot Nothing Then
+            Dim walk As New RunWalker(tp)
             For i = 1 To tp.Moves.Count - 1
-                If tp.Moves(i).Kind = MoveKind.Rapid Then nRapid += 1 Else nCut += 1
+                Dim g = walk.GroupOf(i)
+                If tp.Moves(i).Kind = MoveKind.Rapid Then rapidLines(g) += 1 Else cutLines(g) += 1
             Next
         End If
-        Dim cuts(nCut * 12 - 1) As Single, rapids(nRapid * 12 - 1) As Single
+        Dim cutStart = GroupStarts(cutLines), rapidStart = GroupStarts(rapidLines)
+        Dim cuts(cutStart(groups) * 12 - 1) As Single, rapids(rapidStart(groups) * 12 - 1) As Single
         If tp IsNot Nothing Then
             Dim depthRange As Double = Math.Max(-tp.MinZ, 0.0001)
-            Dim ci = 0, ri = 0
+            ' The next free line of each group.
+            Dim ci = DirectCast(cutStart.Clone(), Integer()), ri = DirectCast(rapidStart.Clone(), Integer())
+            Dim walk As New RunWalker(tp)
             For i = 1 To tp.Moves.Count - 1
                 Dim a = tp.Moves(i - 1).Target, mv = tp.Moves(i)
                 Dim b = mv.Target
+                Dim g = walk.GroupOf(i)
                 If mv.Kind = MoveKind.Rapid Then
-                    PutLine(rapids, ri, a, b, 0.85F, 0.25F, 0.2F)
-                    ri += 12
+                    PutLine(rapids, ri(g) * 12, a, b, 0.85F, 0.25F, 0.2F)
+                    ri(g) += 1
                 Else
                     ' Shallow = cyan, deep = yellow/orange.
                     Dim t As Double = Math.Min(1.0, Math.Max(0.0, -b.Z / depthRange))
-                    PutLine(cuts, ci, a, b, CSng(0.25 + 0.75 * t), CSng(0.85 - 0.2 * t), CSng(1.0 - 0.9 * t))
-                    ci += 12
+                    PutLine(cuts, ci(g) * 12, a, b, CSng(0.25 + 0.75 * t), CSng(0.85 - 0.2 * t), CSng(1.0 - 0.9 * t))
+                    ci(g) += 1
                 End If
             Next
         End If
         l.Cuts = cuts
         l.Rapids = rapids
+        ' In vertices (two per line).
+        l.CutStarts = cutStart.Select(Function(x) 2 * x).ToArray()
+        l.RapidStarts = rapidStart.Select(Function(x) 2 * x).ToArray()
         Return l
     End Function
+
+    ''' <summary>Where each group starts when the groups follow each other, plus the total at the end.</summary>
+    Private Shared Function GroupStarts(counts As Integer()) As Integer()
+        Dim s(counts.Length) As Integer
+        For g = 0 To counts.Length - 1
+            s(g + 1) = s(g) + counts(g)
+        Next
+        Return s
+    End Function
+
+    ''' <summary>Walks a toolpath's owner runs in move order: the line group of each move (0: no toolpath, k + 1: owner k).</summary>
+    Private NotInheritable Class RunWalker
+        Private ReadOnly _runs As List(Of OwnerRun)
+        Private ReadOnly _owners As Integer
+        Private _r As Integer
+
+        Public Sub New(tp As Toolpath)
+            _owners = tp.Owners.Count
+            _runs = tp.OwnerRuns
+            ' The runs are made in move order; keep the walk right even if they were not.
+            For k = 1 To _runs.Count - 1
+                If _runs(k).FirstMove < _runs(k - 1).FirstMove Then
+                    _runs = _runs.OrderBy(Function(x) x.FirstMove).ToList()
+                    Exit For
+                End If
+            Next
+        End Sub
+
+        ''' <summary>The group of move i (i never goes down between calls).</summary>
+        Public Function GroupOf(i As Integer) As Integer
+            While _r < _runs.Count AndAlso _runs(_r).FirstMove + _runs(_r).Count <= i
+                _r += 1
+            End While
+            If _r < _runs.Count AndAlso _runs(_r).FirstMove <= i Then
+                Dim o = _runs(_r).Owner
+                If o >= 0 AndAlso o < _owners Then Return o + 1
+            End If
+            Return 0
+        End Function
+    End Class
 
     Private Shared Sub PutLine(buf As Single(), at As Integer, a As Pt3, b As Pt3, r As Single, g As Single, bl As Single)
         buf(at) = CSng(a.X) : buf(at + 1) = CSng(a.Y) : buf(at + 2) = CSng(a.Z) : buf(at + 3) = r : buf(at + 4) = g : buf(at + 5) = bl
@@ -2137,8 +2211,8 @@ Public Class ToolpathView
         If Not _showSimulation Then DrawModelPictures(mvp)
         GL.DepthMask(True)
         If _showOutline AndAlso Not _showSimulation Then DrawLayer(_outline)
-        If Not _showSimulation Then DrawLayer(_cuts)
-        If _showRapids Then DrawLayer(_rapids)
+        If _showCuts AndAlso Not _showSimulation Then DrawToolpathLayer(_cuts)
+        If _showRapids Then DrawToolpathLayer(_rapids)
         ' Selection highlight on top, never hidden by the surface.
         GL.Disable(EnableCap.DepthTest)
         DrawLayer(_selectionLayer)
@@ -2279,6 +2353,43 @@ Public Class ToolpathView
         GL.BindVertexArray(layer.Vao)
         GL.DrawArrays(PrimitiveType.Lines, 0, layer.VertexCount)
     End Sub
+
+    ''' <summary>The cut or rapid layer without the lines of hidden toolpaths.</summary>
+    Private Sub DrawToolpathLayer(layer As LineLayer)
+        If layer.Vao = 0 OrElse layer.VertexCount = 0 Then Return
+        GL.BindVertexArray(layer.Vao)
+        For Each r In ShownRanges(layer)
+            GL.DrawArrays(PrimitiveType.Lines, r.First, r.Count)
+        Next
+    End Sub
+
+    ''' <summary>
+    ''' The vertex ranges of a cut or rapid layer that belong to shown toolpaths (neighbouring ones
+    ''' joined); everything when the layer's groups do not match the toolpath.
+    ''' </summary>
+    Private Function ShownRanges(layer As LineLayer) As List(Of (First As Integer, Count As Integer))
+        Dim ranges As New List(Of (First As Integer, Count As Integer))
+        Dim tp = _toolpath, shown = ToolpathShown, starts = layer.Starts
+        If tp Is Nothing OrElse shown Is Nothing OrElse starts Is Nothing OrElse starts.Length <> tp.Owners.Count + 2 OrElse starts(starts.Length - 1) <> layer.VertexCount Then
+            ranges.Add((0, layer.VertexCount))
+            Return ranges
+        End If
+        Dim groups = starts.Length - 1
+        Dim g = 0
+        While g < groups
+            If g > 0 AndAlso Not shown(tp.Owners(g - 1)) Then
+                g += 1
+                Continue While
+            End If
+            Dim g1 = g
+            While g1 + 1 < groups AndAlso shown(tp.Owners(g1))
+                g1 += 1
+            End While
+            If starts(g1 + 1) > starts(g) Then ranges.Add((starts(g), starts(g1 + 1) - starts(g)))
+            g = g1 + 1
+        End While
+        Return ranges
+    End Function
 
     Protected Overrides Sub OnResize(e As EventArgs)
         If _contextFailed Then Return
@@ -2640,6 +2751,12 @@ Public NotInheritable Class ToolpathLines
     Public Property Outline As Single()
     Public Property Cuts As Single()
     Public Property Rapids As Single()
+    ''' <summary>
+    ''' Where each toolpath's lines are in Cuts and Rapids, in vertices: group 0 holds the moves of no
+    ''' toolpath, group k + 1 those of Toolpath.Owners(k); group g runs from Starts(g) to Starts(g + 1).
+    ''' </summary>
+    Public Property CutStarts As Integer()
+    Public Property RapidStarts As Integer()
     Public Property MinX As Double
     Public Property MinY As Double
     Public Property MaxX As Double

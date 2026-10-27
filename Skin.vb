@@ -568,8 +568,12 @@ Friend NotInheritable Class Skin
         DarkScrollbars(t)
     End Sub
 
-    ''' <summary>A property grid in the skin's colours (rows, categories, help pane, its own toolbar).</summary>
+    ''' <summary>
+    ''' A property grid in the skin's colours (rows, categories, help pane, its own toolbar), with its
+    ''' yes/no rows as check boxes that flip on a click (GridCheckBoxes).
+    ''' </summary>
     Public Shared Sub StyleGrid(pg As PropertyGrid)
+        GridCheckBoxes.Attach(pg)
         pg.BackColor = Window
         pg.ViewBackColor = Field
         pg.ViewForeColor = Ink

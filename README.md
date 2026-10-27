@@ -61,7 +61,8 @@ SmartScreen may ask you to confirm the first time.)
    simulation settings, is in the **Machine Settings** window. Open it with **Machine > Machine Settings...** (Ctrl+K). It
    floats over the main window and stays open while you work. Closing it only
    hides it. The toolpath regenerates automatically after every change (or press
-   **F5**).
+   **F5**). Yes/no settings in all of these lists are check boxes: click the box
+   (or anywhere in the row's value), or press Space, to switch them.
 4. **File > Save Project** (Ctrl+S) stores everything, settings and formatted
    text, in a `.prj` file (readable JSON); **Open Project** (Ctrl+O) brings it
    back and **New Project** (Ctrl+N) starts over. The title bar shows a `*`
@@ -197,6 +198,15 @@ edge, float it or hide it; **View > Toolbars** shows hidden ones again and
 *Reset Toolbars* brings the standard arrangement back. Once you move a toolbar
 yourself, your arrangement is kept and remembered for the next start.
 
+**3D view**: the top view is flat (true to scale for drawing and measuring); tilted (right
+drag, or **View > Isometric**, which fits the whole job) it is a true perspective, so the near
+edge of the board is bigger than the far one.
+
+**Cuts / Rapids** (next to Status on the *View* toolbar, and **View > Show Cutting Moves /
+Show Rapid Moves**): show or hide the cutting moves and the rapid moves (red) in the view.
+Display only, like each toolpath's *Show in view* box (below): hidden moves are still cut,
+exported and simulated.
+
 **Status** (the button after the Toolpath / Simulation switch on the *View* toolbar): green
 when the job is fine; red and blinking when something is wrong (a toolpath warning such as a
 bit too shallow for the depth or text off the blank, a drawing that cannot be carved,
@@ -307,10 +317,14 @@ above, so overhangs are filled in.
 ## Pocket and profile toolpaths
 
 Every drawing has a **Toolpath** section (Drawings tab) and the text has one too
-(Text tab, *3. Toolpath*). Each starts with the same rows: **Operation**,
-**Tool** (the **...** button opens the tool library filtered to the tools that
-can do the operation), **Spindle speed**, **Feed rate** and **Plunge rate**.
-Then come the rows of the chosen operation:
+(Text tab, *3. Toolpath*). Each starts with the same rows: **Show in view**,
+**Operation**, **Tool** (the **...** button opens the tool library filtered to
+the tools that can do the operation), **Spindle speed**, **Feed rate** and
+**Plunge rate**. Then come the rows of the chosen operation. *Show in view* (a
+check box; a 3D model's two toolpaths have one each, under *Cut this pass*)
+hides that toolpath's lines in the view so the others are easier to see. It is
+display only: nothing is generated again, and the toolpath is still cut,
+exported and simulated.
 
 | Operation | What it does | Settings |
 |---|---|---|

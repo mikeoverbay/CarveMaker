@@ -220,6 +220,10 @@ Public Class Machining
     <DisplayName("Tab thickness (in)"), Description("Height of the tabs above the bottom of the cut.")>
     Public Property TabThickness As Double = 0.1
 
+    <DisplayName("Show in view"),
+     Description("Show this toolpath's lines in the view. Display only: a hidden toolpath is still cut, and stays in the G-code and the simulation.")>
+    Public Property ShowInView As Boolean = True
+
     ' ---- 3D model toolpaths ---------------------------------------------------
 
     <DisplayName("Cut this pass"), RefreshProperties(RefreshProperties.All),
@@ -347,9 +351,9 @@ Public Class Machining
         Dim names As New List(Of String)
         If m.Is3D Then
             ' A 3D model's two toolpaths are fixed: no operation row, and a switch per pass.
-            names.AddRange({NameOf(Enabled), NameOf(Tool), NameOf(SpindleRpm), NameOf(FeedRate), NameOf(PlungeRate)})
+            names.AddRange({NameOf(Enabled), NameOf(ShowInView), NameOf(Tool), NameOf(SpindleRpm), NameOf(FeedRate), NameOf(PlungeRate)})
         Else
-            names.AddRange({NameOf(Operation), NameOf(Tool), NameOf(SpindleRpm), NameOf(FeedRate), NameOf(PlungeRate)})
+            names.AddRange({NameOf(ShowInView), NameOf(Operation), NameOf(Tool), NameOf(SpindleRpm), NameOf(FeedRate), NameOf(PlungeRate)})
         End If
         Select Case m.Operation
             Case CutOperation.VCarve
@@ -591,6 +595,11 @@ Public Class MachiningItem
     Public Property IsText As Boolean
     ''' <summary>A 3D model (a copy for the worker thread): Machining is its roughing, Model.FinishMachining its finishing.</summary>
     Public Property Model As DesignObject
+    ''' <summary>The drawing this item came from, only to recognise its moves in the view (Toolpath.Owners); never read.</summary>
+    Public Property Source As Object
+    ' Where this item's toolpaths are in Toolpath.Owners (set by JobBuilder.Generate; Finish: a model's finishing).
+    Friend OwnerIndex As Integer = -1
+    Friend FinishOwnerIndex As Integer = -1
 
     Public Sub New(name As String, paths As PathsD, machining As Machining, Optional isText As Boolean = False)
         Me.Name = name
@@ -1045,6 +1054,12 @@ Public Module JobBuilder
             End If
         Next
 
+        ' Each toolpath of the job, so the view can show or hide its moves.
+        For Each it In usable
+            it.OwnerIndex = AddOwner(tp, it, 0)
+            If it.Model IsNot Nothing Then it.FinishOwnerIndex = AddOwner(tp, it, 1)
+        Next
+
         ' 0. 3D models shape the surface first: every model's roughing, then every finishing pass
         '    (the same tool on consecutive models stays one program).
         ReliefJob.AddPasses(tp, usable.Where(Function(i) i.Model IsNot Nothing).ToList(), s, token)
@@ -1081,7 +1096,8 @@ Public Module JobBuilder
                                               String.Join(", ", g.Select(Function(i) i.Name)), m.Tool.DisplayName(), m.SpindleRpm))
             End If
             Dim name = If(vGroups.Count = 1, "V-carve", "V-carve: " & String.Join(", ", g.Select(Function(i) i.Name)))
-            AppendSegment(tp, name, CutOperation.VCarve, m.Tool, m.SpindleRpm, vtp.Moves)
+            Dim runs = If(g.Count = 1, WholeRun(vtp.Moves, g(0).OwnerIndex), ItemRuns(vtp.Moves, g))
+            AppendSegment(tp, name, CutOperation.VCarve, m.Tool, m.SpindleRpm, vtp.Moves, runs:=runs)
             tp.Contours.AddRange(vtp.Contours)
             tp.Regions.AddRange(vtp.Regions)
             tp.RegionCount += vtp.RegionCount
@@ -1105,17 +1121,21 @@ Public Module JobBuilder
             For Each g In SplitBySpeed(toolGroup)
                 token.ThrowIfCancellationRequested()
                 Dim moves As New List(Of ToolMove)
+                Dim runs As New List(Of OwnerRun)
                 For Each it In g
                     Dim passes = MillingEngine.PocketPasses(Normalize(it.Paths), it.Machining, s, it.Name, If(it.IsText, lineCenters, Nothing), tp.Warnings)
+                    Dim start = moves.Count
                     MillingEngine.LinkPasses(passes, it.Machining.ApplyTo(s), moves, tp.Contours, regionIndex)
+                    runs.Add(New OwnerRun(start, moves.Count - start, it.OwnerIndex))
                     regionIndex += 1
                     tp.RegionCount += 1
                     If oneSegmentPerItem Then
-                        AppendSegment(tp, "Pocket: " & it.Name, CutOperation.Pocket, it.Machining.Tool, it.Machining.SpindleRpm, moves)
+                        AppendSegment(tp, "Pocket: " & it.Name, CutOperation.Pocket, it.Machining.Tool, it.Machining.SpindleRpm, moves, runs:=runs)
                         moves = New List(Of ToolMove)
+                        runs = New List(Of OwnerRun)
                     End If
                 Next
-                AppendSegment(tp, "Pocket: " & String.Join(", ", g.Select(Function(i) i.Name)), CutOperation.Pocket, g(0).Machining.Tool, g(0).Machining.SpindleRpm, moves, g.Count)
+                AppendSegment(tp, "Pocket: " & String.Join(", ", g.Select(Function(i) i.Name)), CutOperation.Pocket, g(0).Machining.Tool, g(0).Machining.SpindleRpm, moves, g.Count, runs)
             Next
         Next
 
@@ -1123,9 +1143,12 @@ Public Module JobBuilder
         For Each g In profileGroups.SelectMany(Function(tg) SplitBySpeed(tg))
             token.ThrowIfCancellationRequested()
             Dim moves As New List(Of ToolMove)
+            Dim runs As New List(Of OwnerRun)
             For Each it In g
                 Dim passes = MillingEngine.ProfilePasses(Normalize(it.Paths), it.Machining, s, it.Name, tp.Warnings)
+                Dim start = moves.Count
                 MillingEngine.LinkPasses(passes, it.Machining.ApplyTo(s), moves, tp.Contours, regionIndex)
+                runs.Add(New OwnerRun(start, moves.Count - start, it.OwnerIndex))
                 regionIndex += 1
                 tp.RegionCount += 1
                 Dim bottom = it.Machining.BottomDepth(s.StockThickness)
@@ -1133,11 +1156,12 @@ Public Module JobBuilder
                     tp.Warnings.Add(String.Format(Ci, "{0}: the cut ({1:0.###}"") is deeper than the {2}'s flutes ({3:0.###}"").", it.Name, bottom, it.Machining.Tool.DisplayName(), it.Machining.Tool.Length))
                 End If
                 If oneSegmentPerItem Then
-                    AppendSegment(tp, "Profile: " & it.Name, CutOperation.Profile, it.Machining.Tool, it.Machining.SpindleRpm, moves)
+                    AppendSegment(tp, "Profile: " & it.Name, CutOperation.Profile, it.Machining.Tool, it.Machining.SpindleRpm, moves, runs:=runs)
                     moves = New List(Of ToolMove)
+                    runs = New List(Of OwnerRun)
                 End If
             Next
-            AppendSegment(tp, "Profile: " & String.Join(", ", g.Select(Function(i) i.Name)), CutOperation.Profile, g(0).Machining.Tool, g(0).Machining.SpindleRpm, moves, g.Count)
+            AppendSegment(tp, "Profile: " & String.Join(", ", g.Select(Function(i) i.Name)), CutOperation.Profile, g(0).Machining.Tool, g(0).Machining.SpindleRpm, moves, g.Count, runs)
         Next
         For Each it In pocketItems
             Dim bottom = it.Machining.BottomDepth(s.StockThickness)
@@ -1208,14 +1232,92 @@ Public Module JobBuilder
         Return groups
     End Function
 
+    ''' <param name="runs">Whose moves are whose (positions in moves); Nothing: the moves belong to no toolpath.</param>
     Friend Sub AppendSegment(tp As Toolpath, name As String, op As CutOperation, tool As ToolDefinition, rpm As Double, moves As List(Of ToolMove),
-                             Optional itemCount As Integer = 1)
+                             Optional itemCount As Integer = 1, Optional runs As IEnumerable(Of OwnerRun) = Nothing)
         If moves.Count = 0 Then Return
+        Dim first = tp.Moves.Count
         tp.Segments.Add(New ToolpathSegment With {
             .Name = name, .Operation = op, .Tool = If(tool?.Clone(), ToolDefinition.DefaultVBit()), .SpindleRpm = rpm,
-            .FirstMove = tp.Moves.Count, .MoveCount = moves.Count, .ItemCount = Math.Max(1, itemCount)})
+            .FirstMove = first, .MoveCount = moves.Count, .ItemCount = Math.Max(1, itemCount)})
         tp.Moves.AddRange(moves)
+        If runs IsNot Nothing Then
+            For Each r In runs
+                tp.AddOwnerRun(first + r.FirstMove, r.Count, r.Owner)
+            Next
+        End If
     End Sub
+
+    ''' <summary>Adds one of the job's toolpaths (pass 1: a 3D model's finishing) to tp.Owners; returns its index.</summary>
+    Private Function AddOwner(tp As Toolpath, it As MachiningItem, pass As Integer) As Integer
+        tp.Owners.Add(New ToolpathOwner With {.Source = it.Source, .Pass = pass, .IsText = it.IsText, .Name = it.Name})
+        Return tp.Owners.Count - 1
+    End Function
+
+    ''' <summary>All the moves belong to one toolpath.</summary>
+    Friend Function WholeRun(moves As List(Of ToolMove), owner As Integer) As List(Of OwnerRun)
+        Return New List(Of OwnerRun) From {New OwnerRun(0, moves.Count, owner)}
+    End Function
+
+    ''' <summary>
+    ''' Whose moves are whose in a V-carve union of several items. A cutting move belongs to the item
+    ''' whose area holds it (the item of the move before when its area holds it too; that item when no
+    ''' area does). A rapid straight up belongs to the move before it (the retract after a cut), any other
+    ''' rapid to the cut it leads to.
+    ''' </summary>
+    Private Function ItemRuns(moves As List(Of ToolMove), items As List(Of MachiningItem)) As List(Of OwnerRun)
+        Const eps As Double = 0.000001
+        ' Each item's outlines with their boxes and signs (outers +1, holes -1): most points test one or two outlines.
+        Dim areas = items.Select(Function(it) Normalize(it.Paths).Select(Function(p) (Path:=p, Box:=Clipper.GetBounds(p), Sign:=If(Clipper.Area(p) >= 0, 1, -1))).ToList()).ToList()
+        Dim inside = Function(k As Integer, x As Double, y As Double) As Boolean
+                         Dim w = 0
+                         Dim pt As New PointD(x, y)
+                         For Each a In areas(k)
+                             If x < a.Box.left - eps OrElse x > a.Box.right + eps OrElse y < a.Box.top - eps OrElse y > a.Box.bottom + eps Then Continue For
+                             If Clipper.PointInPolygon(pt, a.Path, GlyphOutline.ClipperPrecision) <> PointInPolygonResult.IsOutside Then w += a.Sign
+                         Next
+                         Return w > 0
+                     End Function
+        Dim owner(moves.Count - 1) As Integer
+        Dim last = 0
+        For i = 0 To moves.Count - 1
+            owner(i) = -1
+            Dim mv = moves(i)
+            If mv.Kind = MoveKind.Rapid Then Continue For
+            If Not inside(last, mv.Target.X, mv.Target.Y) Then
+                For k = 0 To items.Count - 1
+                    If k <> last AndAlso inside(k, mv.Target.X, mv.Target.Y) Then
+                        last = k
+                        Exit For
+                    End If
+                Next
+            End If
+            owner(i) = items(last).OwnerIndex
+        Next
+        ' Retracts stay with the cut before them.
+        For i = 1 To moves.Count - 1
+            Dim a = moves(i - 1).Target, b = moves(i).Target
+            If moves(i).Kind = MoveKind.Rapid AndAlso owner(i - 1) >= 0 AndAlso b.Z >= a.Z AndAlso Math.Abs(b.X - a.X) < eps AndAlso Math.Abs(b.Y - a.Y) < eps Then owner(i) = owner(i - 1)
+        Next
+        ' Other rapids go with the cut they lead to; rapids after the last cut with the one before.
+        Dim nextOwner = -1
+        For i = moves.Count - 1 To 0 Step -1
+            If owner(i) < 0 Then owner(i) = nextOwner Else nextOwner = owner(i)
+        Next
+        Dim prev = items(0).OwnerIndex
+        For i = 0 To moves.Count - 1
+            If owner(i) < 0 Then owner(i) = prev Else prev = owner(i)
+        Next
+        Dim runs As New List(Of OwnerRun)
+        Dim start = 0
+        For i = 1 To moves.Count
+            If i = moves.Count OrElse owner(i) <> owner(start) Then
+                runs.Add(New OwnerRun(start, i - start, owner(start)))
+                start = i
+            End If
+        Next
+        Return runs
+    End Function
 
     ''' <summary>Bounds, depth, lengths, time and per-move durations over the whole job.</summary>
     Friend Sub FinishStats(tp As Toolpath, s As CarveSettings)

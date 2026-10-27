@@ -116,6 +116,32 @@ Public Class ToolpathSegment
     Public Property ItemCount As Integer = 1
 End Class
 
+''' <summary>
+''' One toolpath of the job as the user sees it (the text's, a drawing's, a 3D model's roughing or
+''' finishing), so the view can show or hide its moves.
+''' </summary>
+Public Class ToolpathOwner
+    ''' <summary>The drawing it belongs to (only recognised, never read on the worker); Nothing for the text.</summary>
+    Public Property Source As Object
+    ''' <summary>0: the item's Machining; 1: a 3D model's FinishMachining.</summary>
+    Public Property Pass As Integer
+    Public Property IsText As Boolean
+    Public Property Name As String = ""
+End Class
+
+''' <summary>Moves FirstMove .. FirstMove + Count - 1 belong to Toolpath.Owners(Owner).</summary>
+Public Structure OwnerRun
+    Public FirstMove As Integer
+    Public Count As Integer
+    Public Owner As Integer
+
+    Public Sub New(firstMove As Integer, count As Integer, owner As Integer)
+        Me.FirstMove = firstMove
+        Me.Count = count
+        Me.Owner = owner
+    End Sub
+End Structure
+
 ''' <summary>One cutting pass: a closed constant-Z loop or an open variable-Z centerline.</summary>
 Public Class ToolpathContour
     ''' <summary>Pass vertices with tip Z. For closed loops the last point is NOT repeated.</summary>
@@ -165,6 +191,23 @@ Public Class Toolpath
     Public Property Regions As New List(Of RegionShape)
     ''' <summary>Moves grouped by operation and tool, in machining order.</summary>
     Public Property Segments As New List(Of ToolpathSegment)
+    ''' <summary>The job's toolpaths (text, drawings, model passes); OwnerRuns say which moves are whose.</summary>
+    Public Property Owners As New List(Of ToolpathOwner)
+    ''' <summary>Runs of moves per owner, in move order; moves in no run belong to no toolpath (always shown).</summary>
+    Public Property OwnerRuns As New List(Of OwnerRun)
+
+    ''' <summary>Records that count moves from firstMove on belong to an owner (joined to the run before when they continue it).</summary>
+    Public Sub AddOwnerRun(firstMove As Integer, count As Integer, owner As Integer)
+        If count <= 0 OrElse owner < 0 Then Return
+        If OwnerRuns.Count > 0 Then
+            Dim last = OwnerRuns(OwnerRuns.Count - 1)
+            If last.Owner = owner AndAlso last.FirstMove + last.Count = firstMove Then
+                OwnerRuns(OwnerRuns.Count - 1) = New OwnerRun(last.FirstMove, last.Count + count, owner)
+                Return
+            End If
+        End If
+        OwnerRuns.Add(New OwnerRun(firstMove, count, owner))
+    End Sub
 
     ''' <summary>Bounds of the text block alone (for dragging it in the view); zero-size when there is no text.</summary>
     Public Property TextMinX As Double
@@ -235,10 +278,11 @@ Public Class FontChoice
      Description("Installed font family for lines of this size.")>
     Public Property Family As String = "Arial"
 
-    <DisplayName("Bold")>
+    ' Check boxes (GridCheckBoxes): these rows sit inside a font row, out of FilteredView's reach.
+    <DisplayName("Bold"), Editor(GetType(CheckBoxEditor), GetType(UITypeEditor)), TypeConverter(GetType(CheckBoxConverter))>
     Public Property Bold As Boolean = False
 
-    <DisplayName("Italic")>
+    <DisplayName("Italic"), Editor(GetType(CheckBoxEditor), GetType(UITypeEditor)), TypeConverter(GetType(CheckBoxConverter))>
     Public Property Italic As Boolean = False
 
     Public Sub New()

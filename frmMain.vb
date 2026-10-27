@@ -193,7 +193,7 @@ Public Class frmMain
         Dim list As New List(Of MachiningItem)
         For Each o In _objects
             If Not o.Visible Then Continue For
-            Dim it As New MachiningItem(o.Name, o.PlacedPaths(_settings.CurveTolerance), If(o.Machining?.Clone(), New Machining()))
+            Dim it As New MachiningItem(o.Name, o.PlacedPaths(_settings.CurveTolerance), If(o.Machining?.Clone(), New Machining())) With {.Source = o}
             If o.Kind = DrawingKind.Model Then it.Model = o.Clone()
             list.Add(it)
         Next
@@ -240,6 +240,7 @@ Public Class frmMain
     Private Sub mnuMachineSettings_Click(sender As Object, e As EventArgs) Handles mnuMachineSettings.Click
         If _machineWindow Is Nothing OrElse _machineWindow.IsDisposed Then
             _machineWindow = New frmMachineSettings() With {.Owner = Me}
+            Skin.Apply(_machineWindow)
             AddHandler _machineWindow.Grid.PropertyValueChanged, AddressOf Settings_PropertyValueChanged
             BindSettingsGrids()
         End If
@@ -384,6 +385,12 @@ Public Class frmMain
         Dim o = TryCast(pgObject.SelectedObject, DrawingView)?.Drawing
         If o Is Nothing Then Return
         Dim name = If(e.ChangedItem?.PropertyDescriptor?.Name, "")
+        If name = NameOf(Machining.ShowInView) Then
+            ' Display only: the toolpath's lines come or go (frmMain.Moves.vb), nothing is generated again.
+            _glView.Invalidate()
+            MarkDirty()
+            Return
+        End If
         If name = NameOf(Machining.Tool) AndAlso SyncToolsFromLibrary() Then RefreshSettingsGrids()   ' the picker may have edited library entries
         If o.Kind = DrawingKind.Model AndAlso Not ModelPropertyChanged(o, name, e.OldValue) Then
             pgObject.Refresh()
@@ -1022,6 +1029,10 @@ Public Class frmMain
                         o.InvalidateShape()
                     Next
                     _glView.CurveTolerance = _settings.CurveTolerance
+                Case NameOf(Machining.ShowInView)
+                    ' Display only: the text's toolpath lines come or go, nothing is generated again.
+                    _glView.Invalidate()
+                    Return
                 Case NameOf(Machining.Tool)
                     SyncToolsFromLibrary()        ' the picker may have edited library entries
                     pgObject.Refresh()
@@ -1357,10 +1368,6 @@ Public Class frmMain
 
     Private Sub mnuViewFit_Click(sender As Object, e As EventArgs) Handles mnuViewFit.Click
         _glView.ZoomToFit()
-    End Sub
-
-    Private Sub mnuViewRapids_CheckedChanged(sender As Object, e As EventArgs) Handles mnuViewRapids.CheckedChanged
-        If _glView IsNot Nothing Then _glView.ShowRapids = mnuViewRapids.Checked
     End Sub
 
     Private Sub mnuViewOutline_CheckedChanged(sender As Object, e As EventArgs) Handles mnuViewOutline.CheckedChanged

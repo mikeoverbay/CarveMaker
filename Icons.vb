@@ -26,6 +26,8 @@ Friend Enum IconKind
     SnapGrid
     Simulation
     Toolpath
+    CutMoves
+    RapidMoves
     Hide
     ShowAll
     Move
@@ -294,6 +296,21 @@ Friend Module Icons
                     Using rapid = p.Pen(p.Red, 1.3F)
                         rapid.DashStyle = DashStyle.Dash
                         g.DrawLine(rapid, 3, 16.5F, 17, 16.5F)
+                    End Using
+                Case IconKind.CutMoves
+                    ' The toolpath lines' colours: shallow passes cyan, the deepest yellow.
+                    g.DrawLines(cyanLine, {Pt(3, 3.5F), Pt(17, 3.5F), Pt(17, 8.2F), Pt(3, 8.2F), Pt(3, 12.9F)})
+                    Using deep = p.Pen(p.Yellow, 1.6F)
+                        g.DrawLines(deep, {Pt(3, 12.9F), Pt(17, 12.9F), Pt(17, 16.8F), Pt(9, 16.8F)})
+                    End Using
+                Case IconKind.RapidMoves
+                    ' A hop over the stock: up, across, down, dashed red like the rapids in the view.
+                    Using rapid = p.Pen(p.Red, 1.6F)
+                        rapid.DashStyle = DashStyle.Dash
+                        g.DrawLines(rapid, {Pt(3.5F, 17), Pt(3.5F, 4), Pt(16.5F, 4), Pt(16.5F, 12.5F)})
+                    End Using
+                    Using head As New SolidBrush(p.Red)
+                        ArrowHead(g, head, Pt(16.5F, 18), 0, 1, 5)
                     End Using
                 Case IconKind.Hide
                     Eye(g, p, p.Main)

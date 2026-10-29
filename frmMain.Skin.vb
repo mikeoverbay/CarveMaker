@@ -9,6 +9,8 @@
 Partial Class frmMain
 
     Private tsProject As ToolStrip
+    ' The Text tab's Font button, before the size buttons (Font > Choose Font for Current Line's Size).
+    Private _tsbFont As ToolStripButton
     ' The View toolbar's switch shows the board (simulation) or toolpath lines.
     Private _simIcon, _pathIcon As Image
     Private _playIcon, _pauseIcon As Image
@@ -18,6 +20,7 @@ Partial Class frmMain
         ' Context menus (the toolbars' right-click menu, the grids') take the skin too.
         ToolStripManager.Renderer = Skin.Renderer
         CreateProjectToolbar()
+        CreateFontButton()
         Skin.Apply(Me)
         pnlView.BackColor = Skin.Window
         For Each tsp In {tspTop, tspBottom, tspLeft, tspRight}
@@ -27,7 +30,7 @@ Partial Class frmMain
         ' Pictures instead of letters, before the buttons are sized.
         tsbDrawBold.DisplayStyle = ToolStripItemDisplayStyle.Image
         tsbDrawItalic.DisplayStyle = ToolStripItemDisplayStyle.Image
-        For Each b In {tsbObjImport, tsbObjImportModel, tsbObjRemove, tsbObjFit, tsbObjCenter, tsbSimPlay, tsbSimReset}
+        For Each b In {tsbObjImport, tsbObjImportModel, tsbObjRemove, tsbObjFit, tsbObjCenter, tsbSimPlay, tsbSimReset, _tsbFont}
             b.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText
         Next
         ' Pictures that change with the state are made first, so their buttons are sized with them.
@@ -79,11 +82,13 @@ Partial Class frmMain
         Skin.SetIcon(tsbObjFit, IconKind.FitToBlank)
         Skin.SetIcon(tsbObjCenter, IconKind.Center)
         Skin.SetIcon(tsbSimReset, IconKind.Rewind)
+        Skin.SetIcon(_tsbFont, IconKind.Font)
         For Each item As ToolStripItem In tsProject.Items
             If TypeOf item.Tag Is IconKind Then Skin.SetIcon(item, DirectCast(item.Tag, IconKind))
         Next
 
         ' Menu icons (16 pixels at 100 %).
+        Skin.SetIcon(mnuFontChoose, IconKind.Font)
         Skin.SetIcon(mnuFileNew, IconKind.NewFile)
         Skin.SetIcon(mnuFileOpenProject, IconKind.Open)
         Skin.SetIcon(mnuFileSaveProject, IconKind.Save)
@@ -135,6 +140,17 @@ Partial Class frmMain
             New ToolStripSeparator(),
             MenuButton(mnuToolLibrary, IconKind.ToolLibrary, "tsbProjTools", "Tool library"),
             MenuButton(mnuMachineSettings, IconKind.Machine, "tsbProjMachine", "Machine settings: blank, stock, machine")})
+    End Sub
+
+    ''' <summary>
+    ''' The Font button at the start of the Text tab's bar, before Size: Large / Medium / Small: the font
+    ''' of the size of the line the caret is on (what Font > Choose Font for Current Line's Size does).
+    ''' </summary>
+    Private Sub CreateFontButton()
+        _tsbFont = MenuButton(mnuFontChoose, IconKind.Font, "tsbFont", "Choose the font for the size of the line the caret is on")
+        _tsbFont.Text = "Font..."
+        tsFormat.Items.Insert(0, _tsbFont)
+        tsFormat.Items.Insert(1, New ToolStripSeparator() With {.Name = "tssFont"})
     End Sub
 
     ''' <summary>A toolbar button that does what a menu item does, enabled when it is.</summary>

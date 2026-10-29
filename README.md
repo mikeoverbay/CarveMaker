@@ -53,7 +53,8 @@ SmartScreen may ask you to confirm the first time.)
    alignment (**Left / Center / Right**). Formatting applies to whole lines.
 2. Each size has its own font: expand *Size 1 - Large font* (and Medium, Small)
    in the text settings to pick family, bold and italic, or put the caret on a
-   line and use **Font > Choose Font for Current Line's Size...** (Ctrl+F).
+   line and use **Font...** (the first button on the Text tab, before the size
+   buttons) or **Font > Choose Font for Current Line's Size...** (Ctrl+F).
 3. The Text tab holds only text settings: sizes and fonts, placement on the
    blank, and the text's toolpath (operation, tool, spindle speed, feed and
    plunge rate). Each drawing has the same toolpath rows on the Drawings tab.

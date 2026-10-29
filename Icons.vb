@@ -28,6 +28,7 @@ Friend Enum IconKind
     Toolpath
     CutMoves
     RapidMoves
+    Font
     Hide
     ShowAll
     Move
@@ -505,6 +506,10 @@ Friend Module Icons
                     Using pen = p.Pen(p.Cyan, 1.4F)
                         g.DrawPolygon(pen, StarPoints(10, 10.6F, 5.6F, 2.4F, 5))
                     End Using
+                Case IconKind.Font
+                    ' "Aa": a serif capital and a plain small letter, two faces side by side.
+                    FitText(g, "A", "Times New Roman", FontStyle.Bold, New RectangleF(1.2F, 2.5F, 11.5F, 15), main)
+                    FitText(g, "a", "Arial", FontStyle.Regular, New RectangleF(12.2F, 8.8F, 6.6F, 8.7F), cyan)
                 Case IconKind.TextJob
                     FitText(g, "A", "Times New Roman", FontStyle.Bold, New RectangleF(2.5F, 2, 15, 13.5F), main)
                     Using pen = p.Pen(p.Cyan, 1.3F)

@@ -17,8 +17,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Build order only: the installer never references the app assembly. -->
-    <ProjectReference Include="..\CarveMaker.vbproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" />
+    <!-- Build order only: the installer never references the app assembly. Private="false": no copy of the
+         app's launcher in Setup\bin (on its own, without the app next to it, it closes before it shows). -->
+    <ProjectReference Include="..\CarveMaker.vbproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" Private="false" />
     <PackageReference Include="Tools.InnoSetup" Version="6.7.3" GeneratePathProperty="true" />
     <None Include="Setup.iss" />
   </ItemGroup>

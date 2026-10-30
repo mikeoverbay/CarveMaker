@@ -99,6 +99,7 @@ Public Class frmMain
         SetupDrawing()
         ApplyWindowPlacement()
         _glView.CurveTolerance = _settings.CurveTolerance
+        ShowBlank()
         tscSimSpeed.SelectedIndex = 3      ' 10x
 
         ' Machine Settings window: created now (hidden) so its grid is always bound and current.
@@ -235,6 +236,13 @@ Public Class frmMain
     Private Sub RefreshSettingsGrids()
         pgText.Refresh()
         If _machineWindow IsNot Nothing AndAlso Not _machineWindow.IsDisposed Then _machineWindow.Grid.Refresh()
+    End Sub
+
+    ''' <summary>The view draws the blank of the current settings at once (the toolpath for it may come later).</summary>
+    Private Sub ShowBlank()
+        If _glView Is Nothing Then Return
+        _glView.ShowBlank(_settings.BlankOriginX, _settings.BlankOriginY,
+                          _settings.BlankOriginX + _settings.BlankWidthIn, _settings.BlankOriginY + _settings.BlankHeightIn)
     End Sub
 
     Private Sub mnuMachineSettings_Click(sender As Object, e As EventArgs) Handles mnuMachineSettings.Click
@@ -389,6 +397,7 @@ Public Class frmMain
             ' Display only: the toolpath's lines come or go (frmMain.Moves.vb), nothing is generated again.
             _glView.Invalidate()
             MarkDirty()
+            UpdateDrawUi()
             Return
         End If
         If name = NameOf(Machining.Tool) AndAlso SyncToolsFromLibrary() Then RefreshSettingsGrids()   ' the picker may have edited library entries
@@ -532,6 +541,21 @@ Public Class frmMain
         _settings = pf.Settings
         BindSettingsGrids()
         UpdateSizeButtonCaptions()
+        ShowBlank()
+        ' The run just stopped will not publish: leave the generating state (a new run sets it again).
+        SetGenerating(False)
+        _glView.ExtraStockZ = _settings.ExtraStockZ
+        If Not mnuToolpathAuto.Checked Then
+            ' Nothing generates on its own: do not leave the previous project's toolpath on show, and let
+            ' Export generate this project's (its last-generated key no longer applies).
+            _toolpath = New Toolpath()
+            _lastLinesKey = ""
+            _lastSettings = Nothing
+            _glView.SetToolpath(_toolpath, _settings.Clone())
+            UpdateStats(_toolpath)
+            SetJobStatus(Array.Empty(Of String)(), Nothing)
+            RefreshExtraStockStatus()
+        End If
         _objects = New List(Of DesignObject)(pf.Objects.Select(Function(o) o.Clone()))
         For Each o In _objects
             o.InvalidateShape()
@@ -804,9 +828,13 @@ Public Class frmMain
 
     ' ------------------------------------------------------------ regeneration
 
-    ''' <summary>Schedules a regeneration (debounced) if auto mode is on.</summary>
+    ''' <summary>
+    ''' Schedules a regeneration (debounced, or now) if Auto-regenerate is on. With it off nothing
+    ''' generates on its own, edits and loads included: Generate Now (F5) does it.
+    ''' </summary>
     Private Sub RequestRegenerate(Optional immediate As Boolean = False)
-        If Not mnuToolpathAuto.Checked AndAlso Not immediate Then
+        If Not mnuToolpathAuto.Checked Then
+            tmrRegen.Stop()
             lblStatus.Text = "Changed - press F5 to regenerate"
             Return
         End If
@@ -1019,6 +1047,8 @@ Public Class frmMain
     Private Sub Settings_PropertyValueChanged(s As Object, e As PropertyValueChangedEventArgs) Handles pgText.PropertyValueChanged
         MarkDirty()
         UpdateSizeButtonCaptions()
+        ' A new blank size or place shows at once, before (or without) a new toolpath.
+        ShowBlank()
         If e.ChangedItem IsNot Nothing AndAlso e.ChangedItem.PropertyDescriptor IsNot Nothing Then
             Select Case e.ChangedItem.PropertyDescriptor.Name
                 Case NameOf(FontChoice.Family), NameOf(FontChoice.Bold), NameOf(FontChoice.Italic),
@@ -1032,6 +1062,7 @@ Public Class frmMain
                 Case NameOf(Machining.ShowInView)
                     ' Display only: the text's toolpath lines come or go, nothing is generated again.
                     _glView.Invalidate()
+                    UpdateDrawUi()
                     Return
                 Case NameOf(Machining.Tool)
                     SyncToolsFromLibrary()        ' the picker may have edited library entries
@@ -1451,13 +1482,15 @@ Public Class frmMain
     ' --------------------------------------------------------- Toolpath menu
 
     Private Sub mnuToolpathGenerate_Click(sender As Object, e As EventArgs) Handles mnuToolpathGenerate.Click
-        RequestRegenerate(immediate:=True)
+        ' Generate Now always generates, Auto-regenerate on or off.
+        tmrRegen.Stop()
+        GenerateAsync()
     End Sub
 
     Private Sub mnuToolpathAuto_CheckedChanged(sender As Object, e As EventArgs) Handles mnuToolpathAuto.CheckedChanged
         ' Also raised from InitializeComponent, before the view exists.
         If _glView Is Nothing Then Return
-        If mnuToolpathAuto.Checked Then RequestRegenerate(immediate:=True)
+        If mnuToolpathAuto.Checked Then RequestRegenerate(immediate:=True) Else tmrRegen.Stop()
     End Sub
 
 End Class

@@ -1135,8 +1135,8 @@ Public Class CarveSettings
     Public Property Order As CutOrder = CutOrder.LineByLine
 
     ' ---------------------------------------------------------------- Simulation
-    <Category("4. Simulation"), DisplayName("Precision"),
-     Description("Cell size of the material-removal heightmap: Fine 0.003"", Medium 0.005"", Coarse 0.010"". Finer costs GPU memory (blank area / cell size squared, 4 bytes per cell).")>
+    <Category("4. Simulation"), DisplayName("Rendering precision"),
+     Description("How finely the simulated board is drawn (only the picture, never the toolpath): the cell size of the material-removal heightmap, Fine 0.003"", Medium 0.005"", Coarse 0.010"". Finer costs GPU memory (blank area / cell size squared, 4 bytes per cell).")>
     Public Property SimResolution As SimResolution = SimResolution.Medium
 
     <Category("4. Simulation"), DisplayName("Max texture size (hardware)"), [ReadOnly](True), JsonIgnore,

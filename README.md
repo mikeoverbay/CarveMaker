@@ -62,7 +62,8 @@ SmartScreen may ask you to confirm the first time.)
    simulation settings, is in the **Machine Settings** window. Open it with **Machine > Machine Settings...** (Ctrl+K). It
    floats over the main window and stays open while you work. Closing it only
    hides it. The toolpath regenerates automatically after every change (or press
-   **F5**). Yes/no settings in all of these lists are check boxes: click the box
+   **F5**). With **Toolpath > Auto-regenerate** off nothing is generated until you
+   press F5 (a changed blank size is still drawn at once). Yes/no settings in all of these lists are check boxes: click the box
    (or anywhere in the row's value), or press Space, to switch them.
 4. **File > Save Project** (Ctrl+S) stores everything, settings and formatted
    text, in a `.prj` file (readable JSON); **Open Project** (Ctrl+O) brings it
@@ -100,15 +101,25 @@ distance field of the letter outline, clamped at the flat depth *F*.
 2. **Roughing** â€“ inward offset contours (Clipper2 `InflatePaths`) every
    *Roughing depth step*, commanded slightly shallow (*Roughing allowance*) so
    they never touch the finished bevel.
-3. **Bevel finish at the flat depth** â€“ the exact contour at the inset where the
-   V reaches *Flat depth*, cut at `Z = -F`.
-4. **Floor clearing** â€“ further insets at the *Floor stepover*, all at `Z = -F`,
-   for strokes wider than the V can reach (scallop height about half the stepover).
-5. **Centerline finishing** â€“ the medial axis of each letter traced with maximal
+3. **The floor, from the middle out** (strokes wider than the V reaches at the
+   *Flat depth*), all at `Z = -F`: the tool goes down in the middle of each
+   piece of floor, spirals out one *Floor stepover* per turn (each turn blends
+   one inset ring into the next), and ends with one lap of the edge, the exact
+   contour where the V reaches the flat depth, which also finishes the bevel. A
+   floor around a counter spirals out both ways. Where a ring splits, or a turn
+   could leave the floor, that ring is cut as a lap of its own; thin strips along
+   the middle, where the floor ends between two rings, get small laps of their
+   own, so no spot is more than about half a stepover from a pass (scallop height
+   about half the stepover). Only V-carving works this way; pockets keep their own
+   rings.
+4. **Centerline finishing** â€“ the medial axis of each letter traced with maximal
    inscribed circles (the F-Engrave / Vectric method): the tip follows the
    middle of every stroke with `Z = -(r - f/2)/tan(a)`, cutting the ridge, both
-   flanks and lifting into sharp corners as the stroke narrows.
-6. **Linking** â€“ letters are machined one at a time; inside a letter each lobe
+   flanks and lifting into sharp corners as the stroke narrows. Points whose cut
+   lies inside a deeper point's (to 0.001") are left out, so the tool stays down
+   instead of zigzagging and bobbing at a rounded stroke end, and climbs only into
+   real corners; over a floor the floor's spiral does the cutting.
+5. **Linking** â€“ letters are machined one at a time; inside a letter each lobe
    is finished before the next, links are straight 3D feed moves when a gouge
    check against the distance field allows it, otherwise a short lift to
    *Clearance Z*. Letters are separated by moves at *Safe Z*.
@@ -182,8 +193,10 @@ Arrow keys nudge by 0.01" (0.1" with Shift), **Delete** removes the drawing afte
 (so do *Remove* on the Drawings tab and **Draw > Delete**; *Keep It* is the default answer, so a
 stray click or Enter never deletes work).
 **Draw** also has Rotate 90 degrees left/right, Mirror, Bring to Front and Send
-to Back, **Hide** (Ctrl+H: not shown, picked or carved) and **Show All**
-(Ctrl+Shift+H); both are also on the *View* toolbar.
+to Back, **Hide Toolpath** (Ctrl+H: unticks the selected drawing's *Show in view*,
+so its toolpath leaves the view; the drawing stays and is still carved) and
+**Show All Toolpaths** (Ctrl+Shift+H); both are also on the *View* toolbar (Hide,
+Show All). A drawing's *Visible* row is what leaves it out of the carving.
 
 **Toolbars**: they start in the standard arrangement: *Project*, *Draw Tools*, *Text Style*
 (font, bold, italic, alignment) and *Snap* across the top, and *View* (Toolpath / Simulation,
@@ -402,7 +415,7 @@ between the toolpath lines and the carved board.
 
 **View > Show Simulation** (Ctrl+M) replaces the line drawing with the carved
 board. The blank becomes a float heightmap texture on the GPU (one cell =
-*Precision* under *Machine Settings > 4. Simulation*: 0.003", 0.005" or 0.010"), automatically
+*Rendering precision* under *Machine Settings > 4. Simulation*: 0.003", 0.005" or 0.010"), automatically
 coarsened if the blank needs more cells than the graphics card allows (shown
 as *Max texture size (hardware)*). Material is removed by stamping the tool into
 that texture every half cell along each move: one small square per stamp whose
@@ -435,7 +448,7 @@ simulation on shows the finished part first; Reset and Play animate it.
 | Cut order | *LineByLine* (default): finish each line of text, top line first, letters left to right. *Serpentine*: alternate lines run right to left. *LeftToRight*: every letter by X, which hops between lines. |
 | Spindle dwell / Dust collection / Park | `G4 P<seconds>` after `M3` (FluidNC and GRBL take P in seconds), `G0 G53 Z0` at the start and before `M5` when *Retract to machine home* is on; the first positioning move is `G0 X Y` while fully up, then `G0 Z` on its own line, and `M8` before the spindle starts / `M9` after `M5` when *Dust collection M8 / M9* is on (M8 runs the dust vacuum on this machine). |
 | Centerline finishing pass | Turn off only for quick previews; without it the ridge of every stroke is left up to two depth steps high. |
-| Precision / Display mesh | Simulation only. *Precision* is the heightmap cell (0.003" / 0.005" / 0.010"); *Display mesh* caps how many cells are drawn (Full 4 M, Half 1 M, Low 250 k): pick Low on a laptop with integrated graphics. Neither changes the toolpath. |
+| Rendering precision / Display mesh | Simulation only. *Rendering precision* is the heightmap cell (0.003" / 0.005" / 0.010"); *Display mesh* caps how many cells are drawn (Full 4 M, Half 1 M, Low 250 k): pick Low on a laptop with integrated graphics. Neither changes the toolpath. |
 
 ## Building
 

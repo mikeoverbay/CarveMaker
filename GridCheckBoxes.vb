@@ -86,6 +86,21 @@ Public Module GridCheckBoxes
 
     Private ReadOnly _attached As New Runtime.CompilerServices.ConditionalWeakTable(Of PropertyGrid, Object)
 
+    ' Holding Space repeats its character: only the press itself flips. Each character's own message says
+    ' whether it is a repeat (bit 30 of lParam: the key was already down), read just before the character is
+    ' handled (so a backlog of key messages cannot mix them up); one filter for the whole program.
+    Private _spaceRepeats As Boolean
+    Private _spaceWatch As SpaceWatch
+
+    Private NotInheritable Class SpaceWatch
+        Implements IMessageFilter
+        Public Function PreFilterMessage(ByRef m As Message) As Boolean Implements IMessageFilter.PreFilterMessage
+            Const WM_CHAR As Integer = &H102
+            If m.Msg = WM_CHAR AndAlso m.WParam.ToInt64() = 32 Then _spaceRepeats = (m.LParam.ToInt64() And &H40000000L) <> 0
+            Return False
+        End Function
+    End Class
+
     ''' <summary>A yes/no row as a check box; any other row as it is.</summary>
     Public Function AsCheckBox(p As PropertyDescriptor, ParamArray more As Attribute()) As PropertyDescriptor
         If p.PropertyType IsNot GetType(Boolean) Then Return If(more.Length = 0, p, TypeDescriptor.CreateProperty(p.ComponentType, p, more))
@@ -97,6 +112,10 @@ Public Module GridCheckBoxes
         Dim seen As Object = Nothing
         If grid Is Nothing OrElse _attached.TryGetValue(grid, seen) Then Return
         _attached.Add(grid, Nothing)
+        If _spaceWatch Is Nothing Then
+            _spaceWatch = New SpaceWatch()
+            Application.AddMessageFilter(_spaceWatch)
+        End If
         Dim view = grid.Controls.Cast(Of Control)().FirstOrDefault(Function(c) c.GetType().Name = "PropertyGridView")
         If view Is Nothing Then Return
         ' The grid's view raises no KeyDown of its own; keys typed while it has the focus reach the edit
@@ -114,13 +133,19 @@ Public Module GridCheckBoxes
                                     ' Any click on the selected row's value (the box included) lands here.
                                     If e.Button = MouseButtons.Left Then FlipLater(grid, grid.SelectedGridItem)
                                 End Sub
-        ' Nothing is typed into a check box row: Space flips it, other characters, pasting and
-        ' deleting do nothing.
+        ' Nothing is typed into a check box row: Space flips it (once per press, not again while it is
+        ' held), other characters, pasting and deleting do nothing.
         AddHandler c.KeyPress, Sub(s, e)
                                    If Not IsCheckBox(grid.SelectedGridItem) Then Return
                                    e.Handled = True
-                                   If e.KeyChar = " "c AndAlso Control.ModifierKeys = Keys.None Then FlipLater(grid, grid.SelectedGridItem)
+                                   If e.KeyChar = " "c AndAlso Control.ModifierKeys = Keys.None AndAlso Not _spaceRepeats Then FlipLater(grid, grid.SelectedGridItem)
                                End Sub
+        ' Text that arrives some other way (the right-click menu's Paste, an input method) is taken out
+        ' again, so the grid has nothing to commit (it would report an edit that changes nothing).
+        Dim box = DirectCast(c, TextBox)
+        AddHandler box.TextChanged, Sub(s, e)
+                                        If box.Modified AndAlso box.Text.Length > 0 AndAlso IsCheckBox(grid.SelectedGridItem) Then box.Text = ""
+                                    End Sub
         AddHandler c.KeyDown, Sub(s, e)
                                   If Not IsCheckBox(grid.SelectedGridItem) Then Return
                                   Dim paste = (e.Control AndAlso e.KeyCode = Keys.V) OrElse (e.Shift AndAlso e.KeyCode = Keys.Insert)
@@ -165,8 +190,38 @@ Public Module GridCheckBoxes
             MessageBox.Show(grid.FindForm(), If(ex.InnerException, ex).Message, item.Label, MessageBoxButtons.OK, MessageBoxIcon.Warning)
             Return
         End Try
+        Dim place = PlaceOf(item)
         RaiseValueChanged?.Invoke(grid, {New PropertyValueChangedEventArgs(item, before)})
-        If Not grid.IsDisposed Then grid.Refresh()
+        If grid.IsDisposed Then Return
+        grid.Refresh()
+        ' After a refresh the grid selects the first row of the same name, whatever its category: a 3D
+        ' model's Toolpath 2 row would hand the next Space to the same row of Toolpath 1. Select it again.
+        SelectPlace(grid, place)
+    End Sub
+
+    ''' <summary>Where a row is: the labels from the top of the grid down to it (its category included).</summary>
+    Private Function PlaceOf(item As GridItem) As List(Of String)
+        Dim place As New List(Of String)
+        Dim g = item
+        While g IsNot Nothing AndAlso g.GridItemType <> GridItemType.Root
+            place.Insert(0, g.Label)
+            g = g.Parent
+        End While
+        Return place
+    End Function
+
+    ''' <summary>Selects the row at that place again, when it is still there and not already selected.</summary>
+    Private Sub SelectPlace(grid As PropertyGrid, place As List(Of String))
+        Dim g = grid.SelectedGridItem
+        If g Is Nothing OrElse place.Count = 0 Then Return
+        While g.Parent IsNot Nothing
+            g = g.Parent
+        End While
+        For Each label In place
+            g = g.GridItems.Cast(Of GridItem)().FirstOrDefault(Function(x) x.Label = label)
+            If g Is Nothing Then Return
+        Next
+        If grid.SelectedGridItem IsNot g Then g.Select()
     End Sub
 
     ''' <summary>The object a row edits: the row above's value for a row inside another, else the shown object's owner of it.</summary>

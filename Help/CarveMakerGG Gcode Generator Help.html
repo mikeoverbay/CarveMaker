@@ -158,7 +158,7 @@
   <li>A plain double-click on a text drawing still opens it for typing; a plain double-click on empty space fits the view.</li>
   <li><span class="menu">Draw</span> also has Rotate 90&deg; Left/Right, Mirror, Bring to Front, Send to Back and Delete (<kbd>Delete</kbd> key).</li>
   <li>Removing a drawing (<kbd>Delete</kbd>, <span class="menu">Draw &gt; Delete</span> or <i>Remove</i> on the Drawings tab) asks first. <i>Keep It</i> is the default answer, so a stray click or <kbd>Enter</kbd> never deletes work.</li>
-  <li><b>Hide</b> (<kbd>Ctrl</kbd>+<kbd>H</kbd>, the crossed eye on the <i>View</i> toolbar) puts the selected drawing out of the way: it is not shown, picked or carved. <b>Show All</b> (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>H</kbd>, the open eye) brings every hidden drawing back. Hidden drawings stay in the list on the Drawings tab marked <i>(hidden)</i>; their <i>Visible</i> row shows one again too.</li>
+  <li><b>Hide</b> (<kbd>Ctrl</kbd>+<kbd>H</kbd>, the crossed eye on the <i>View</i> toolbar) hides the selected drawing's toolpath in the view: it unticks its <i>Show in view</i> box (both toolpaths of a 3D model). The drawing itself stays, still selected, and is still carved. <b>Show All</b> (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>H</kbd>, the open eye) shows every toolpath again. To leave a drawing out of the carving, untick its <i>Visible</i> row.</li>
   <li>Exact values (position, size, rotation, shape and text settings) can be typed on the Drawings tab.</li>
 </ul>
 
@@ -213,11 +213,12 @@
 <p><b>Show in view</b> is a check box: untick it to hide that toolpath's lines in the view, so the others are easier to see (a 3D model has one for each of its two toolpaths). It is display only: nothing is generated again, and the toolpath is still cut, exported and simulated. It is saved with the project.</p>
 <table>
   <tr><th>Operation</th><th>What it does</th></tr>
-  <tr><td>V-carve</td><td>Carves the shape with a V-bit: deeper where the shape is wider, with sharp corners. Depths are under <i>Machine Settings &gt; 2. Cut settings</i>.</td></tr>
+  <tr><td>V-carve</td><td>Carves the shape with a V-bit: deeper where the shape is wider, with sharp corners. Depths are under <i>Machine Settings &gt; 2. Cut settings</i>. Where a stroke is wider than the V reaches at the flat depth, its flat floor is cut from the middle: the tool goes down there, spirals out to the edge, then traces the edge once. Along the middle of a stroke the tool stays down; it only climbs where it runs into a sharp corner.</td></tr>
   <tr><td>Pocket</td><td>Clears the inside to a flat floor with an end mill. Set the cut depth, pass depth and stepover.</td></tr>
   <tr><td>Profile</td><td>Follows the outline: <b>Outside</b> cuts the shape out at its true size, <b>Inside</b> cuts an opening, <b>On the line</b> engraves. <i>Cut through the stock</i> and <i>tabs</i> hold the part in place.</td></tr>
   <tr><td>3D roughing and finishing</td><td>The two toolpaths of a 3D model (see <a href="#models">3D models</a>).</td></tr>
 </table>
+<p><span class="menu">Toolpath &gt; Auto-regenerate</span> (on at the start) makes a new toolpath after every change. Turn it off to make changes without waiting: nothing is generated until you press <kbd>F5</kbd> (Generate Now). A new blank size or place is still drawn at once.</p>
 <p>The job runs 3D roughing and finishing first, then V-carving, pockets and profiles, with outside cut-outs last. When a job needs more than one tool, each tool gets its own G-code program; before each one, fit the tool and zero Z on the top of the stock.</p>
 
 <h2 id="tools">Tool library</h2>
@@ -234,7 +235,7 @@
   <tr><td>1. Blank</td><td>Width, height, thickness, margin and the machine coordinates of the lower-left corner (use <code>-width/2, -height/2</code> if you zero at the centre). <i>Extra stock on top, Z</i>: material above the finished surface that you face off before carving. Zero Z on the finished surface; the toolpaths stay the same. It is shown as an amber outline over the blank, and in the simulation the board is that much taller, so anything cutting at or near Z 0 (a pocket used to face it, say) visibly removes it. The status bar warns when the clearance or safe height is inside it.</td></tr>
   <tr><td>2. Cut settings</td><td>V-carve depth (flat depth), roughing depth step and allowance, finishing resolution, floor stepover, the centerline finishing pass, milling direction and curve tolerance.</td></tr>
   <tr><td>3. Machine</td><td>Safe Z and clearance Z, rapid rate, spindle dwell, dust collection (M8/M9), retract to machine home (G53), cut order of the text lines, and G-code units (inches or millimetres).</td></tr>
-  <tr><td>4. Simulation</td><td>Precision of the simulated board and how much of it is drawn (Display mesh: pick Low on integrated graphics).</td></tr>
+  <tr><td>4. Simulation</td><td><i>Rendering precision</i>: how finely the simulated board is drawn (it never changes the toolpath), and how much of it is drawn (Display mesh: pick Low on integrated graphics).</td></tr>
 </table>
 
 <h2 id="view">The view and simulation</h2>
@@ -269,7 +270,7 @@
   <tr><td><kbd>V</kbd> <kbd>R</kbd> <kbd>E</kbd> <kbd>P</kbd> <kbd>S</kbd> <kbd>A</kbd> <kbd>T</kbd></td><td>Draw tools (view focused): select, rectangle, ellipse, polygon, star, area, text</td></tr>
   <tr><td>Arrows (<kbd>Shift</kbd>)</td><td>Nudge the selection 0.01" (0.1")</td></tr>
   <tr><td><kbd>Delete</kbd> / <kbd>Esc</kbd></td><td>Delete the selected drawing (after asking) / cancel or deselect</td></tr>
-  <tr><td><kbd>Ctrl</kbd>+<kbd>H</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>H</kbd></td><td>Hide the selected drawing / show all hidden drawings</td></tr>
+  <tr><td><kbd>Ctrl</kbd>+<kbd>H</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>H</kbd></td><td>Hide the selected drawing's toolpath in the view / show every toolpath again</td></tr>
   <tr><td>Left drag</td><td>Move the view (also over drawings)</td></tr>
   <tr><td><kbd>Shift</kbd>+click / <kbd>Shift</kbd>+drag</td><td>Select a drawing / move it, or scale or rotate it with its handles</td></tr>
   <tr><td><kbd>Shift</kbd>+<kbd>Ctrl</kbd>+click</td><td>Select the next drawing under the mouse</td></tr>

@@ -204,8 +204,9 @@ Partial Class frmMain
         mnuDrawFront.Enabled = has AndAlso _glView.SelectedObject < _objects.Count - 1
         mnuDrawBack.Enabled = has AndAlso _glView.SelectedObject > 0
         mnuDrawDelete.Enabled = has
-        Dim canHide = has AndAlso SelectedDrawing().Visible
-        Dim anyHidden = _objects.Any(Function(o) Not o.Visible)
+        ' Hide / Show All work on the toolpaths in the view (frmMain.Moves.vb).
+        Dim canHide = SelectedToolpaths().Any(Function(m) m.ShowInView)
+        Dim anyHidden = AllToolpaths().Any(Function(m) Not m.ShowInView)
         mnuDrawHide.Enabled = canHide : tsbHide.Enabled = canHide
         mnuDrawShowAll.Enabled = anyHidden : tsbShowAll.Enabled = anyHidden
     End Sub
@@ -708,33 +709,6 @@ Partial Class frmMain
         _objects.RemoveAt(i)
         If toFront Then _objects.Add(o) Else _objects.Insert(0, o)
         RefreshObjectList(_objects.IndexOf(o))
-        MarkDirty()
-        RequestRegenerate(immediate:=True)
-    End Sub
-
-    ''' <summary>Hides the selected drawing: not shown, picked or carved until shown again.</summary>
-    Private Sub HideSelected_Click(sender As Object, e As EventArgs) Handles mnuDrawHide.Click, tsbHide.Click
-        Dim o = SelectedDrawing()
-        If o Is Nothing OrElse Not o.Visible Then Return
-        EndTextEdit(commit:=True, focusView:=False)
-        o.Visible = False
-        RefreshObjectList(-1)
-        _statusNote = o.Name & " is hidden: Show All (Ctrl+Shift+H) shows it again."
-        lblStatus.Text = _statusNote
-        MarkDirty()
-        RequestRegenerate(immediate:=True)
-    End Sub
-
-    ''' <summary>Shows every hidden drawing again.</summary>
-    Private Sub ShowAll_Click(sender As Object, e As EventArgs) Handles mnuDrawShowAll.Click, tsbShowAll.Click
-        Dim hidden = _objects.Where(Function(o) Not o.Visible).ToList()
-        If hidden.Count = 0 Then Return
-        For Each o In hidden
-            o.Visible = True
-        Next
-        RefreshObjectList(_glView.SelectedObject)
-        _statusNote = If(hidden.Count = 1, hidden(0).Name & " is shown again.", hidden.Count & " drawings are shown again.")
-        lblStatus.Text = _statusNote
         MarkDirty()
         RequestRegenerate(immediate:=True)
     End Sub

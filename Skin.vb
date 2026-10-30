@@ -77,7 +77,17 @@ Friend NotInheritable Class Skin
         Using b As New LinearGradientBrush(New Rectangle(upper.X, upper.Y - 1, upper.Width, upper.Height + 2), glossTop, glossEnd, LinearGradientMode.Vertical)
             g.FillRectangle(b, upper)
         End Using
-        g.FillRectangle(Brushes.Black, lower)
+        If pressed Then
+            ' Held down (Code Chop's DOWN face): the light comes up from the bottom edge instead.
+            Using b As New LinearGradientBrush(New Rectangle(lower.X, lower.Y - 1, lower.Width, lower.Height + 2), Color.Black, Color.Black, LinearGradientMode.Vertical)
+                b.InterpolationColors = New ColorBlend(3) With {
+                    .Colors = {Color.Black, Color.FromArgb(8, 8, 8), Color.FromArgb(112, 112, 112)},
+                    .Positions = {0.0F, 0.45F, 1.0F}}
+                g.FillRectangle(b, lower)
+            End Using
+        Else
+            g.FillRectangle(Brushes.Black, lower)
+        End If
         Dim k = r.Height / 32.0F
         Dim ledY = r.Bottom - Math.Max(3, CInt(Math.Round(5 * k)))
         If hot OrElse pressed Then
@@ -98,16 +108,26 @@ Friend NotInheritable Class Skin
             g.Restore(saved)
             g.SmoothingMode = SmoothingMode.None
         End If
-        ' Frame: light along the top and sides, open at the bottom.
-        Using framePen As New Pen(If(enabled, Color.FromArgb(150, 150, 150), Color.FromArgb(70, 70, 70)))
-            g.DrawLine(framePen, r.Left, r.Top, r.Right - 1, r.Top)
-        End Using
-        Using sideBrush As New LinearGradientBrush(New Rectangle(r.Left, r.Top, 1, r.Height + 1),
-                                                   If(enabled, Color.FromArgb(150, 150, 150), Color.FromArgb(70, 70, 70)),
-                                                   If(pressed, Color.FromArgb(150, 150, 110), Color.FromArgb(40, 40, 40)), LinearGradientMode.Vertical)
-            g.FillRectangle(sideBrush, r.Left, r.Top, 1, r.Height)
-            g.FillRectangle(sideBrush, r.Right - 1, r.Top, 1, r.Height)
-        End Using
+        If pressed Then
+            ' Held down, the frame turns over: dark along the top and left, light along the right and bottom.
+            Using dark As New Pen(Color.FromArgb(24, 24, 24)), light As New Pen(Color.FromArgb(168, 168, 168))
+                g.DrawLine(dark, r.Left, r.Top, r.Right - 1, r.Top)
+                g.DrawLine(dark, r.Left, r.Top, r.Left, r.Bottom - 1)
+                g.DrawLine(light, r.Right - 1, r.Top + 1, r.Right - 1, r.Bottom - 1)
+                g.DrawLine(light, r.Left + 1, r.Bottom - 1, r.Right - 1, r.Bottom - 1)
+            End Using
+        Else
+            ' Frame: light along the top and sides, open at the bottom.
+            Using framePen As New Pen(If(enabled, Color.FromArgb(150, 150, 150), Color.FromArgb(70, 70, 70)))
+                g.DrawLine(framePen, r.Left, r.Top, r.Right - 1, r.Top)
+            End Using
+            Using sideBrush As New LinearGradientBrush(New Rectangle(r.Left, r.Top, 1, r.Height + 1),
+                                                       If(enabled, Color.FromArgb(150, 150, 150), Color.FromArgb(70, 70, 70)),
+                                                       Color.FromArgb(40, 40, 40), LinearGradientMode.Vertical)
+                g.FillRectangle(sideBrush, r.Left, r.Top, 1, r.Height)
+                g.FillRectangle(sideBrush, r.Right - 1, r.Top, 1, r.Height)
+            End Using
+        End If
         ' The bar, dimmer at its ends.
         Dim barH = Math.Max(1, CInt(Math.Round(k)))
         Dim x0 = r.Left + CInt(r.Width * 0.24F), x1 = r.Right - CInt(r.Width * 0.24F)

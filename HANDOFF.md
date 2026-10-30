@@ -262,6 +262,59 @@ the app. Do not run `python` from Bash on this machine (Store alias hangs).
    (c) `ToolpathView.ShowCuts`; `_tsbShowCuts`/`_tsbShowRapids` (round toggles, yellow while shown, icons
    `CutMoves`/`RapidMoves`) follow `_mnuViewCuts`/`mnuViewRapids` both ways; not saved between runs (like Show Rapid Moves).
    New controls are made in code, not in the designer files (the user opens the solution in Visual Studio 2022).
+19. **V-carve: the floor from the middle out, no wandering bottom line** (2026-10-29). The user saw "weird moves" (a
+   zigzag with Z bobbing) where the centerline ends in a rounded stroke end, said the cut should "stay at the depth unless
+   there's a sharp corner", then asked for the wide floors to be cut "shoot for the center, spiral out to the outside
+   edge, then once on the edge, trace" (V-carving only, never pocketing). Cause of the zigzag: around a rounded end every
+   outline sample gives nearly the same maximal circle, scattered by a few thou, visited in outline order.
+   `DropCovered` (after `Deduplicate`): points are taken deepest first; a point whose cone lies inside a kept one
+   (|c1 - c2| + r1 <= r2 + CoverTolerance 0.001", r = cut radius at the surface, min(r, FlatInset); same-angle cones nest
+   exactly when their surface circles do) is dropped; points with R >= FlatInset (over the floor) are dropped but still
+   hold smaller cones. Gaps are crossed straight when `ToolpathLinker.GougeFree` allows, else the original points are put
+   back (splitting there added lifts: Times e went 0.3 -> 0.6 min before that rule). Corner climbs survive (each circle
+   into a corner reaches new material). Harness `spurs`: excursions away from sharp corners 501 -> 59 over 30 jobs.
+   The floor (`FloorSpirals`): Advance no longer emits the bevel (emit:=False); rings at FlatInset + k*stepover form a
+   tree (outer inside outer, hole around hole: `ParentRing`); "middle strips" (half-step inset minus the next ring
+   dilated by s/2: where the floor ends between two rings, else up to a whole stepover stayed uncut, which the old
+   clamped centerline had covered) become extra child rings; the walk goes innermost first: a leaf is one lap (starting
+   nearest the cut), one child is a blended turn (`Blend`: follow the outer ring, nearest inner point via
+   `ProjectOnward`, p = a + u (b - a); refused when the rings are over 4 stepovers apart anywhere (a small piece under
+   a big ring would cut across the floor) or a point could leave the floor: Lipschitz bound max(roomC - u D, roomN -
+   (1 - u) D) >= 0 with room = inset beyond the edge, else the measured distance), else lap + `Join`; splits take the
+   nearest child first. Edge rings end with one full trace lap. Climb runs every ring against Clipper's orientation
+   (spiralling out, the uncut material is outside). Pieces are open FloorClear passes, Chain = floor id, Order = place:
+   the linker never reverses them and takes the lowest Order of a chain next. Links between two pieces of one floor may run up to
+   2" (MaxFloorLink; 0.5" elsewhere) and, level at the flat depth, at the feed rate. Numbers (harness `spurs floors`,
+   I / O / S / HB / Oak, old -> new): lifts 2/4/5/13/11 -> 2/2/1/13/11, minutes 1.97/8.67/5.02/18.19/5.05 ->
+   2.11/8.51/5.10/18.66/5.30, floor farthest from a pass 0.0031-0.0033 -> 0.0031-0.0041, no new gouge (cone past the
+   outline identical).
+   Review fixes (2026-10-30): the walk is a loop with its own stack (`WalkFrame`; recursion overflowed the stack, an
+   uncatchable crash, past about 1500 levels: a 19" square at 0.006); each turn is reduced as it is added (`Reduce`,
+   Clipper.SimplifyPath) instead of one Douglas-Peucker over a whole spiral (8" square 54 s -> 0.5 s) and the walk
+   checks the token (Stop took 48 s); `ProjectOnward` stops scanning once edges are well past; a split laps a branch
+   whose spiral ended on a turn before stepping out (else a 2-stepover gap); strip holes kept (Math.Abs on the area) and
+   attached to the strip or ring that holds them; centerline points over the floor are dropped only inside the floor
+   that was actually cut (`OnFloor` against the edge paths; a floor too small to keep left 0.036" uncut); with the
+   finishing pass off, the refinement probes before the flat depth are cut at their own depth (a 0.010" gouge, older
+   than this work). Centerline circles are capped at the true distance from their centre to the outline
+   (`ProcessSample`: R = min(MaxCircle, DistanceToBoundary)): circles grown too big where gentle turns skip their
+   neighbouring edges cut past the outline, 0.0024" on a ring's outer wall (1.3.0 too) and 0.0003-0.0007" on script
+   letters (now 0.00015-0.00018"); the bottom line rises there instead (climbs away from corners 59 -> 147, 1.3.0: 501).
+   Harness `spurs floorcases` and `spurs ringgouge dir` (pictures of the old gouge).
+20. **UI round** (2026-10-29): Auto-regenerate off now stops every automatic regeneration (`RequestRegenerate` returns
+   with "press F5" whatever `immediate` says; Generate Now calls `GenerateAsync` itself; loading a project with it off
+   shows an empty toolpath). The blank is drawn from the settings at once (`ToolpathView.ShowBlank` / `ApplyBlank`:
+   outline, scene, grid, extra stock; called from `Settings_PropertyValueChanged`, load and start). Simulation
+   "Precision" is "Rendering precision". Hide / Show All (View toolbar, Draw menu) untick / tick `ShowInView`
+   (frmMain.Moves.vb: `SelectedToolpaths`, `AllToolpaths`); they used to hide the drawing (Visible) and deselect it,
+   which emptied the panel. `Skin.PaintSquare` draws the pressed face like Code Chop's BTN_M_DOWN (dark gloss, light from
+   the bottom edge, frame turned over). Review fixes: loading a project ends any 'generating' state (`SetGenerating(False)`:
+   with auto off nothing would publish and Generate stayed disabled), clears `_lastLinesKey` / `_lastSettings` with
+   auto off (Export said there was nothing to cut) and takes the project's extra stock. Check boxes (second review):
+   `GridCheckBoxes.Flip` selects the flipped row again by its place (`PlaceOf` / `SelectPlace`: a refresh selects
+   the first row of that name in any category, so Space went on to a 3D model's Toolpath 1 row); text pasted into a
+   check box row (right-click menu, input methods) is taken out again (TextChanged with Modified); held Space flips
+   once (an application message filter reads bit 30 of each space WM_CHAR, the repeat flag, just before it is handled).
 12. **Picking rules and the user guide.** `PickAt` collects every object near the
    cursor (one GPU pass per nearby object, `PickAllAt`) and picks: under the cursor,
    then the smallest box, then the nearest, then the topmost. Clicks use
@@ -295,6 +348,8 @@ torture SVG folders and their expectation scripts). Build with
 | `spiralgouge` | The engine straight on the synthetic grid: raster and spiral finishing, both machine areas, two smoothing values, every move checked against an independent drop |
 | `moves` | Show in view without a window: owners and runs of a job with the text, two V-carved drawings sharing its V-bit, two pockets sharing a tool, a profile and a synthetic 3D model (every move once, each owner's cuts on its drawing, retracts with their cut, segments vs owners, one segment per toolpath for export), PrepareLines groups against an independent regrouping, ShowInView out of the key and saved / missing in old files, grid rows (order, owners of the model's two rows, every Boolean row a check box, the converter) |
 | `movesgui [dir]` | The real window: Show in view ticked/unticked by a click on the box, on the value, Space and a double-click (no error box), lines hidden without regenerating (ShownRanges and screen pixels), Cut through the stock regenerates and changes the rows, the Text tab's Show in view and Large font > Bold, Machine Settings' Dust collection, the Cuts / Rapids switches and View menu (screen pixels), the simulation keeps every move; screenshots `moves_*.png` |
+| `spurs [compare / floors dir / at font text x y half png [size] / rings font text size x y]` | V-carve centerline excursions (climbs away from sharp corners) over 30 font/text jobs with the user's settings; `compare`: per CoverTolerance with envelope accuracy; `floors`: wide-letter floors (lifts, passes, minutes, an independent gouge check and floor coverage, pictures); `at`: one picture; `rings`: the floor rings near a point and their nearest passes |
+| `fontbutton [dir]` | The Text tab's Font... button: first on its bar, as tall as Large, tooltip, opens the font dialog |
 | `reliefrapids` | Dragon 15": lifts, rapid length and machining time for raster and both spirals, roughed or not, with where the lifts are (radius, depth left) and the hop lengths |
 | `reliefgui` | 3D import through the form (env `SMOKE_SHOTS=1` screenshots during generation, `SMOKE_HOVER=1` hover light check, `SMOKE_STEPS=1` tab-switch steps) |
 | `reliefdemo` | Opens the window maximized, imports the dragon at 15" on a 16" blank, shows the simulation and leaves the window to the user |

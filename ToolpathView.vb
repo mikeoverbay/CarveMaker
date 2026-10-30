@@ -60,6 +60,10 @@ Public Class ToolpathView
     Private ReadOnly _extraStock As New LineLayer()
     Private _extraStockZ As Double
 
+    ' The blank from the settings (ShowBlank), drawn instead of the one the toolpath was made for.
+    Private _hasBlank As Boolean
+    Private _blankX0, _blankY0, _blankX1, _blankY1 As Double
+
     Private ReadOnly Property AllLayers As LineLayer()
         Get
             Return New LineLayer() {_grid, _blank, _extraStock, _outline, _cuts, _rapids, _selectionLayer}
@@ -1452,13 +1456,50 @@ Public Class ToolpathView
         End Set
     End Property
 
+    ''' <summary>
+    ''' The blank as the settings have it now (machine inches). Drawn instead of the toolpath's, so a new size
+    ''' or place shows at once, before a toolpath for it exists; the grid and Zoom to Fit follow it too.
+    ''' </summary>
+    Public Sub ShowBlank(x0 As Double, y0 As Double, x1 As Double, y1 As Double)
+        If Not (x1 > x0 AndAlso y1 > y0) Then Return
+        If _hasBlank AndAlso x0 = _blankX0 AndAlso y0 = _blankY0 AndAlso x1 = _blankX1 AndAlso y1 = _blankY1 Then Return
+        _hasBlank = True
+        _blankX0 = x0 : _blankY0 = y0 : _blankX1 = x1 : _blankY1 = y1
+        ApplyBlank()
+        Invalidate()
+    End Sub
+
+    ''' <summary>The blank's outline, and the scene and grid over the blank and the toolpath.</summary>
+    Private Sub ApplyBlank()
+        If Not _hasBlank Then Return
+        Dim v As New List(Of Single)
+        AddLine(v, _blankX0, _blankY0, 0, _blankX1, _blankY0, 0, 0.9F, 0.78F, 0.5F)
+        AddLine(v, _blankX1, _blankY0, 0, _blankX1, _blankY1, 0, 0.9F, 0.78F, 0.5F)
+        AddLine(v, _blankX1, _blankY1, 0, _blankX0, _blankY1, 0, 0.9F, 0.78F, 0.5F)
+        AddLine(v, _blankX0, _blankY1, 0, _blankX0, _blankY0, 0, 0.9F, 0.78F, 0.5F)
+        SetPending(_blank, v)
+        Dim minX = _blankX0, minY = _blankY0, maxX = _blankX1, maxY = _blankY1
+        Dim tp = _toolpath
+        If tp IsNot Nothing AndAlso Not tp.IsEmpty Then
+            minX = Math.Min(minX, tp.MinX) : minY = Math.Min(minY, tp.MinY)
+            maxX = Math.Max(maxX, tp.MaxX) : maxY = Math.Max(maxY, tp.MaxY)
+        End If
+        _sceneMin = New Vector3(CSng(minX), CSng(minY), _sceneMin.Z)
+        _sceneMax = New Vector3(CSng(maxX), CSng(maxY), 0)
+        _gridMinX = minX : _gridMinY = minY : _gridMaxX = maxX : _gridMaxY = maxY
+        BuildGridLayer()
+        RebuildExtraStock()
+    End Sub
+
     ''' <summary>The extra stock's outline: the top of the slab and its four upright edges over the blank.</summary>
     Private Sub RebuildExtraStock()
         Dim v As New List(Of Single)
         Dim tp = _toolpath
         Dim z = _extraStockZ
-        If tp IsNot Nothing AndAlso z > 0 AndAlso tp.BlankMaxX > tp.BlankMinX AndAlso tp.BlankMaxY > tp.BlankMinY Then
-            Dim x0 = tp.BlankMinX, y0 = tp.BlankMinY, x1 = tp.BlankMaxX, y1 = tp.BlankMaxY
+        Dim haveTp = tp IsNot Nothing AndAlso tp.BlankMaxX > tp.BlankMinX AndAlso tp.BlankMaxY > tp.BlankMinY
+        If z > 0 AndAlso (_hasBlank OrElse haveTp) Then
+            Dim x0 = If(_hasBlank, _blankX0, tp.BlankMinX), y0 = If(_hasBlank, _blankY0, tp.BlankMinY)
+            Dim x1 = If(_hasBlank, _blankX1, tp.BlankMaxX), y1 = If(_hasBlank, _blankY1, tp.BlankMaxY)
             Const r As Single = 1.0F, g As Single = 0.58F, b As Single = 0.12F
             AddLine(v, x0, y0, z, x1, y0, z, r, g, b)
             AddLine(v, x1, y0, z, x1, y1, z, r, g, b)
@@ -1706,6 +1747,7 @@ Public Class ToolpathView
         _gridMinX = l.MinX : _gridMinY = l.MinY : _gridMaxX = l.MaxX : _gridMaxY = l.MaxY
         BuildGridLayer()
         SetPending(_blank, l.Blank)
+        ApplyBlank()
         SetPending(_outline, l.Outline)
         SetPending(_cuts, l.Cuts)
         _cuts.Starts = l.CutStarts

@@ -20,7 +20,9 @@ history. Read this, then `README.md` for the user-facing description.
   every push and publishes `CarveMakerGG-Gcode-Generator-Setup-<ver>.exe` on tags `v*`, with
   `release-notes.md` as the release text. Releases so far: v1.0.0; v1.1.0 (tool
   library, pocket/profile, per-toolpath feeds, drawing tools, snapping); v1.2.0
-  (movable toolbars); v1.3.0 (user guide with Help menu, click priority / Ctrl+click).
+  (movable toolbars); v1.3.0 (user guide with Help menu, click priority / Ctrl+click);
+  v1.4.0 (rename to CarveMakerGG Gcode Generator, dark look, 3D models, V-carve floors from the middle out,
+  check boxes, Show in view, Cuts / Rapids).
 - Shipping a release is the whole job, done in one go (the user asked for that):
   1. run the harness modes; 2. write `release-notes.md` for the new version;
   3. bump `<Version>` in `Directory.Build.props` and the fallback `AppVersion` in

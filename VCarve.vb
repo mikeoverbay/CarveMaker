@@ -13,14 +13,17 @@
 '      inset distances f/2 + allowance + k*step, commanded at the depth for
 '      (inset - allowance). They remove the bulk but never touch the finished
 '      surface (a skin 'allowance' thick is left on every flank).
-'   2. Bevel finish: the exact contour at the flat-depth inset, cut at Z = -F.
-'      Where the floor begins this is the one pass that finishes the bevel.
-'   3. Floor clearing: further insets at the stepover, all at Z = -F.
+'   2-3. The floor at Z = -F (FloorSpirals): rings at every stepover inside the
+'      flat-depth inset; from the middle of each piece of floor the tool spirals
+'      out (turns blend one ring into the next) and ends with one lap of the edge,
+'      the exact contour at the flat-depth inset, which finishes the bevel.
 '   4. Centerline finish: the medial axis traced with maximal inscribed circles
 '      (F-Engrave method). Every boundary sample P with inward normal n yields
 '      the largest circle tangent at P inside the region, centre P + r*n and
 '      depth (r - f/2)/tan(a) clamped to F. Following it with varying Z cuts
 '      the ridge, lifts into sharp corners (r -> 0) and finishes both flanks.
+'      Points whose cone lies inside a deeper kept one, and points over the
+'      floor, are dropped (DropCovered).
 '  Links between passes inside a letter are straight 3D feed moves when a
 '  gouge check against the distance field allows it, otherwise a short lift to
 '  the clearance height. Letters are separated by moves at the safe height.
@@ -354,29 +357,25 @@ Public Module VCarveEngine
             k += 1
         Loop
 
-        ' ---- 2. exact bevel contour at the flat depth -----------------------
+        ' ---- 2 and 3. the floor at Z = -F, and its edge (the exact bevel contour) ---
+        ' The edge loops are not emitted here: the floor ends with them (FloorSpirals). Advance
+        ' still refines the ridges of roughing lobes that vanished before the flat depth.
+        ' The floor that is cut (its edges), for the centerline: Nothing when there is none.
+        Dim floorEdge As PathsD = Nothing
         If prevLobes.Count > 0 Then
             token.ThrowIfCancellationRequested()
             Dim curLobes = GroupLobes(Inset(region, g.FlatInset, s))
-            prevLobes = Advance(prevLobes, prevD, curLobes, g.FlatInset, -g.Flat, PassKind.BevelFinish, Not finish, refineTol, g, ctx, s, output, token)
-            prevD = g.FlatInset
+            prevLobes = Advance(prevLobes, prevD, curLobes, g.FlatInset, -g.Flat, PassKind.BevelFinish, Not finish, refineTol, g, ctx, s, output, token, emit:=False)
+            If curLobes.Count > 0 Then
+                floorEdge = New PathsD(curLobes.SelectMany(Function(l) l.Paths))
+                FloorSpirals(rs, region, curLobes, g, s, ctx, output, token)
+            End If
         End If
-
-        ' ---- 3. floor clearing at Z = -F -----------------------------------
-        Dim stepover As Double = s.ClearStepover
-        Dim d2 As Double = g.FlatInset
-        While prevLobes.Count > 0
-            token.ThrowIfCancellationRequested()
-            d2 += stepover
-            Dim curLobes = GroupLobes(Inset(region, d2, s))
-            prevLobes = Advance(prevLobes, prevD, curLobes, d2, -g.Flat, PassKind.FloorClear, Not finish, Math.Max(stepover / 8.0, 0.0002), g, ctx, s, output, token)
-            prevD = d2
-        End While
 
         ' ---- 4. centerline finishing ---------------------------------------
         If finish Then
             token.ThrowIfCancellationRequested()
-            CenterlinePass(rs, g, s, ctx, output, token)
+            CenterlinePass(rs, g, s, ctx, output, token, floorEdge)
         End If
     End Sub
 
@@ -387,7 +386,7 @@ Public Module VCarveEngine
     Private Function Advance(prevLobes As List(Of Lobe), dPrev As Double, curLobes As List(Of Lobe), dCur As Double,
                              z As Double, kind As PassKind, refine As Boolean, tol As Double, g As ToolGeom,
                              ctx As EmitContext, s As CarveSettings, output As List(Of ToolpathContour),
-                             token As CancellationToken) As List(Of Lobe)
+                             token As CancellationToken, Optional emit As Boolean = True) As List(Of Lobe)
         ' Parent of each new lobe = the previous lobe whose outer contains it.
         Dim parentOf As New Dictionary(Of Lobe, Integer)
         For Each cur In curLobes
@@ -419,10 +418,434 @@ Public Module VCarveEngine
         For Each cur In curLobes
             cur.Chain = ctx.NextChain
             ctx.NextChain += 1
-            EmitLoops(cur.Paths, z, dCur, kind, ctx, output, s, cur.Chain, parentOf(cur))
+            If emit Then EmitLoops(cur.Paths, z, dCur, kind, ctx, output, s, cur.Chain, parentOf(cur))
         Next
         Return curLobes
     End Function
+
+    ' ====================================================================
+    '  The floor: down in the middle, spiral out, trace the edge
+    ' ====================================================================
+
+    ''' <summary>Where the floor walk stands at one ring (FloorSpirals).</summary>
+    Private NotInheritable Class WalkFrame
+        Public Ring As FloorRing
+        Public State As Integer             ' 0: not started; 1: its one inner ring done; 2: going through its branches
+        Public Pending As List(Of FloorRing)
+        Public LastChild As FloorRing       ' the branch just cut (state 2)
+    End Class
+
+    ''' <summary>A spiral turn's points reduced to those that matter (within the point-reduction tolerance).</summary>
+    Private Function Reduce(pts As List(Of PointD)) As List(Of PointD)
+        If pts.Count < 3 Then Return pts
+        Dim simple = Clipper.SimplifyPath(New PathD(pts), SimplifyTol, False)
+        If simple.Count < 2 Then Return pts
+        Return New List(Of PointD)(simple)
+    End Function
+
+    ''' <summary>One path of the floor at one inset (level 0: the edge), with the rings just inside it.</summary>
+    Private NotInheritable Class FloorRing
+        Public Path As PathD            ' in the cutting direction
+        Public IsHole As Boolean
+        Public Level As Integer
+        Public Room As Double           ' inset beyond the edge: how far a point may stray from it and stay on the floor
+        Public Source As PathD          ' as Clipper made it (outers counter-clockwise)
+        Public Area As Double           ' absolute
+        Public Children As New List(Of FloorRing)
+        ' Running length at each vertex, and the whole length (the closing edge included).
+        Public At As Double()
+        Public Length As Double
+    End Class
+
+    ''' <summary>
+    ''' The flat floor of a wide stroke (inside the flat-depth inset), cut at Z = -F. In each piece of it the
+    ''' tool goes down in the middle (the innermost ring), spirals out one stepover per turn (each turn blends
+    ''' one ring into the next, so there is no step between them), and ends with one lap of the edge, which
+    ''' also finishes the bevel. A floor around an island (a counter) spirals out from its middle both ways,
+    ''' to the edge and to the island's edge. Where a ring splits, or a turn could leave the floor, the ring
+    ''' is cut as a lap and the cut steps across to the next one (or starts a new pass). Every piece is an
+    ''' open pass (FloorClear) cut in the order and direction given: same Chain, Order = its place.
+    ''' The pocket toolpaths (MillingEngine) are separate and unchanged.
+    ''' </summary>
+    Private Sub FloorSpirals(rs As RegionShape, region As PathsD, edge As List(Of Lobe), g As ToolGeom, s As CarveSettings, ctx As EmitContext,
+                             output As List(Of ToolpathContour), token As CancellationToken)
+        Dim stepover = Math.Max(s.ClearStepover, 0.0005)
+        ' How much closer to the outline than its nominal inset a ring's points may lie (round joins, point reduction).
+        Dim slack = Math.Max(0.0, s.CurveTolerance) + SimplifyTol
+        Dim climb = (s.Direction = MillingDirection.Climb)
+        ' Level 0: the edge; then every stepover further in, until nothing is left.
+        Dim roots As New List(Of FloorRing)
+        Dim levels As New List(Of List(Of FloorRing))
+        Dim prevLevel = edge.SelectMany(Function(l) l.Paths).Select(Function(p) NewRing(p, 0, 0.0, climb)).ToList()
+        roots.AddRange(prevLevel)
+        levels.Add(prevLevel)
+        Dim d = g.FlatInset
+        Dim level = 0
+        Do
+            token.ThrowIfCancellationRequested()
+            d += stepover
+            Dim paths = Inset(region, d, s)
+            If paths.Count = 0 Then Exit Do
+            level += 1
+            Dim rings = paths.Select(Function(p) NewRing(p, level, level * stepover, climb)).ToList()
+            For Each r In rings
+                Dim parent = ParentRing(r, prevLevel)
+                If parent Is Nothing Then roots.Add(r) Else parent.Children.Add(r)
+            Next
+            levels.Add(rings)
+            prevLevel = rings
+        Loop
+
+        ' The middles. Between two rings every place is within half a stepover of one, but where the floor ends
+        ' between a ring and the next (the middle of a piece, or of the part of a ring with nothing further in)
+        ' the middle lies up to a whole stepover in. There, the inset half a stepover further in, less what the
+        ' next ring reaches, is a thin strip along the middle: cut as a small ring of its own (inside out, the
+        ' spiral of a piece starts there, so the plunge is in the middle).
+        For k = 0 To levels.Count - 1
+            token.ThrowIfCancellationRequested()
+            Dim half = Inset(region, g.FlatInset + k * stepover + stepover / 2, s)
+            If half.Count = 0 Then Continue For
+            Dim strips As PathsD = half
+            If k + 1 < levels.Count Then
+                Dim reach = Clipper.InflatePaths(New PathsD(levels(k + 1).Select(Function(r) r.Source)), stepover / 2 + 2 * slack,
+                                                 JoinType.Round, EndType.Polygon, 2.0, Prec, s.CurveTolerance)
+                strips = Clipper.Difference(half, reach, FillRule.NonZero, Prec)
+            End If
+            Dim lvl = k
+            Dim stripRings = strips.Where(Function(p) p.Count >= 3 AndAlso Math.Abs(Clipper.Area(p)) >= MinPathArea).
+                Select(Function(p) NewRing(p, lvl + 1, lvl * stepover + stepover / 2, climb)).ToList()
+            For Each m In stripRings.OrderBy(Function(r) If(r.IsHole, 1, 0))
+                Dim parent = ParentRing(m, levels(k))
+                ' A strip's hole with no hole ring inside it (it holds only the next ring's piece): it goes with
+                ' the strip, or the ring, that holds it.
+                If parent Is Nothing AndAlso m.IsHole Then
+                    parent = stripRings.Where(Function(o) Not o.IsHole AndAlso Clipper.PointInPolygon(m.Source(0), o.Source, Prec) <> PointInPolygonResult.IsOutside).
+                        OrderBy(Function(o) o.Area).FirstOrDefault()
+                    If parent Is Nothing Then
+                        parent = levels(k).Where(Function(o) Not o.IsHole AndAlso Clipper.PointInPolygon(m.Source(0), o.Source, Prec) <> PointInPolygonResult.IsOutside).
+                            OrderBy(Function(o) o.Area).FirstOrDefault()
+                    End If
+                End If
+                If parent Is Nothing Then roots.Add(m) Else parent.Children.Insert(0, m)
+            Next
+        Next
+
+        ' Each ring is "reached" when the cut stands on it; a ring is safe for a point when that point is
+        ' no farther from it than the ring's inset beyond the edge (the cone at Z = -F then stays inside).
+        Dim pieces As New List(Of List(Of PointD))
+        ' Where the cut stands (Nothing before the first piece): pieces start, and branches are taken, nearest first.
+        Dim here = Function() As PointD?
+                       If pieces.Count = 0 Then Return Nothing
+                       Dim l = pieces(pieces.Count - 1)
+                       Return l(l.Count - 1)
+                   End Function
+        ' Cuts ring n and everything inside it, innermost first. True when n ends cut all the way round (False:
+        ' a spiral turn ended on it). A loop with its own stack: a deep floor has thousands of rings.
+        Dim walk = Function(top As FloorRing) As Boolean
+                       Dim stack As New Stack(Of WalkFrame)
+                       stack.Push(New WalkFrame With {.Ring = top})
+                       Dim result = False         ' what the frame last popped returned
+                       While stack.Count > 0
+                           token.ThrowIfCancellationRequested()
+                           Dim fr = stack.Peek()
+                           Dim n = fr.Ring
+                           Select Case fr.State
+                               Case 0
+                                   If n.Children.Count = 0 Then
+                                       ' The middle of this floor: down here, one lap of the innermost ring.
+                                       pieces.Add(Lap(n, here()))
+                                       result = True
+                                       stack.Pop()
+                                   ElseIf n.Children.Count = 1 Then
+                                       fr.State = 1
+                                       stack.Push(New WalkFrame With {.Ring = n.Children(0)})
+                                   Else
+                                       fr.State = 2
+                                       fr.Pending = n.Children.ToList()
+                                   End If
+                               Case 1
+                                   ' The one ring inside is done: one spiral turn out onto this ring.
+                                   Dim c = n.Children(0)
+                                   Dim cur = pieces(pieces.Count - 1)
+                                   Dim turn = Blend(rs, c, n, cur(cur.Count - 1), stepover, g.FlatInset)
+                                   If turn IsNot Nothing Then
+                                       cur.AddRange(Reduce(turn).Skip(1))
+                                       result = False
+                                   Else
+                                       ' No safe turn: finish the inner ring, then this one as a lap of its own.
+                                       If Not result Then cur.AddRange(Lap(c, cur(cur.Count - 1)).Skip(1))
+                                       Join(pieces, Lap(n, cur(cur.Count - 1)), c.Room, n.Room, slack)
+                                       result = True
+                                   End If
+                                   stack.Pop()
+                               Case Else
+                                   ' A split: every branch from its own middle out (the nearest next), then this ring.
+                                   If fr.LastChild IsNot Nothing Then
+                                       ' A branch ending on a spiral turn gets its ring finished first.
+                                       If Not result Then
+                                           Dim cur = pieces(pieces.Count - 1)
+                                           cur.AddRange(Lap(fr.LastChild, cur(cur.Count - 1)).Skip(1))
+                                       End If
+                                       fr.LastChild = Nothing
+                                   End If
+                                   If fr.Pending.Count > 0 Then
+                                       Dim at = here()
+                                       Dim nextOne = fr.Pending(0)
+                                       If at.HasValue Then nextOne = fr.Pending.OrderBy(Function(c) DistanceTo(c, at.Value)).First()
+                                       fr.Pending.Remove(nextOne)
+                                       fr.LastChild = nextOne
+                                       stack.Push(New WalkFrame With {.Ring = nextOne})
+                                   Else
+                                       Dim last = pieces(pieces.Count - 1)
+                                       Join(pieces, Lap(n, last(last.Count - 1)), n.Children.Max(Function(c) c.Room), n.Room, slack)
+                                       result = True
+                                       stack.Pop()
+                                   End If
+                           End Select
+                       End While
+                       Return result
+                   End Function
+        ' Each piece of floor in turn, the nearest next.
+        Dim pendingRoots = roots.ToList()
+        While pendingRoots.Count > 0
+            Dim at = here()
+            Dim root = pendingRoots(0)
+            If at.HasValue Then root = pendingRoots.OrderBy(Function(r) DistanceTo(r, at.Value)).First()
+            pendingRoots.Remove(root)
+            Dim lapped = walk(root)
+            If root.Level = 0 AndAlso Not lapped Then
+                ' Out on the edge: trace it once all the way round.
+                Dim last = pieces(pieces.Count - 1)
+                last.AddRange(Lap(root, last(last.Count - 1)).Skip(1))
+            End If
+        End While
+
+        Dim chain = ctx.NextChain
+        ctx.NextChain += 1
+        For i = 0 To pieces.Count - 1
+            ' Points already reduced lap by lap and turn by turn (one reduction over a whole spiral is very slow).
+            Dim pts = pieces(i).Select(Function(q) New Pt3(q.x, q.y, -g.Flat)).ToList()
+            If pts.Count = 0 Then Continue For
+            output.Add(New ToolpathContour With {
+                .Z = -g.Flat, .Inset = g.FlatInset, .Kind = PassKind.FloorClear, .IsClosed = False,
+                .RegionIndex = ctx.RegionIndex, .Order = i, .Chain = chain, .Parent = -1, .Points = pts})
+        Next
+    End Sub
+
+    ''' <summary>
+    ''' A ring in the cutting direction. Spiralling out, the material still to cut lies outside an outer ring
+    ''' and toward the island inside a hole ring: on the right of Clipper's orientation, so climb milling
+    ''' (material on the left) runs every ring the other way.
+    ''' </summary>
+    Private Function NewRing(p As PathD, level As Integer, room As Double, climb As Boolean) As FloorRing
+        Dim area = Clipper.Area(p)
+        Dim path = New PathD(p)
+        If climb Then path.Reverse()
+        Dim r As New FloorRing With {.Path = path, .IsHole = area < 0, .Level = level, .Room = room, .Source = p, .Area = Math.Abs(area)}
+        ReDim r.At(path.Count - 1)
+        Dim run = 0.0
+        For i = 0 To path.Count - 1
+            r.At(i) = run
+            Dim a = path(i), b = path((i + 1) Mod path.Count)
+            run += Math.Sqrt((b.x - a.x) ^ 2 + (b.y - a.y) ^ 2)
+        Next
+        r.Length = run
+        Return r
+    End Function
+
+    ''' <summary>
+    ''' The ring one stepover out that a ring lies just inside: the outer ring holding it, or for a hole
+    ''' ring, the hole ring it holds (holes grow inward); the nearest when there are several.
+    ''' </summary>
+    Private Function ParentRing(c As FloorRing, outer As List(Of FloorRing)) As FloorRing
+        Dim best As FloorRing = Nothing
+        For Each p In outer
+            If p.IsHole <> c.IsHole Then Continue For
+            If Not c.IsHole Then
+                If Clipper.PointInPolygon(c.Path(0), p.Path, Prec) <> PointInPolygonResult.IsOutside AndAlso (best Is Nothing OrElse p.Area < best.Area) Then best = p
+            Else
+                If Clipper.PointInPolygon(p.Path(0), c.Path, Prec) <> PointInPolygonResult.IsOutside AndAlso (best Is Nothing OrElse p.Area > best.Area) Then best = p
+            End If
+        Next
+        Return best
+    End Function
+
+    ''' <summary>Point at running length t (wrapped) along a ring.</summary>
+    Private Function PointAt(r As FloorRing, t As Double) As PointD
+        If r.Length <= 0 Then Return r.Path(0)
+        t = t Mod r.Length
+        If t < 0 Then t += r.Length
+        ' Binary search for the edge holding t.
+        Dim lo = 0, hi = r.At.Length - 1
+        While lo < hi
+            Dim mid = (lo + hi + 1) \ 2
+            If r.At(mid) <= t Then lo = mid Else hi = mid - 1
+        End While
+        Dim a = r.Path(lo), b = r.Path((lo + 1) Mod r.Path.Count)
+        Dim len = If(lo + 1 < r.At.Length, r.At(lo + 1), r.Length) - r.At(lo)
+        Dim f = If(len > 0, (t - r.At(lo)) / len, 0.0)
+        Return New PointD(a.x + f * (b.x - a.x), a.y + f * (b.y - a.y))
+    End Function
+
+    ''' <summary>Running length of the point of the ring nearest to p.</summary>
+    Private Function Nearest(r As FloorRing, p As PointD) As Double
+        Dim best = Double.MaxValue, bestT = 0.0
+        For i = 0 To r.Path.Count - 1
+            Dim a = r.Path(i), b = r.Path((i + 1) Mod r.Path.Count)
+            Dim dx = b.x - a.x, dy = b.y - a.y
+            Dim l2 = dx * dx + dy * dy
+            Dim f = If(l2 > 0, Math.Max(0.0, Math.Min(1.0, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2)), 0.0)
+            Dim qx = a.x + f * dx, qy = a.y + f * dy
+            Dim d2 = (p.x - qx) ^ 2 + (p.y - qy) ^ 2
+            If d2 < best Then
+                best = d2
+                bestT = r.At(i) + f * Math.Sqrt(l2)
+            End If
+        Next
+        Return bestT
+    End Function
+
+    ''' <summary>How far p is from a ring.</summary>
+    Private Function DistanceTo(r As FloorRing, p As PointD) As Double
+        Dim q = PointAt(r, Nearest(r, p))
+        Return Math.Sqrt((q.x - p.x) ^ 2 + (q.y - p.y) ^ 2)
+    End Function
+
+    ''' <summary>One lap of a ring from its point nearest to p (its first point when p is Nothing), back to there.</summary>
+    Private Function Lap(r As FloorRing, p As PointD?) As List(Of PointD)
+        Dim t0 = If(p.HasValue, Nearest(r, p.Value), 0.0)
+        Dim pts As New List(Of PointD) From {PointAt(r, t0)}
+        ' The vertices after t0 in order, then back to the start.
+        Dim n = r.Path.Count
+        Dim first = 0
+        While first < n AndAlso r.At(first) <= t0
+            first += 1
+        End While
+        For k = 0 To n - 1
+            pts.Add(r.Path((first + k) Mod n))
+        Next
+        pts.Add(pts(0))
+        Return pts
+    End Function
+
+    ''' <summary>
+    ''' One spiral turn from a point on the inner ring c out to the ring n around it. The turn follows n (the
+    ''' longer ring) once round from its point nearest the start; at the fraction u of the way round, the cut
+    ''' is u of the way from the nearest point of c to n's point (that nearest point moves on round c with
+    ''' it), so the turn starts on c, ends on n where the next turn starts, and every place gets turns about a
+    ''' stepover apart, corners included. Nothing when a point could take the cone off the floor. The distance
+    ''' to the outline changes no faster than the position, so a point u*D from c's point and (1-u)*D from n's
+    ''' (D apart) keeps max(c's room - u*D, n's room - (1-u)*D) beyond the edge, a ring's room being its Level
+    ''' stepovers; where that bound is not enough (along a corner's bisector) the distance is measured.
+    ''' Steps are at most 0.01" (their chords then stay within about 0.0001").
+    ''' </summary>
+    Private Function Blend(rs As RegionShape, c As FloorRing, n As FloorRing, start As PointD, stepover As Double, flatInset As Double) As List(Of PointD)
+        If c.Length <= 0 OrElse n.Length <= 0 Then Return Nothing
+        Dim tn = Nearest(n, start)
+        ' Distances along n from that point where n has a corner, plus enough in between that no step is long.
+        Dim ts As New List(Of Double) From {0.0, n.Length}
+        For i = 0 To n.At.Length - 1
+            ts.Add(Frac(n.At(i) - tn, n.Length) * n.Length)
+        Next
+        ts.Sort()
+        Dim fine As New List(Of Double)
+        For i = 0 To ts.Count - 1
+            If i > 0 Then
+                Dim gap = ts(i) - ts(i - 1)
+                If gap <= 0.0000000001 Then Continue For
+                Dim parts = CInt(Math.Ceiling(gap / 0.01))
+                For k = 1 To parts - 1
+                    fine.Add(ts(i - 1) + gap * k / parts)
+                Next
+            End If
+            fine.Add(ts(i))
+        Next
+        Dim roomC = c.Room, roomN = n.Room
+        Dim edge = EdgeAt(c, Nearest(c, start))
+        Dim result As New List(Of PointD)(fine.Count + 1) From {start}
+        For Each t In fine
+            Dim u = t / n.Length
+            Dim b = PointAt(n, tn + t)
+            Dim a = ProjectOnward(c, b, edge, 2 * MaxBlendGap * stepover)
+            Dim dd = Math.Sqrt((b.x - a.x) ^ 2 + (b.y - a.y) ^ 2)
+            ' Only rings that run alongside each other blend: where a ring splits (a small inner piece under a
+            ' big ring) the turn would cut across the floor and miss the rest of the ring.
+            If dd > MaxBlendGap * stepover Then Return Nothing
+            Dim p As New PointD(a.x + u * (b.x - a.x), a.y + u * (b.y - a.y))
+            If Math.Max(roomC - u * dd, roomN - (1 - u) * dd) < -BlendTol AndAlso rs.DistanceToBoundary(p.x, p.y) < flatInset - BlendTol Then Return Nothing
+            result.Add(p)
+        Next
+        Return result
+    End Function
+
+    ''' <summary>The edge of a ring holding running length t.</summary>
+    Private Function EdgeAt(r As FloorRing, t As Double) As Integer
+        Dim lo = 0, hi = r.At.Length - 1
+        While lo < hi
+            Dim mid = (lo + hi + 1) \ 2
+            If r.At(mid) <= t Then lo = mid Else hi = mid - 1
+        End While
+        Return lo
+    End Function
+
+    ''' <summary>
+    ''' The point of ring r nearest to q among the edges from the given one onward (it only moves on round
+    ''' the ring as q does), the edge advanced to where it was found.
+    ''' </summary>
+    Private Function ProjectOnward(r As FloorRing, q As PointD, ByRef edge As Integer, giveUp As Double) As PointD
+        Dim n = r.Path.Count
+        Dim best = Double.MaxValue, bestK = 0
+        Dim bestP As PointD = r.Path(edge)
+        ' The nearest point moves on by at most a few edges per 0.01" step; around a corner of the outer ring
+        ' it sweeps the inner ring's arc there, so look well ahead.
+        For k = 0 To Math.Min(n - 1, 400)
+            Dim i = (edge + k) Mod n
+            Dim a = r.Path(i), b = r.Path((i + 1) Mod n)
+            Dim dx = b.x - a.x, dy = b.y - a.y
+            Dim l2 = dx * dx + dy * dy
+            Dim f = If(l2 > 0, Math.Max(0.0, Math.Min(1.0, ((q.x - a.x) * dx + (q.y - a.y) * dy) / l2)), 0.0)
+            Dim px = a.x + f * dx, py = a.y + f * dy
+            Dim d2 = (q.x - px) ^ 2 + (q.y - py) ^ 2
+            If d2 < best Then
+                best = d2 : bestK = k : bestP = New PointD(px, py)
+            ElseIf k > 16 AndAlso Math.Sqrt(d2) > Math.Sqrt(best) + giveUp Then
+                ' Well past it: the rest of the ring is no nearer for a turn (rings farther apart are refused).
+                Exit For
+            End If
+        Next
+        edge = (edge + bestK) Mod n
+        Return bestP
+    End Function
+
+    ''' <summary>How far past the edge's inset a spiral point may come (as the links' gouge tolerance).</summary>
+    Private Const BlendTol As Double = 0.0001
+
+    ''' <summary>
+    ''' Farthest apart (in stepovers) the two rings of a spiral turn may be at any place: a corner of the outer
+    ''' ring is 1 / sin(half its angle) stepovers from the inner ring's, so 4 still blends corners down to 29 deg.
+    ''' </summary>
+    Private Const MaxBlendGap As Double = 4.0
+
+    Private Function Frac(t As Double, length As Double) As Double
+        Dim f = (t Mod length) / length
+        If f < 0 Then f += 1
+        Return f
+    End Function
+
+    ''' <summary>
+    ''' Continues the last piece with a lap when the straight step onto it stays on the floor (a step no
+    ''' longer than the room of the deeper of the two rings), else starts a new piece with it.
+    ''' </summary>
+    Private Sub Join(pieces As List(Of List(Of PointD)), lapPts As List(Of PointD), roomFrom As Double, roomTo As Double, slack As Double)
+        Dim last = pieces(pieces.Count - 1)
+        Dim a = last(last.Count - 1), b = lapPts(0)
+        Dim stepLen = Math.Sqrt((b.x - a.x) ^ 2 + (b.y - a.y) ^ 2)
+        If stepLen <= Math.Max(roomFrom, roomTo) + slack Then
+            last.AddRange(lapPts)
+        Else
+            pieces.Add(lapPts)
+        End If
+    End Sub
 
     ''' <summary>
     ''' A lobe present at inset dLo has no descendant at inset dHi: bisect the extra
@@ -452,7 +875,9 @@ Public Module VCarveEngine
         Dim chain As Integer = ctx.NextChain
         ctx.NextChain += 1
         For Each kv In probes
-            Dim z As Double = If(kind = PassKind.Rough, -g.DepthFor(kv.Key), zHi)
+            ' Rough and the last step before the flat depth: each probe at its own depth (at the flat depth the
+            ' cone would reach past the outline); a floor probe stays at the flat depth.
+            Dim z As Double = If(kind = PassKind.Rough OrElse kind = PassKind.BevelFinish, -g.DepthFor(kv.Key), zHi)
             EmitLoops(kv.Value, z, kv.Key, kind, ctx, output, s, chain, lobe.Chain)
         Next
     End Sub
@@ -539,7 +964,7 @@ Public Module VCarveEngine
     ''' trimmed where an already kept chain passes within a couple of sample spacings.
     ''' </summary>
     Private Sub CenterlinePass(rs As RegionShape, g As ToolGeom, s As CarveSettings, ctx As EmitContext,
-                               output As List(Of ToolpathContour), token As CancellationToken)
+                               output As List(Of ToolpathContour), token As CancellationToken, floorEdge As PathsD)
         Dim spacing As Double = Math.Max(s.FinishResolution, 0.0002)
         Dim maxR As Double = Math.Max(rs.Bounds.right - rs.Bounds.left, rs.Bounds.bottom - rs.Bounds.top) + 1.0
         Dim chains As New List(Of List(Of MAPoint))
@@ -606,6 +1031,7 @@ Public Module VCarveEngine
         If chain.Count > 0 Then chains.Add(chain)
 
         chains = Deduplicate(chains, spacing)
+        chains = DropCovered(rs, chains, g, floorEdge)
 
         ' Emit chains as open variable-Z passes (one chain per Chain id, all at one level).
         ctx.Level += 1
@@ -643,7 +1069,10 @@ Public Module VCarveEngine
         Dim r As Double = MaxCircle(rs, px, py, nx, ny, myId, maxR, limitId)
         If r < maxR Then
             Dim m As MAPoint
-            m.X = px + r * nx : m.Y = py + r * ny : m.R = r
+            m.X = px + r * nx : m.Y = py + r * ny
+            ' Never wider than the room around its centre: a true maximal circle is exactly that, and one made too
+            ' big (gentle turns skip their neighbouring edges) would cut past the outline (a ring's outer wall).
+            m.R = Math.Min(r, rs.DistanceToBoundary(m.X, m.Y))
             ' A big jump between consecutive axis points means the tangency switched
             ' branches; start a new chain so the linker can decide how to connect.
             If chain.Count > 0 Then
@@ -725,6 +1154,112 @@ Public Module VCarveEngine
             Next
         Next
         Return kept
+    End Function
+
+    ''' <summary>
+    ''' How far across (inches) the cut of a dropped centerline point may reach past the cuts that are
+    ''' kept (DropCovered). Settable for tests; 0 keeps every point.
+    ''' </summary>
+    Friend Property CoverTolerance As Double = 0.001
+
+    ''' <summary>
+    ''' Drops the centerline points that carve nothing the deeper ones do not: where the tool's cone at a
+    ''' point lies inside the cone at a kept point, to within CoverTolerance. Cones of one angle nest exactly
+    ''' when their circles at the stock surface do, |c1 - c2| + r1 &lt;= r2, r being the cut radius at the
+    ''' surface (the circle's radius, at most the flat-depth inset). Around a rounded stroke end every
+    ''' outline sample gives nearly the same circle, scattered by a few thou: traced in outline order they
+    ''' zigzagged and bobbed up and down. Along a stroke, and into a sharp corner, each circle reaches
+    ''' material the others do not, so those points stay. What is left of a chain is joined straight
+    ''' across a gap when that move cannot gouge, else split there for the linker.
+    ''' </summary>
+    Private Function DropCovered(rs As RegionShape, chains As List(Of List(Of MAPoint)), g As ToolGeom, floorEdge As PathsD) As List(Of List(Of MAPoint))
+        Dim tol = Math.Max(0.0, CoverTolerance)
+        If chains.Count = 0 Then Return chains
+        ' Every point, deepest cut first, so a point is only ever held by one kept before it.
+        Dim order As New List(Of (Chain As Integer, Index As Integer, R As Double))
+        For c = 0 To chains.Count - 1
+            For i = 0 To chains(c).Count - 1
+                order.Add((c, i, Math.Min(chains(c)(i).R, g.FlatInset)))
+            Next
+        Next
+        If order.Count = 0 Then Return chains
+        order.Sort(Function(a, b) b.R.CompareTo(a.R))
+        Dim maxR = order(0).R
+        Const cell As Double = 0.01
+        Dim grid As New Dictionary(Of Long, List(Of (X As Double, Y As Double, R As Double)))
+        Dim keyOf = Function(ix As Long, iy As Long) As Long
+                        Return (ix << 32) Xor (iy And &HFFFFFFFFL)
+                    End Function
+        Dim keep = chains.Select(Function(ch) New Boolean(ch.Count - 1) {}).ToList()
+        For Each a In order
+            Dim m = chains(a.Chain)(a.Index)
+            ' A kept cone that holds this one has its centre within (its radius - this radius + tol).
+            Dim n = CInt(Math.Ceiling((maxR - a.R + tol) / cell))
+            Dim ix = CLng(Math.Floor(m.X / cell)), iy = CLng(Math.Floor(m.Y / cell))
+            Dim covered = False
+            For dx = -n To n
+                For dy = -n To n
+                    Dim bucket As List(Of (X As Double, Y As Double, R As Double)) = Nothing
+                    If Not grid.TryGetValue(keyOf(ix + dx, iy + dy), bucket) Then Continue For
+                    For Each k In bucket
+                        If Math.Sqrt((k.X - m.X) ^ 2 + (k.Y - m.Y) ^ 2) + a.R <= k.R + tol Then
+                            covered = True
+                            Exit For
+                        End If
+                    Next
+                    If covered Then Exit For
+                Next
+                If covered Then Exit For
+            Next
+            If covered Then Continue For
+            ' Over a floor that is cut (the full flat depth) the floor's spiral and edge cut it: not cut again
+            ' here, but it still holds the smaller cones beside it. Where no floor was made (one too small to
+            ' keep), the point is cut at the flat depth as before.
+            keep(a.Chain)(a.Index) = Not (m.R >= g.FlatInset AndAlso OnFloor(floorEdge, m.X, m.Y))
+            Dim own As List(Of (X As Double, Y As Double, R As Double)) = Nothing
+            Dim key = keyOf(ix, iy)
+            If Not grid.TryGetValue(key, own) Then
+                own = New List(Of (X As Double, Y As Double, R As Double))
+                grid(key) = own
+            End If
+            own.Add((m.X, m.Y, a.R))
+        Next
+
+        ' What is left of each chain. A gap between kept points is crossed straight when that move is safe;
+        ' otherwise the chain keeps its own way across (as before: no new lift). Dropped ends just go.
+        Dim tip = Function(m As MAPoint) New Pt3(m.X, m.Y, -g.DepthFor(m.R))
+        Dim result As New List(Of List(Of MAPoint))
+        For c = 0 To chains.Count - 1
+            Dim ch = chains(c)
+            Dim run As New List(Of MAPoint)
+            Dim gapFrom = -1        ' first dropped point after the last kept one
+            For i = 0 To ch.Count - 1
+                If Not keep(c)(i) Then
+                    If run.Count > 0 AndAlso gapFrom < 0 Then gapFrom = i
+                    Continue For
+                End If
+                If gapFrom >= 0 AndAlso Not ToolpathLinker.GougeFree(rs, tip(run(run.Count - 1)), tip(ch(i)), g.TanA, g.HalfFlat) Then
+                    run.AddRange(ch.GetRange(gapFrom, i - gapFrom))
+                End If
+                gapFrom = -1
+                run.Add(ch(i))
+            Next
+            If run.Count > 0 Then result.Add(run)
+        Next
+        Return result
+    End Function
+
+    ''' <summary>True when (x, y) lies on the floor inside these edges (outers and holes; on an edge counts).</summary>
+    Private Function OnFloor(edges As PathsD, x As Double, y As Double) As Boolean
+        If edges Is Nothing Then Return False
+        Dim pt As New PointD(x, y)
+        Dim inside = False
+        For Each p In edges
+            Dim r = Clipper.PointInPolygon(pt, p, Prec)
+            If r = PointInPolygonResult.IsOn Then Return True
+            If r = PointInPolygonResult.IsInside Then inside = Not inside
+        Next
+        Return inside
     End Function
 
     ''' <summary>
@@ -844,6 +1379,11 @@ Public Module ToolpathLinker
 
     ''' <summary>Longest in-material feed link tried before lifting to the clearance height.</summary>
     Private Const MaxFeedLink As Double = 0.5
+    ''' <summary>
+    ''' The same between two pieces of one floor: the link runs at the flat depth over floor that is cut anyway,
+    ''' so a longer one still beats a lift (when it cannot gouge).
+    ''' </summary>
+    Private Const MaxFloorLink As Double = 2.0
     ''' <summary>Permitted overshoot of the cone below the finished surface during a link (1e-4 in).</summary>
     Private Const GougeTol As Double = 0.0001
 
@@ -923,15 +1463,18 @@ Public Module ToolpathLinker
                 Next
             End If
 
-            ' --- open centerline passes: greedy nearest, either direction ---------
+            ' --- open passes: greedy nearest. Centerlines either direction; the floor's pieces (a spiral out
+            '     from the middle, ending on the edge) only forward and in their order (Order within Chain).
             Dim openPasses = grp.Where(Function(c) Not c.IsClosed).ToList()
             Dim pos2 As Pt2 = If(sequence.Count > 0, New Pt2(sequence(sequence.Count - 1).Points(0).X, sequence(sequence.Count - 1).Points(0).Y), New Pt2(cur.X, cur.Y))
             While openPasses.Count > 0
                 Dim bestIdx As Integer = 0, bestDist As Double = Double.MaxValue, bestReverse As Boolean = False
                 For i = 0 To openPasses.Count - 1
                     Dim c = openPasses(i)
+                    Dim isFloor = c.Kind = PassKind.FloorClear
+                    If isFloor AndAlso openPasses.Any(Function(o) o.Kind = PassKind.FloorClear AndAlso o.Chain = c.Chain AndAlso o.Order < c.Order) Then Continue For
                     Dim d0 = pos2.DistanceTo(New Pt2(c.Points(0).X, c.Points(0).Y))
-                    Dim d1 = pos2.DistanceTo(New Pt2(c.Points(c.Points.Count - 1).X, c.Points(c.Points.Count - 1).Y))
+                    Dim d1 = If(isFloor, Double.MaxValue, pos2.DistanceTo(New Pt2(c.Points(c.Points.Count - 1).X, c.Points(c.Points.Count - 1).Y)))
                     If d0 < bestDist Then
                         bestDist = d0 : bestIdx = i : bestReverse = False
                     End If
@@ -948,6 +1491,7 @@ Public Module ToolpathLinker
             End While
 
             ' --- emit motions for this region ---------------------------------
+            Dim previous As ToolpathContour = Nothing
             For Each c In sequence
                 ordered.Add(c)
                 Dim start As Pt3 = c.Points(0)
@@ -957,9 +1501,16 @@ Public Module ToolpathLinker
                 If Not first AndAlso rs IsNot Nothing Then
                     ' Try a direct in-material feed link from the current tip position.
                     Dim dxy = Math.Sqrt((start.X - cur.X) ^ 2 + (start.Y - cur.Y) ^ 2)
-                    If dxy <= MaxFeedLink AndAlso cur.Z <= 0 AndAlso GougeFree(rs, cur, start, tanA, halfFlat) Then
-                        plungeLen += cur.DistanceTo(start)
-                        moves.Add(New ToolMove(MoveKind.Plunge, start, s.PlungeRate))
+                    Dim floorToFloor = previous IsNot Nothing AndAlso previous.Kind = PassKind.FloorClear AndAlso c.Kind = PassKind.FloorClear AndAlso previous.Chain = c.Chain
+                    If dxy <= If(floorToFloor, MaxFloorLink, MaxFeedLink) AndAlso cur.Z <= 0 AndAlso GougeFree(rs, cur, start, tanA, halfFlat) Then
+                        If floorToFloor AndAlso Math.Abs(start.Z - cur.Z) < 0.000001 Then
+                            ' Level across the floor: a cut like the floor's own passes.
+                            cutLen += cur.DistanceTo(start)
+                            moves.Add(New ToolMove(MoveKind.Feed, start, s.FeedRate))
+                        Else
+                            plungeLen += cur.DistanceTo(start)
+                            moves.Add(New ToolMove(MoveKind.Plunge, start, s.PlungeRate))
+                        End If
                         cur = start
                         linked = True
                     End If
@@ -988,6 +1539,7 @@ Public Module ToolpathLinker
                     cur = start
                 End If
                 first = False
+                previous = c
 
                 ' Cut along the pass.
                 For k = 1 To c.Points.Count - 1
@@ -1039,7 +1591,7 @@ Public Module ToolpathLinker
     ''' surface: every sampled tip lies inside the region and its surface radius
     ''' (tip flat + depth * tan a) does not exceed the local boundary distance.
     ''' </summary>
-    Private Function GougeFree(rs As RegionShape, a As Pt3, b As Pt3, tanA As Double, halfFlat As Double) As Boolean
+    Friend Function GougeFree(rs As RegionShape, a As Pt3, b As Pt3, tanA As Double, halfFlat As Double) As Boolean
         Dim dxy = Math.Sqrt((b.X - a.X) ^ 2 + (b.Y - a.Y) ^ 2)
         Dim n As Integer = Math.Max(1, CInt(Math.Ceiling(dxy / 0.002)))
         For k = 0 To n
